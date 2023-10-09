@@ -1,172 +1,207 @@
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use clap::Parser;
-use core::panic;
-use labelme_rs::LabelMeData;
-use ndarray::{s, stack, Array2, Array3, Axis};
-use std::iter::zip;
+use labelme_rs::{
+    image::{DynamicImage, GenericImageView},
+    LabelMeData, LabelMeDataWImage,
+};
+use scolrs::{Centroids, Corners, VertebraeTL};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use svg::node::element;
 
 /// LabelMeData to Vertebrae
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Input labelme json filename
-    filename: PathBuf,
+    input: PathBuf,
+    /// Output svg filename
+    output: PathBuf,
+    /// Config file in toml
+    #[clap(long)]
+    config: Option<PathBuf>,
+    /// Label colors in yaml
+    #[clap(long)]
+    label_colors: Option<PathBuf>,
+    #[command(flatten)]
+    render_param: RenderParam,
 }
 
-fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>> {
-    let tuples: Vec<_> = data
-        .shapes
-        .iter()
-        .filter_map(|shape| {
-            if shape.label == label {
-                Some(shape.points[0])
-            } else {
-                None
-            }
-        })
-        .collect();
-    let mut vec = Vec::with_capacity(tuples.len() * 2);
-    for t in tuples.iter() {
-        vec.push(t.0);
-        vec.push(t.1);
+fn default_radius() -> usize {
+    2
+}
+fn default_line_width() -> usize {
+    2
+}
+
+fn default_text_stroke() -> String {
+    "black".into()
+}
+
+fn default_text_fill() -> String {
+    "white".into()
+}
+
+#[derive(Serialize, Deserialize, Parser, Debug, Clone)]
+pub struct RenderParam {
+    /// Point radius
+    #[clap(long, default_value = "2")]
+    #[serde(default = "default_radius")]
+    radius: usize,
+    /// Line width
+    #[clap(long, default_value = "2")]
+    #[serde(default = "default_line_width")]
+    line_width: usize,
+
+    /// `stroke` for texts
+    #[clap(long, default_value = "black")]
+    #[serde(default = "default_text_stroke")]
+    text_stroke: String,
+    /// `fill` for texts
+    #[clap(long, default_value = "white")]
+    #[serde(default = "default_text_fill")]
+    text_fill: String,
+}
+
+struct Renderer {
+    param: RenderParam,
+}
+
+impl Renderer {
+    fn new(param: RenderParam) -> Self {
+        Self { param }
     }
-    let arr = Array2::from_shape_vec((tuples.len(), 2), vec)?;
-    Ok(arr)
-}
 
-/// C7, thoracic and lumber vertebrae
-struct VertebraeC7TL(Array3<f32>);
-
-struct Corners(Array3<f32>);
-impl From<VertebraeTL> for Corners {
-    fn from(value: VertebraeTL) -> Self {
-        Corners(value.corners)
+    fn point<S>(&self, point: ndarray::ArrayBase<S, ndarray::Ix1>) -> svg::node::element::Circle
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        element::Circle::new()
+            .set("cx", point[0])
+            .set("cy", point[1])
+            .set("r", self.param.radius)
     }
-}
 
-impl Corners {
-    fn between(&self) -> Self {
-        let bottom = self.0.slice(s![..(self.0.shape()[0]-1), ..2, ..]);
-        let top = self.0.slice(s![1.., 2.., ..]);
-        let between = ndarray::concatenate![Axis(1), top, bottom];
-        Corners(between)
+    fn text<S>(
+        &self,
+        text: &str,
+        coords: ndarray::ArrayBase<S, ndarray::Ix1>,
+    ) -> svg::node::element::Text
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        element::Text::new()
+            .set("x", coords[0])
+            .set("y", coords[1])
+            .add(svg::node::Text::new(text))
     }
-}
 
-struct Centroids(Array2<f32>);
-
-impl From<&Corners> for Centroids {
-    fn from(corners: &Corners) -> Self {
-        let top = corners.0.slice(s![.., ..2, ..]).mean_axis(Axis(1)).unwrap();
-        let bottom = corners.0.slice(s![.., 2.., ..]).mean_axis(Axis(1)).unwrap();
-        let left = corners
-            .0
-            .slice(s![.., 0..;2, ..])
-            .mean_axis(Axis(1))
-            .unwrap();
-        let mut right = corners
-            .0
-            .slice(s![.., 1..;2, ..])
-            .mean_axis(Axis(1))
-            .unwrap();
-        for (t, (b, (l, mut r))) in zip(
-            top.axis_iter(Axis(1)),
-            zip(
-                bottom.axis_iter(Axis(1)),
-                zip(left.axis_iter(Axis(1)), right.axis_iter_mut(Axis(1))),
-            ),
-        ) {
-            // [python - Numpy and line intersections - Stack Overflow](https://stackoverflow.com/questions/3252194/numpy-and-line-intersections/57821199#57821199)
-            let (a1, a2) = (&t, &b);
-            let (b1, b2) = (&l, &r);
-            let da = a2 - a1;
-            let db = b2 - b1;
-            let dp = a1 - b1;
-            let mut dap = da.clone();
-            dap[[0]] = -da[[0]];
-            let denom = dap.dot(&db);
-            if denom == 0.0 {
-                panic!("parallel line"); // should not reach here
-            } else {
-                let num = dap.dot(&dp);
-                let c = num / denom * db + b1;
-                r[[0]] = c[[0]];
-            }
-        }
-        Centroids(right)
-    }
-}
-
-impl TryFrom<&LabelMeData> for VertebraeC7TL {
-    type Error = anyhow::Error;
-
-    /// From [C7[TL, TR, BL, BR] - Sacral[TL, TR]] points
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let corners = ["TL", "TR", "BL", "BR"]
-            .iter()
-            .map(|label| extract_points(&data, label))
-            .collect::<Result<Vec<_>>>()?;
-        ensure!(
-            corners[0].shape()[0] == corners[1].shape()[0],
-            "The number of TL and TR points does not match: {} and {}",
-            corners[0].shape()[0],
-            corners[1].shape()[0]
+    fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
+        let (image_width, image_height) = image.dimensions();
+        let mut document = svg::Document::new()
+            .set("width", image_width)
+            .set("height", image_height)
+            .set("viewBox", (0i64, 0i64, image_width, image_height))
+            .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
+        let b64 = format!(
+            "data:image/jpeg;base64,{}",
+            labelme_rs::img2base64(image, labelme_rs::image::ImageOutputFormat::Jpeg(75))
         );
-        ensure!(
-            corners[2].shape()[0] == corners[3].shape()[0],
-            "The number of TL and TR points does not match: {} and {}",
-            corners[2].shape()[0],
-            corners[3].shape()[0]
-        );
-        ensure!(
-            corners[0].shape()[0] - 1 == corners[2].shape()[0],
-            "The number of TL and BL points does not satisfy |TL|-1==|BL|: {} and {}",
-            corners[0].shape()[0],
-            corners[2].shape()[0],
-        );
-        let verts_c7_t_l = stack![
-            Axis(1),
-            corners[0].slice(s![0..(corners[0].shape()[0] - 1), ..]),
-            corners[1].slice(s![0..(corners[1].shape()[0] - 1), ..]),
-            corners[2],
-            corners[3]
-        ];
-        Ok(VertebraeC7TL(verts_c7_t_l))
+        let bg = element::Image::new()
+            .set("x", 0i64)
+            .set("y", 0i64)
+            .set("width", image_width)
+            .set("height", image_height)
+            .set("xlink:href", b64);
+        document = document.add(bg);
+        document
     }
 }
 
-/// Thoracic and lumber vertebrae
-struct VertebraeTL {
-    corners: Array3<f32>,
-}
-impl From<VertebraeC7TL> for VertebraeTL {
-    fn from(c7tl: VertebraeC7TL) -> Self {
-        let corners = c7tl.0.slice(s![1.., .., ..]).to_owned();
-        Self { corners }
-    }
-}
-
-impl TryFrom<LabelMeData> for VertebraeTL {
-    type Error = anyhow::Error;
-
-    fn try_from(data: LabelMeData) -> std::result::Result<Self, Self::Error> {
-        let c7tl: VertebraeC7TL = (&data).try_into()?;
-        Ok(c7tl.into())
-    }
-}
+const CLS_POINT: &str = "Points";
+const VERTEBRAL_LABELS: [&str; 18] = [
+    "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1", "L2", "L3",
+    "L4", "L5", "L6",
+];
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let s = std::fs::read_to_string(args.filename)?;
+    if let Some(filename) = args.config {
+        let s = std::fs::read_to_string(filename)?;
+        let config: RenderParam = toml::from_str(&s)?;
+        println!("{:?}", config);
+    }
+    let s = std::fs::read_to_string(&args.input)?;
     let data: LabelMeData = s.as_str().try_into()?;
-    let v: VertebraeTL = data.try_into()?;
-    let corners: Corners = v.into();
-    let centroids: Centroids = (&corners).into();
-    println!("{:?}", centroids.0.shape());
+    let orig_wd = std::env::current_dir()?;
+    if let Some(parent) = args.input.parent() {
+        std::env::set_current_dir(parent)?;
+    }
+    let data = LabelMeDataWImage::try_from(data)?;
+    if args.input.parent().is_some() {
+        std::env::set_current_dir(&orig_wd)?;
+    }
+    let v = VertebraeTL::try_from(&data.data)?;
+    let corners = Corners::from(v);
+    let centroids = Centroids::try_from(&corners)?;
     let discs = corners.between();
-    let disc_centroids: Centroids = (&discs).into();
-    println!("{:?}", disc_centroids.0.shape());
+    let disc_centroids = Centroids::try_from(&discs)?;
 
+    let label_colors = if let Some(filename) = args.label_colors {
+        labelme_rs::load_label_colors(&filename)?
+    } else {
+        labelme_rs::LabelColorsHex::default()
+    };
+    let mut color_cycler = labelme_rs::ColorCycler::new();
+
+    let render_param = args.render_param;
+    let renderer = Renderer::new(render_param.clone());
+    let mut document = renderer.doc_w_background(&data.image);
+    let mut g_corners = element::Group::new();
+    for (i_label, label) in scolrs::CORNER_LABELS.iter().enumerate() {
+        let color = label_colors
+            .get(*label)
+            .map_or_else(|| color_cycler.cycle(), |s| s.as_str());
+        let mut sub_group = element::Group::new()
+            .set("class", format!("{} {}", CLS_POINT, label))
+            .set("fill", color);
+        let points = corners.0.index_axis(ndarray::Axis(1), i_label);
+        for point in points.axis_iter(ndarray::Axis(0)) {
+            let p = renderer.point(point);
+            sub_group = sub_group.add(p);
+        }
+        g_corners = g_corners.add(sub_group);
+    }
+    document = document.add(g_corners);
+
+    let mut g_vert_labels = element::Group::new()
+        .set("text-anchor", "middle")
+        .set("dominant-baseline", "central")
+        .set("stroke", render_param.text_stroke)
+        .set("stroke_width", "1px")
+        .set("fill", render_param.text_fill)
+        .set("style", "font-size: 24px; font-family:sans-serif");
+    for (coords, label) in std::iter::zip(
+        centroids.0.axis_iter(ndarray::Axis(0)),
+        VERTEBRAL_LABELS.into_iter(),
+    ) {
+        let t = renderer.text(label, coords);
+        g_vert_labels = g_vert_labels.add(t);
+    }
+    document = document.add(g_vert_labels);
+
+    let color = label_colors
+        .get("centroid")
+        .map_or_else(|| color_cycler.cycle(), |s| s.as_str());
+    let mut g_centroids = element::Group::new()
+        .set("class", "centroids")
+        .set("fill", color);
+    for point in centroids.0.axis_iter(ndarray::Axis(0)) {
+        let p = renderer.point(point);
+        g_centroids = g_centroids.add(p);
+    }
+    document = document.add(g_centroids);
+
+    std::fs::write(args.output, document.to_string())?;
     Ok(())
 }

@@ -1,0 +1,30 @@
+label_colors:
+  {
+    "TL": [255, 0, 0],
+    "TR": [0, 255, 0],
+    "BL": [255, 255, 0],
+    "BR": [0, 0, 255],
+    "Shoulder": [255, 0, 255],
+    "Clavicle": [0, 255, 255],
+    "Pelvis": [200, 0, 200],
+    "Iliac": [32, 178, 170], # lightseagreen
+    "FemoralHead": [106, 90, 205], # 144slateblue
+    "Rod": [255, 192, 203], # pink
+    "Transverse": [135, 206, 250], # lightskyblue
+    "Screw": [106, 90, 205], # slateblue
+    "Hook": [64, 224, 208], # turquoise
+
+    "Brow": [255, 0, 255],
+    "Sella": [0, 255, 255],
+    "ExternalAuditoryCanal": [200, 0, 200],
+    "Orbit": [32, 178, 170], # lightseagreen
+    "Dens": [255, 215, 0],
+    "Occipital": [255, 192, 203], # pink
+    "Chin": [135, 206, 250], # lightskyblue
+    "Lamina": [255, 165, 0],
+    "Manubrium": [34, 139, 34],
+    "PosteriorHardPalate": [230, 192, 203],
+    "AnteriorC1Arch": [200, 206, 250],
+    "AnteriorDens": [255, 165, 0],
+    "PosteriorDens": [34, 139, 34],
+  }

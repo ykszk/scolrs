@@ -5,9 +5,20 @@ edition = "2021"
 
 authors = ["Yuki SUZUKI <y-suzuki@radiol.med.osaka-u.ac.jp>"]
 
+[[bin]]
+name = "scolrs"
+path = "src/main.rs"
+
+[lib]
+name = "scolrs"
+path = "src/lib.rs"
+
 [dependencies]
-anyhow = "1.0.75"
-clap = { version = "4.4.6", features = ["derive"] }
+anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
 labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git" }
-ndarray = "0.15.6"
-svg = "0.14.0"
+ndarray = "0.15"
+serde = "1.0.188"
+svg = "0.14"
+thiserror = "1.0"
+toml = "0.8.2"
