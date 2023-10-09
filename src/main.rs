@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use clap::Parser;
 use core::panic;
 use labelme_rs::LabelMeData;
-use ndarray::{s, stack, Array2, Array3, Axis, Zip};
+use ndarray::{s, stack, Array2, Array3, Axis};
 use std::iter::zip;
 use std::path::PathBuf;
 
@@ -42,6 +42,15 @@ struct Corners(Array3<f32>);
 impl From<VertebraeTL> for Corners {
     fn from(value: VertebraeTL) -> Self {
         Corners(value.corners)
+    }
+}
+
+impl Corners {
+    fn between(&self) -> Self {
+        let bottom = self.0.slice(s![..(self.0.shape()[0]-1), ..2, ..]);
+        let top = self.0.slice(s![1.., 2.., ..]);
+        let between = ndarray::concatenate![Axis(1), top, bottom];
+        Corners(between)
     }
 }
 
@@ -155,6 +164,9 @@ fn main() -> Result<()> {
     let corners: Corners = v.into();
     let centroids: Centroids = (&corners).into();
     println!("{:?}", centroids.0.shape());
+    let discs = corners.between();
+    let disc_centroids: Centroids = (&discs).into();
+    println!("{:?}", disc_centroids.0.shape());
 
     Ok(())
 }

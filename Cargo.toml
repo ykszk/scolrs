@@ -10,3 +10,4 @@ anyhow = "1.0.75"
 clap = { version = "4.4.6", features = ["derive"] }
 labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git" }
 ndarray = "0.15.6"
+svg = "0.14.0"
