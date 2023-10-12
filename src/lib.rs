@@ -1,9 +1,42 @@
 use anyhow::ensure;
 use labelme_rs::LabelMeData;
 use ndarray::{s, stack, Array2, Array3, Axis};
+use serde::{Deserialize, Serialize};
 use std::iter::zip;
 use std::result::Result;
 use thiserror::Error;
+
+fn default_radius() -> usize {
+    2
+}
+fn default_line_width() -> usize {
+    2
+}
+
+fn default_text_stroke() -> String {
+    "black".into()
+}
+
+fn default_text_fill() -> String {
+    "white".into()
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct RenderParam {
+    /// Point radius
+    #[serde(default = "default_radius")]
+    pub radius: usize,
+    /// Line width
+    #[serde(default = "default_line_width")]
+    pub line_width: usize,
+
+    /// `stroke` for texts
+    #[serde(default = "default_text_stroke")]
+    pub text_stroke: String,
+    /// `fill` for texts
+    #[serde(default = "default_text_fill")]
+    pub text_fill: String,
+}
 
 #[derive(Error, Debug)]
 pub enum ShapeError {
@@ -34,7 +67,10 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ShapeE
 }
 
 pub const CORNER_LABELS: [&str; 4] = ["TL", "TR", "BL", "BR"];
-
+pub const VERTEBRAL_LABELS: [&str; 18] = [
+    "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1", "L2", "L3",
+    "L4", "L5", "L6",
+];
 /// C7, thoracic and lumber vertebrae
 pub struct VertebraeC7TL(pub Array3<f32>);
 

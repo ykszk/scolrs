@@ -16,7 +16,10 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }
+env_logger = "0.10.0"
 labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git" }
+log = "0.4.20"
+mimalloc = "0.1.39"
 ndarray = "0.15"
 serde = "1.0.188"
 svg = "0.14"
