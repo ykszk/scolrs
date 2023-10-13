@@ -8,6 +8,7 @@ extern crate log;
 use anyhow::Result;
 
 mod cli;
+mod curve;
 mod render;
 
 use cli::Cli;
@@ -17,5 +18,6 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Render(args) => render::cmd(args),
+        Command::Curve(args) => curve::cmd(args),
     }
 }

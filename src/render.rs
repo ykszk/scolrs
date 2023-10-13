@@ -25,6 +25,17 @@ impl Renderer {
             .set("r", self.param.radius)
     }
 
+    fn line<S>(&self, start_end: ndarray::ArrayBase<S, ndarray::Ix2>) -> svg::node::element::Line
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        element::Line::new()
+            .set("x1", start_end[[0, 0]])
+            .set("y1", start_end[[0, 1]])
+            .set("x2", start_end[[1, 0]])
+            .set("y2", start_end[[1, 1]])
+    }
+
     fn text<S>(
         &self,
         text: &str,
@@ -63,6 +74,13 @@ impl Renderer {
 
 const CLS_POINT: &str = "Points";
 
+fn plate2line(plate: ndarray::ArrayView2<'_, f32>) -> lyon_geom::Line<f32> {
+    let point = lyon_geom::Point::new(plate[[0, 0]], plate[[0, 1]]);
+    let p2 = lyon_geom::Point::new(plate[[1, 0]], plate[[1, 1]]);
+    let vector = p2 - point;
+    lyon_geom::Line { point, vector }
+}
+
 pub fn cmd(args: RenderArgs) -> Result<()> {
     let render_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(filename)?;
@@ -80,11 +98,12 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     if args.input.parent().is_some() {
         std::env::set_current_dir(&orig_wd)?;
     }
-    let v = VertebraeTL::try_from(&data.data)?;
-    let corners = Corners::from(v);
-    let centroids = Centroids::try_from(&corners)?;
+    let scol = scolrs::Scoliosis::try_from(&data.data)?;
+    // let v = VertebraeTL::try_from(&data.data)?;
+    let corners = scol.tl_corners();
+    let centroids = scol.tl_centroids();
     let discs = corners.between();
-    let disc_centroids = Centroids::try_from(&discs)?;
+    // let disc_centroids = Centroids::try_from(&discs)?;
 
     let label_colors = if let Some(filename) = args.label_colors {
         labelme_rs::load_label_colors(&filename)?
@@ -115,12 +134,12 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     let mut g_vert_labels = element::Group::new()
         .set("text-anchor", "middle")
         .set("dominant-baseline", "central")
-        .set("stroke", render_param.text_stroke)
-        .set("stroke_width", "1px")
-        .set("fill", render_param.text_fill)
+        .set("stroke", render_param.text_stroke.as_str())
+        .set("stroke-width", render_param.text_stroke_width)
+        .set("fill", render_param.text_fill.as_str())
         .set("style", "font-size: 24px; font-family:sans-serif");
     for (coords, label) in std::iter::zip(
-        centroids.0.axis_iter(ndarray::Axis(0)),
+        centroids.axis_iter(ndarray::Axis(0)),
         VERTEBRAL_LABELS.into_iter(),
     ) {
         let t = renderer.text(label, coords);
@@ -134,11 +153,46 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     let mut g_centroids = element::Group::new()
         .set("class", "centroids")
         .set("fill", color);
-    for point in centroids.0.axis_iter(ndarray::Axis(0)) {
+    for point in centroids.axis_iter(ndarray::Axis(0)) {
         let p = renderer.point(point);
         g_centroids = g_centroids.add(p);
     }
     document = document.add(g_centroids);
+
+    let curve = scolrs::Curve { sup: 5, inf: 10 };
+    let sup_plate = scol.tl_sup_plate(curve.sup);
+    let inf_plate = scol.tl_inf_plate(curve.inf);
+    let sup_line = plate2line(sup_plate);
+    let inf_line = plate2line(inf_plate);
+    let linter = sup_line.intersection(&inf_line);
+    if let Some(intersection) = linter {
+        let mut g_angle = element::Group::new()
+            .set("class", "angle")
+            .set("line-width", render_param.line_width)
+            .set("stroke", "lime");
+        for plate in [sup_plate, inf_plate] {
+            let line = element::Line::new()
+                .set("x1", plate[[0, 0]])
+                .set("y1", plate[[0, 1]])
+                .set("x2", intersection.x)
+                .set("y2", intersection.y);
+            g_angle = g_angle.add(line);
+        }
+        if let Some(angle) = scol.angle(&curve) {
+            let text = renderer
+                .text(
+                    format!("{:.1}°", angle.to_degrees()).as_str(),
+                    ndarray::arr1(&[intersection.x, intersection.y]),
+                )
+                .set("stroke", render_param.text_stroke.as_str())
+                .set("stroke-width", render_param.text_stroke_width)
+                .set("fill", render_param.text_fill.as_str());
+
+            g_angle = g_angle.add(text);
+        }
+        document = document.add(g_angle);
+    }
+    scol.find_largest_curve();
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

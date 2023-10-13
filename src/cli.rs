@@ -12,10 +12,11 @@ pub struct Cli {
 pub enum Command {
     /// Create SVG
     Render(RenderArgs),
+    /// Determine curves
+    Curve(CurveArgs),
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
 pub struct RenderArgs {
     /// Input labelme json filename
     pub input: PathBuf,
@@ -27,4 +28,12 @@ pub struct RenderArgs {
     /// Label colors in yaml
     #[clap(long)]
     pub label_colors: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct CurveArgs {
+    /// Input labelme json filename
+    pub input: PathBuf,
+    /// Output json filename
+    pub output: PathBuf,
 }
