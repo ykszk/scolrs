@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use scolrs::{Centroids, Corners, VertebraeTL};
 use scolrs::{RenderParam, VERTEBRAL_LABELS};
@@ -88,7 +88,8 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     } else {
         RenderParam::default()
     };
-    let s = std::fs::read_to_string(&args.input)?;
+    let s = std::fs::read_to_string(&args.input)
+        .with_context(|| format!("reading file {:?}", &args.input))?;
     let data: LabelMeData = s.as_str().try_into()?;
     let orig_wd = std::env::current_dir()?;
     if let Some(parent) = args.input.parent() {
@@ -102,7 +103,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     // let v = VertebraeTL::try_from(&data.data)?;
     let corners = scol.tl_corners();
     let centroids = scol.tl_centroids();
-    let discs = corners.between();
+    // let discs = corners.between();
     // let disc_centroids = Centroids::try_from(&discs)?;
 
     let label_colors = if let Some(filename) = args.label_colors {
@@ -159,7 +160,8 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     }
     document = document.add(g_centroids);
 
-    let curve = scolrs::Curve { sup: 5, inf: 10 };
+    let curve = scol.find_largest_curve();
+    println!("largest curve: {:?}", &curve);
     let sup_plate = scol.tl_sup_plate(curve.sup);
     let inf_plate = scol.tl_inf_plate(curve.inf);
     let sup_line = plate2line(sup_plate);
@@ -171,11 +173,18 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             .set("line-width", render_param.line_width)
             .set("stroke", "lime");
         for plate in [sup_plate, inf_plate] {
+            // TODO: simplify drawing
             let line = element::Line::new()
                 .set("x1", plate[[0, 0]])
                 .set("y1", plate[[0, 1]])
                 .set("x2", intersection.x)
                 .set("y2", intersection.y);
+            g_angle = g_angle.add(line);
+            let line = element::Line::new()
+                .set("x1", plate[[0, 0]])
+                .set("y1", plate[[0, 1]])
+                .set("x2", plate[[1, 0]])
+                .set("y2", plate[[1, 1]]);
             g_angle = g_angle.add(line);
         }
         if let Some(angle) = scol.angle(&curve) {
@@ -192,7 +201,6 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         }
         document = document.add(g_angle);
     }
-    scol.find_largest_curve();
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

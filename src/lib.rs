@@ -13,15 +13,12 @@ fn default_radius() -> usize {
 fn default_line_width() -> usize {
     2
 }
-
 fn default_text_stroke() -> String {
     "black".into()
 }
-
 fn default_text_stroke_width() -> usize {
     1
 }
-
 fn default_text_fill() -> String {
     "white".into()
 }
@@ -157,6 +154,7 @@ pub struct Scoliosis {
     c_c7tl: Centroids,
 }
 
+#[derive(Debug, Clone)]
 pub struct Curve {
     pub sup: usize,
     pub inf: usize,
@@ -235,9 +233,11 @@ impl Scoliosis {
     }
     pub fn find_largest_curve(&self) -> Curve {
         let centroids = self.tl_centroids();
+        let tl_corners = self.tl_corners();
         let mut angles: Vec<f32> = Vec::new();
-        for sup in 0..(self.tl_corners().0.len() - 2) {
-            for inf in 2..self.tl_corners().0.len() {
+        let mut curves: Vec<Curve> = Vec::new();
+        for sup in 0..(tl_corners.0.len_of(Axis(0)) - 2) {
+            for inf in 2..tl_corners.0.len_of(Axis(0)) {
                 let c_sup = centroids.index_axis(Axis(0), sup);
                 let c_inf = centroids.index_axis(Axis(0), inf);
                 let sup2inf: lyon_geom::LineSegment<f32> =
@@ -254,17 +254,29 @@ impl Scoliosis {
                     .collect::<Option<Vec<_>>>()
                     .is_some();
                 if !crossing {
-                    if let Some(angle) = self.angle(&Curve { sup, inf }) {
+                    let curve = Curve { sup, inf };
+                    if let Some(angle) = self.angle(&curve) {
                         angles.push(angle);
+                        curves.push(curve);
                     }
                 }
             }
         }
         println!("{:?}", angles);
-        let sup = 2;
-        let inf = 5;
-        Curve { sup, inf }
+        let (i_max, max_value) = angles.iter().map(|e| e.abs()).enumerate().fold(
+            (0, angles[0]),
+            |(i_max, max_value), (i, value)| {
+                if value > max_value {
+                    (i, value)
+                } else {
+                    (i_max, max_value)
+                }
+            },
+        );
+        println!("{:?}, {:?}", i_max, max_value);
+        curves[i_max].clone()
     }
+
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
         let sup_line = self.tl_sup_plate(curve.sup);
         let inf_line = self.tl_inf_plate(curve.inf);
@@ -425,4 +437,24 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
         ];
         Ok(VertebraeC7TL(verts_c7_t_l))
     }
+}
+
+#[test]
+fn test_check_json() -> anyhow::Result<()> {
+    use anyhow::Context;
+    use std::path::PathBuf;
+    // use super as scolrs;
+
+    let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    tests.push("tests");
+    let json_filename = tests.join("case1/frontal.json");
+    let s = std::fs::read_to_string(&json_filename)
+        .with_context(|| format!("Opening {:?}", &json_filename))?;
+    let data: LabelMeData = s.as_str().try_into()?;
+    let scol = Scoliosis::try_from(&data)?;
+
+    let corners = scol.tl_corners();
+    let centroids = scol.tl_centroids();
+    scol.find_largest_curve();
+    Ok(())
 }
