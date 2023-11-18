@@ -160,6 +160,13 @@ pub struct Curve {
     pub inf: usize,
 }
 
+#[derive(Debug, Default)]
+pub struct CurveSet {
+    pub pt: Option<Curve>,
+    pub mt: Option<Curve>,
+    pub tll: Option<Curve>,
+}
+
 pub struct LineFactory(lyon_geom::Line<f32>);
 
 impl LineFactory {
@@ -231,40 +238,94 @@ impl Scoliosis {
     pub fn tl_inf_plate(&self, index: usize) -> ArrayView2<'_, f32> {
         self.v_c7tl.0.slice(s![index + 1, 2.., ..])
     }
-    pub fn find_largest_curve(&self) -> Curve {
-        let centroids = self.tl_centroids();
-        let tl_corners = self.tl_corners();
-        let mut angles: Vec<f32> = Vec::new();
-        let mut curves: Vec<Curve> = Vec::new();
-        for sup in 0..(tl_corners.0.len_of(Axis(0)) - 2) {
-            for inf in 2..tl_corners.0.len_of(Axis(0)) {
-                let c_sup = centroids.index_axis(Axis(0), sup);
-                let c_inf = centroids.index_axis(Axis(0), inf);
-                let sup2inf: lyon_geom::LineSegment<f32> =
-                    LineSegmentFactory::create((c_sup, c_inf));
-                let crossing = (sup..(inf - 1))
-                    .map(|in_sup| {
-                        let in_inf = in_sup + 1;
-                        let c_sup = centroids.index_axis(Axis(0), in_sup);
-                        let c_inf = centroids.index_axis(Axis(0), in_inf);
-                        let seg: lyon_geom::LineSegment<f32> =
-                            LineSegmentFactory::create((c_sup, c_inf));
-                        sup2inf.intersection(&seg).map(|_| ())
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .is_some();
-                if !crossing {
-                    let curve = Curve { sup, inf };
-                    if let Some(angle) = self.angle(&curve) {
-                        angles.push(angle);
-                        curves.push(curve);
-                    }
+
+    fn find_largest_curve(&self) -> Option<Curve> {
+        let n = self.tl_corners().0.len_of(ndarray::Axis(0));
+        let mut curves = Vec::new();
+        for sup in 0..n - 2 {
+            for inf in sup..n {
+                if self.is_valid_curve(sup, inf) {
+                    curves.push(Curve { sup, inf });
+                } else {
+                    break;
                 }
             }
         }
-        println!("{:?}", angles);
-        let (i_max, max_value) = angles.iter().map(|e| e.abs()).enumerate().fold(
-            (0, angles[0]),
+        self._find_largest_curve(curves)
+    }
+
+    fn find_largest_up(&self, inf: usize) -> Option<Curve> {
+        let mut curves = Vec::new();
+        let end = inf - 2;
+        // search sup from bottom to top (by .rev()) so that we can break early from the loop
+        for sup in (0..end).rev() {
+            if self.is_valid_curve(sup, inf) {
+                curves.push(Curve { sup, inf });
+            } else {
+                break;
+            }
+        }
+        self._find_largest_curve(curves)
+    }
+
+    fn find_largest_down(&self, sup: usize) -> Option<Curve> {
+        let n = self.tl_corners().0.len_of(ndarray::Axis(0));
+        let mut curves = Vec::new();
+        let start = (sup + 2).min(n);
+        for inf in start..n {
+            if self.is_valid_curve(sup, inf) {
+                curves.push(Curve { sup, inf });
+            } else {
+                break;
+            }
+        }
+        self._find_largest_curve(curves)
+    }
+
+    /// Curve is invalid when it contains S curve
+    fn is_valid_curve(&self, sup: usize, inf: usize) -> bool {
+        // inf - sup <= 3
+        if inf <= sup + 3 {
+            return true;
+        }
+        let centroids = self.tl_centroids();
+        let xs = centroids.slice(s![sup..inf, 0]);
+
+        // check second derivatives
+        let dx2s = -&xs.slice(s![..xs.len() - 2]) + 2.0 * &xs.slice(s![1..xs.len() - 1])
+            - xs.slice(s![2..]);
+        // implement num.sign to get signs as integers
+        let signs = dx2s.mapv(|e| {
+            if e > 0.0 {
+                1
+            } else if e < 0.0 {
+                -1
+            } else {
+                0
+            }
+        });
+        let sign = signs[0_usize];
+        let mut sing_changes = false;
+        for i in 1..signs.len() {
+            let diff = sign - signs[i];
+            if diff != 0 {
+                sing_changes = true;
+                break;
+            }
+        }
+        !sing_changes
+    }
+
+    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<Curve> {
+        let angles: Vec<_> = curves
+            .iter()
+            .filter_map(|c| self.angle(c).map(|a| (c, a)))
+            .collect();
+        if angles.is_empty() {
+            return None;
+        }
+        let (i_max, _max_value) = angles.iter().map(|e| e.1.abs()).enumerate().fold(
+            (0, angles[0].1),
             |(i_max, max_value), (i, value)| {
                 if value > max_value {
                     (i, value)
@@ -273,8 +334,17 @@ impl Scoliosis {
                 }
             },
         );
-        println!("{:?}, {:?}", i_max, max_value);
-        curves[i_max].clone()
+        Some(angles[i_max].0.clone())
+    }
+
+    pub fn find_curve_set(&self) -> CurveSet {
+        let mut curves = CurveSet::default();
+        if let Some(largest_curve) = self.find_largest_curve() {
+            curves.pt = self.find_largest_up(largest_curve.sup);
+            curves.tll = self.find_largest_down(largest_curve.inf);
+            curves.mt = Some(largest_curve);
+        }
+        curves
     }
 
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
@@ -453,8 +523,20 @@ fn test_check_json() -> anyhow::Result<()> {
     let data: LabelMeData = s.as_str().try_into()?;
     let scol = Scoliosis::try_from(&data)?;
 
-    let corners = scol.tl_corners();
-    let centroids = scol.tl_centroids();
-    scol.find_largest_curve();
+    // let corners = scol.tl_corners();
+    // let centroids = scol.tl_centroids();
+    // let start = 0;
+    // let end = scol.tl_corners().0.len_of(ndarray::Axis(0));
+    let curve_set = scol.find_curve_set();
+    let largest_curve = curve_set.mt.unwrap();
+    assert_eq!(largest_curve.sup, 4);
+    assert_eq!(largest_curve.inf, 11);
+    let pt_curve = curve_set.pt.unwrap();
+    assert_eq!(pt_curve.inf, largest_curve.sup);
+    assert_eq!(pt_curve.sup, 0);
+    let tll_curve = curve_set.tll.unwrap();
+    assert_eq!(tll_curve.sup, largest_curve.inf);
+    assert_eq!(tll_curve.inf, 16);
+
     Ok(())
 }

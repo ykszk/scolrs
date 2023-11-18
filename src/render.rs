@@ -1,9 +1,9 @@
-use std::ops::SubAssign;
+use std::ops::{AddAssign, SubAssign};
 
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use ndarray::s;
-use scolrs::{Centroids, Corners, VertebraeTL};
+// use scolrs::{Centroids, Corners, VertebraeTL};
 use scolrs::{RenderParam, VERTEBRAL_LABELS};
 use svg::node::element;
 
@@ -11,11 +11,44 @@ use crate::cli::RenderArgs;
 
 struct Renderer {
     param: RenderParam,
+    size: (usize, usize),
 }
 
+fn squared_distance<S>(
+    p1: ndarray::ArrayBase<S, ndarray::Ix1>,
+    p2: ndarray::ArrayBase<S, ndarray::Ix1>,
+) -> f32
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    (&p1 - &p2).mapv(|a| a * a).sum()
+}
+
+fn distanced_pair3<S>(
+    p1: ndarray::ArrayBase<S, ndarray::Ix1>,
+    p2: ndarray::ArrayBase<S, ndarray::Ix1>,
+    p3: ndarray::ArrayBase<S, ndarray::Ix1>,
+) -> (
+    ndarray::ArrayBase<S, ndarray::Ix1>,
+    ndarray::ArrayBase<S, ndarray::Ix1>,
+)
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    let d1 = squared_distance(p1.view(), p2.view());
+    let d2 = squared_distance(p2.view(), p3.view());
+    let d3 = squared_distance(p1.view(), p3.view());
+    if d1 > d3 && d1 > d2 {
+        (p1, p2)
+    } else if d2 > d3 && d2 > d1 {
+        (p2, p3)
+    } else {
+        (p1, p3)
+    }
+}
 impl Renderer {
-    fn new(param: RenderParam) -> Self {
-        Self { param }
+    fn new(param: RenderParam, size: (usize, usize)) -> Self {
+        Self { param, size }
     }
 
     fn point<S>(&self, point: ndarray::ArrayBase<S, ndarray::Ix1>) -> svg::node::element::Circle
@@ -53,6 +86,133 @@ impl Renderer {
             .add(svg::node::Text::new(text))
     }
 
+    fn plate_end<S, T>(
+        plate: ndarray::ArrayBase<S, ndarray::Ix2>,
+        point: ndarray::ArrayBase<T, ndarray::Ix1>,
+    ) -> usize
+    where
+        S: ndarray::Data<Elem = f32>,
+        T: ndarray::Data<Elem = f32>,
+    {
+        let p0_p1: ndarray::Array1<_> = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
+        let p0_pts: ndarray::Array1<_> = &point - &plate.slice(s![0, ..]);
+        let dot_prod = p0_p1.dot(&p0_pts);
+        if dot_prod > 0.0 {
+            0
+        } else {
+            1
+        }
+    }
+
+    fn rotate_around<S, T>(
+        point: ndarray::ArrayBase<S, ndarray::Ix1>,
+        origin: ndarray::ArrayBase<T, ndarray::Ix1>,
+        rad_angle: f32,
+    ) -> ndarray::Array1<f32>
+    where
+        S: ndarray::Data<Elem = f32>,
+        T: ndarray::Data<Elem = f32>,
+    {
+        let point = &point - &origin;
+        let s = rad_angle.sin();
+        let c = rad_angle.cos();
+        let rot = ndarray::arr2(&[[c, -s], [s, c]]);
+        let mut rotated = point.dot(&rot);
+        rotated.add_assign(&origin);
+        rotated
+    }
+
+    fn cobb(
+        &self,
+        mut group: element::Group,
+        scol: &scolrs::Scoliosis,
+        curve: &scolrs::Curve,
+    ) -> element::Group {
+        let sup_plate = scol.tl_sup_plate(curve.sup);
+        let inf_plate = scol.tl_inf_plate(curve.inf);
+        let sup_line = plate2line(sup_plate);
+        let inf_line = plate2line(inf_plate);
+
+        let linter = sup_line.intersection(&inf_line);
+        if let Some(intersection) = linter {
+            let is_inside = intersection.x > 0.0
+                && intersection.x < self.size.0 as f32
+                && intersection.y > 0.0
+                && intersection.y < self.size.1 as f32;
+            let angle = scol.angle(&curve).unwrap(); // lines can't be parallel if there is an intersection point
+            if is_inside {
+                // draw intersection point
+                for plate in [sup_plate, inf_plate] {
+                    let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
+                    let i = Self::plate_end(plate, arr_int);
+                    let line = self.line(ndarray::arr2(&[
+                        [plate[[i, 0]], plate[[i, 1]]],
+                        [intersection.x, intersection.y],
+                    ]));
+                    group = group.add(line);
+                }
+                let text = self
+                    .text(
+                        format!("{:.1}°", angle.to_degrees()).as_str(),
+                        ndarray::arr1(&[intersection.x, intersection.y]),
+                    )
+                    .set("stroke", self.param.text_stroke.as_str())
+                    .set("stroke-width", self.param.text_stroke_width)
+                    .set("fill", self.param.text_fill.as_str());
+
+                group = group.add(text);
+            } else {
+                // draw aux lines and its intersection
+                let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
+                let i = Self::plate_end(sup_plate, arr_int.view());
+                let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
+                let aux_scale = 4.0;
+                let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![i, ..]) + aux_scale * &d;
+                let aux_point = Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle / 2.0);
+
+                for plate in [sup_plate, inf_plate] {
+                    let i = Self::plate_end(sup_plate, arr_int.view());
+                    let d = &plate.slice(s![1 - i, ..]) - &plate.slice(s![i, ..]);
+                    let d_aux = &aux_point - &plate.slice(s![i, ..]);
+                    let t = d_aux.dot(&d) / d.mapv(|a| a * a).sum();
+                    let projed_aux = &plate.slice(s![i, ..]) + t * &d;
+                    let (p1, p2) = distanced_pair3(
+                        plate.slice(s![0, ..]),
+                        plate.slice(s![1, ..]),
+                        projed_aux.view(),
+                    );
+                    let line = self.line(ndarray::stack![ndarray::Axis(0), p1, p2]);
+                    group = group.add(line);
+                    let pa_a = &aux_point - &projed_aux;
+                    let line = self.line(ndarray::stack![
+                        ndarray::Axis(0),
+                        1.4 * pa_a + &projed_aux,
+                        projed_aux
+                    ]);
+                    group = group.add(line);
+                }
+                let text = self
+                    .text(format!("{:.1}°", angle.to_degrees()).as_str(), aux_point)
+                    .set("stroke", self.param.text_stroke.as_str())
+                    .set("stroke-width", self.param.text_stroke_width)
+                    .set("fill", self.param.text_fill.as_str())
+                    .set("style", "font-size: 24px; font-family:sans-serif");
+                group = group.add(text);
+            }
+        } else {
+            // parallel lines
+            for plate in [sup_plate, inf_plate] {
+                let mut line = plate.to_owned();
+                let d = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
+                line.slice_mut(s![0, ..]).sub_assign(&d);
+                line.slice_mut(s![1, ..]).sub_assign(&-d);
+                let line = self.line(plate);
+                group = group.add(line);
+            }
+        }
+        group
+    }
+
     fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
         let (image_width, image_height) = image.dimensions();
         let mut document = svg::Document::new()
@@ -77,7 +237,10 @@ impl Renderer {
 
 const CLS_POINT: &str = "Points";
 
-fn plate2line(plate: ndarray::ArrayView2<'_, f32>) -> lyon_geom::Line<f32> {
+fn plate2line<S>(plate: ndarray::ArrayBase<S, ndarray::Ix2>) -> lyon_geom::Line<f32>
+where
+    S: ndarray::Data<Elem = f32>,
+{
     let point = lyon_geom::Point::new(plate[[0, 0]], plate[[0, 1]]);
     let p2 = lyon_geom::Point::new(plate[[1, 0]], plate[[1, 1]]);
     let vector = p2 - point;
@@ -116,7 +279,10 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     };
     let mut color_cycler = labelme_rs::ColorCycler::new();
 
-    let renderer = Renderer::new(render_param.clone());
+    let renderer = Renderer::new(
+        render_param.clone(),
+        (data.image.width() as usize, data.image.height() as usize),
+    );
     let mut document = renderer.doc_w_background(&data.image);
     let mut g_corners = element::Group::new();
     for (i_label, label) in scolrs::CORNER_LABELS.iter().enumerate() {
@@ -161,54 +327,33 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         g_centroids = g_centroids.add(p);
     }
     document = document.add(g_centroids);
+    let curve_set = scol.find_curve_set();
+    println!("curve set:{:?}", curve_set);
+    if let Some(largest_curve) = curve_set.mt {
+        let g_mt = element::Group::new()
+            .set("class", "MT")
+            .set("line-width", renderer.param.line_width)
+            .set("stroke", "lime");
+        let group = renderer.cobb(g_mt, &scol, &largest_curve);
+        document = document.add(group);
+    }
 
-    let curve = scol.find_largest_curve();
-    println!("largest curve: {:?}", &curve);
-    let sup_plate = scol.tl_sup_plate(curve.sup);
-    let inf_plate = scol.tl_inf_plate(curve.inf);
-    let sup_line = plate2line(sup_plate);
-    let inf_line = plate2line(inf_plate);
-    let linter = sup_line.intersection(&inf_line);
-    let mut g_angle = element::Group::new()
-        .set("class", "angle")
-        .set("line-width", render_param.line_width)
-        .set("stroke", "lime");
-    if let Some(intersection) = linter {
-        for plate in [sup_plate, inf_plate] {
-            let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-            let d: ndarray::Array1<_> = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
-            let p0toi: ndarray::Array1<_> = &arr_int - &plate.slice(s![0, ..]);
-            let dot_prod = d[0] * &p0toi[0] + d[1] * p0toi[1];
-            let i = if dot_prod > 0.0 { 0 } else { 1 };
-            let line = renderer.line(ndarray::arr2(&[
-                [plate[[i, 0]], plate[[i, 1]]],
-                [intersection.x, intersection.y],
-            ]));
-            g_angle = g_angle.add(line);
-        }
-        if let Some(angle) = scol.angle(&curve) {
-            let text = renderer
-                .text(
-                    format!("{:.1}°", angle.to_degrees()).as_str(),
-                    ndarray::arr1(&[intersection.x, intersection.y]),
-                )
-                .set("stroke", render_param.text_stroke.as_str())
-                .set("stroke-width", render_param.text_stroke_width)
-                .set("fill", render_param.text_fill.as_str());
+    if let Some(pt_curve) = curve_set.pt {
+        let g_pt = element::Group::new()
+            .set("class", "PT")
+            .set("line-width", renderer.param.line_width)
+            .set("stroke", "red");
+        let group = renderer.cobb(g_pt, &scol, &pt_curve);
+        document = document.add(group);
+    }
 
-            g_angle = g_angle.add(text);
-        }
-        document = document.add(g_angle);
-    } else {
-        // parallel lines
-        for plate in [sup_plate, inf_plate] {
-            let mut line = plate.to_owned();
-            let d = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
-            line.slice_mut(s![0, ..]).sub_assign(&d);
-            line.slice_mut(s![1, ..]).sub_assign(&-d);
-            let line = renderer.line(plate);
-            g_angle = g_angle.add(line);
-        }
+    if let Some(tll_curve) = curve_set.tll {
+        let g_tll = element::Group::new()
+            .set("class", "TLL")
+            .set("line-width", renderer.param.line_width)
+            .set("stroke", "blue");
+        let group = renderer.cobb(g_tll, &scol, &tll_curve);
+        document = document.add(group);
     }
 
     std::fs::write(args.output, document.to_string())?;
