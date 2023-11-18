@@ -1,5 +1,8 @@
+use std::ops::SubAssign;
+
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
+use ndarray::s;
 use scolrs::{Centroids, Corners, VertebraeTL};
 use scolrs::{RenderParam, VERTEBRAL_LABELS};
 use svg::node::element;
@@ -166,24 +169,21 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     let sup_line = plate2line(sup_plate);
     let inf_line = plate2line(inf_plate);
     let linter = sup_line.intersection(&inf_line);
+    let mut g_angle = element::Group::new()
+        .set("class", "angle")
+        .set("line-width", render_param.line_width)
+        .set("stroke", "lime");
     if let Some(intersection) = linter {
-        let mut g_angle = element::Group::new()
-            .set("class", "angle")
-            .set("line-width", render_param.line_width)
-            .set("stroke", "lime");
         for plate in [sup_plate, inf_plate] {
-            // TODO: simplify drawing
-            let line = element::Line::new()
-                .set("x1", plate[[0, 0]])
-                .set("y1", plate[[0, 1]])
-                .set("x2", intersection.x)
-                .set("y2", intersection.y);
-            g_angle = g_angle.add(line);
-            let line = element::Line::new()
-                .set("x1", plate[[0, 0]])
-                .set("y1", plate[[0, 1]])
-                .set("x2", plate[[1, 0]])
-                .set("y2", plate[[1, 1]]);
+            let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
+            let d: ndarray::Array1<_> = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
+            let p0toi: ndarray::Array1<_> = &arr_int - &plate.slice(s![0, ..]);
+            let dot_prod = d[0] * &p0toi[0] + d[1] * p0toi[1];
+            let i = if dot_prod > 0.0 { 0 } else { 1 };
+            let line = renderer.line(ndarray::arr2(&[
+                [plate[[i, 0]], plate[[i, 1]]],
+                [intersection.x, intersection.y],
+            ]));
             g_angle = g_angle.add(line);
         }
         if let Some(angle) = scol.angle(&curve) {
@@ -199,6 +199,16 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             g_angle = g_angle.add(text);
         }
         document = document.add(g_angle);
+    } else {
+        // parallel lines
+        for plate in [sup_plate, inf_plate] {
+            let mut line = plate.to_owned();
+            let d = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
+            line.slice_mut(s![0, ..]).sub_assign(&d);
+            line.slice_mut(s![1, ..]).sub_assign(&-d);
+            let line = renderer.line(plate);
+            g_angle = g_angle.add(line);
+        }
     }
 
     std::fs::write(args.output, document.to_string())?;
