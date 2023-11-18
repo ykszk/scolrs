@@ -148,12 +148,11 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     }
     document = document.add(g_vert_labels);
 
+    let label = "Centroid";
     let color = label_colors
-        .get("centroid")
+        .get(label)
         .map_or_else(|| color_cycler.cycle(), |s| s.as_str());
-    let mut g_centroids = element::Group::new()
-        .set("class", "centroids")
-        .set("fill", color);
+    let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
     for point in centroids.axis_iter(ndarray::Axis(0)) {
         let p = renderer.point(point);
         g_centroids = g_centroids.add(p);

@@ -14,6 +14,8 @@ label_colors:
     "Screw": [106, 90, 205], # slateblue
     "Hook": [64, 224, 208], # turquoise
 
+    "Centroid": [255, 165, 0], # orange
+
     "Brow": [255, 0, 255],
     "Sella": [0, 255, 255],
     "ExternalAuditoryCanal": [200, 0, 200],
