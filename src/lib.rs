@@ -23,6 +23,9 @@ fn default_text_fill() -> String {
     "white".into()
 }
 
+mod defs;
+pub use defs::*;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParam {
     /// Point radius
@@ -83,70 +86,6 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     }
     let arr = Array2::from_shape_vec((tuples.len(), 2), vec).unwrap();
     Ok(arr)
-}
-
-pub const CORNER_LABELS: [&str; 4] = ["TL", "TR", "BL", "BR"];
-pub const VERTEBRAL_LABELS: [&str; 18] = [
-    "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1", "L2", "L3",
-    "L4", "L5", "L6",
-];
-pub enum VertebralIndex {
-    T1 = 0,
-    T2 = 1,
-    T3 = 2,
-    T4 = 3,
-    T5 = 4,
-    T6 = 5,
-    T7 = 6,
-    T8 = 7,
-    T9 = 8,
-    T10 = 9,
-    T11 = 10,
-    T12 = 11,
-    L1 = 12,
-    L2 = 13,
-    L3 = 14,
-    L4 = 15,
-    L5 = 16,
-    L6 = 17,
-}
-
-pub enum VertebraDiscIndex {
-    T1 = 0,
-    DT1T2 = 1,
-    T2 = 2,
-    DT2T3 = 3,
-    T3 = 4,
-    DT3T4 = 5,
-    T4 = 6,
-    DT4T5 = 7,
-    T5 = 8,
-    DT5T6 = 9,
-    T6 = 10,
-    DT6T7 = 11,
-    T7 = 12,
-    DT7T8 = 13,
-    T8 = 14,
-    DT8T9 = 15,
-    T9 = 16,
-    DT9T10 = 17,
-    T10 = 18,
-    DT10T11 = 19,
-    T11 = 20,
-    DT11T12 = 21,
-    T12 = 22,
-    DT12L1 = 23,
-    L1 = 24,
-    DL1L2 = 25,
-    L2 = 26,
-    DL2L3 = 27,
-    L3 = 28,
-    DL3L4 = 29,
-    L4 = 30,
-    DL4L5 = 31,
-    L5 = 32,
-    DL5L6 = 33,
-    L6 = 34,
 }
 
 pub struct Scoliosis {
@@ -393,22 +332,7 @@ impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
     }
 }
 
-// impl<'a> TryFrom<&LabelMeData> for VertebraeTL<'a> {
-//     type Error = anyhow::Error;
-
-//     fn try_from(data: &LabelMeData) -> std::result::Result<Self, Self::Error> {
-//         let c7tl: VertebraeC7TL = data.try_into()?;
-//         Ok(Self(c7tl.0.view()))
-//     }
-// }
-
 pub struct Corners<S: Data<Elem = f32>>(pub ArrayBase<S, ndarray::Ix3>);
-
-// impl<'a, S: Data<Elem = f32>> From<VertebraeTL<'a>> for Corners<S> {
-//     fn from(value: VertebraeTL) -> Self {
-//         Self(value.0)
-//     }
-// }
 
 impl<S: Data<Elem = f32>> Corners<S> {
     pub fn between(&self) -> Array3<f32> {
@@ -513,7 +437,6 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
 fn test_check_json() -> anyhow::Result<()> {
     use anyhow::Context;
     use std::path::PathBuf;
-    // use super as scolrs;
 
     let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     tests.push("tests");
@@ -523,10 +446,6 @@ fn test_check_json() -> anyhow::Result<()> {
     let data: LabelMeData = s.as_str().try_into()?;
     let scol = Scoliosis::try_from(&data)?;
 
-    // let corners = scol.tl_corners();
-    // let centroids = scol.tl_centroids();
-    // let start = 0;
-    // let end = scol.tl_corners().0.len_of(ndarray::Axis(0));
     let curve_set = scol.find_curve_set();
     let largest_curve = curve_set.mt.unwrap();
     assert_eq!(largest_curve.sup, 4);
