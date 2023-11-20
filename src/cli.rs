@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -28,12 +28,13 @@ pub struct RenderArgs {
     /// Label colors in yaml
     #[clap(long)]
     pub label_colors: Option<PathBuf>,
+    /// Line colors in csv with `label` and `color` columns
+    #[clap(long)]
+    pub line_colors: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
 pub struct CurveArgs {
     /// Input labelme json filename
     pub input: PathBuf,
-    /// Output json filename
-    pub output: PathBuf,
 }

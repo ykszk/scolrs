@@ -1,9 +1,14 @@
 use labelme_rs::LabelMeData;
 use ndarray::{
-    s, stack, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
+    s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
 };
+use ndarray_linalg::Solve;
+use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::Read;
 use std::iter::zip;
+use std::ops::AddAssign;
 use std::result::Result;
 use thiserror::Error;
 
@@ -11,7 +16,7 @@ fn default_radius() -> usize {
     2
 }
 fn default_line_width() -> usize {
-    2
+    1
 }
 fn default_text_stroke() -> String {
     "black".into()
@@ -88,22 +93,73 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     Ok(arr)
 }
 
+pub fn polyfit<S>(
+    xs: ndarray::ArrayBase<S, ndarray::Ix1>,
+    ys: ndarray::ArrayBase<S, ndarray::Ix1>,
+    deg: usize,
+) -> ndarray_linalg::error::Result<ndarray::Array1<f32>>
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    let mut vander = Array2::zeros([xs.len(), deg + 1]);
+
+    // f64 is required for higher degrees
+    let xs = xs.mapv(|x| x as f64);
+    let ys = ys.mapv(|x| x as f64);
+
+    for d in 0..=deg {
+        vander
+            .slice_mut(s![.., d])
+            .assign(&xs.mapv(|x| x.powi(d as i32)));
+    }
+
+    vander
+        .t()
+        .dot(&vander)
+        .solve(&vander.t().dot(&ys))
+        .map(|arr| arr.mapv(|x| x as f32))
+}
+
+pub fn polynomial<S, T>(
+    xs: ndarray::ArrayBase<S, ndarray::Ix1>,
+    coef: ndarray::ArrayBase<T, ndarray::Ix1>,
+) -> Array1<f32>
+where
+    S: ndarray::Data<Elem = f32>,
+    T: ndarray::Data<Elem = f32>,
+{
+    let xs = xs.mapv(|x| x as f64);
+    let coef = coef.mapv(|x| x as f64);
+    let mut ys: Array1<f64> = ndarray::Array::zeros(xs.len());
+    for (i, c) in coef.iter().enumerate() {
+        ys.add_assign(&xs.mapv(|x| c * x.powi(i as i32)));
+    }
+    ys.mapv(|e| e as f32)
+}
+
 pub struct Scoliosis {
     v_c7tl: VertebraeC7TL,
     c_c7tl: Centroids,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Curve {
     pub sup: usize,
     pub inf: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CurveSet {
     pub pt: Option<Curve>,
     pub mt: Option<Curve>,
     pub tll: Option<Curve>,
+}
+
+#[derive(Debug, Default)]
+pub struct ApexSet {
+    pub pt: Option<VertebraDiscIndex>,
+    pub mt: Option<VertebraDiscIndex>,
+    pub tll: Option<VertebraDiscIndex>,
 }
 
 pub struct LineFactory(lyon_geom::Line<f32>);
@@ -161,6 +217,25 @@ impl Scoliosis {
         let tl = self.v_c7tl.0.slice(s![1.., .., ..]);
         Corners(tl)
     }
+
+    pub fn tl_vert_disc_corners(&self) -> Corners<ndarray::OwnedRepr<f32>> {
+        let vert_corners = self.tl_corners();
+        let disc_corners = vert_corners.between();
+        let mut vert_disc_corners: Array3<f32> = ndarray::Array::zeros((
+            vert_corners.0.len_of(Axis(0)) + disc_corners.len_of(Axis(0)),
+            4,
+            2,
+        ));
+        for (i, vc) in vert_corners.0.axis_iter(Axis(0)).enumerate() {
+            vert_disc_corners.slice_mut(s![2 * i, .., ..]).assign(&vc);
+        }
+        for (i, vc) in disc_corners.axis_iter(Axis(0)).enumerate() {
+            vert_disc_corners
+                .slice_mut(s![2 * i + 1, .., ..])
+                .assign(&vc);
+        }
+        Corners(vert_disc_corners)
+    }
     pub fn tl_sup_lines(&self) -> ArrayView3<'_, f32> {
         self.v_c7tl.0.slice(s![1.., ..2, ..])
     }
@@ -176,6 +251,12 @@ impl Scoliosis {
     }
     pub fn tl_inf_plate(&self, index: usize) -> ArrayView2<'_, f32> {
         self.v_c7tl.0.slice(s![index + 1, 2.., ..])
+    }
+
+    pub fn spinal_poly(&self) -> ndarray_linalg::error::Result<ndarray::Array1<f32>> {
+        let centroids = self.tl_centroids();
+        let coefs = polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6);
+        coefs
     }
 
     fn find_largest_curve(&self) -> Option<Curve> {
@@ -195,6 +276,9 @@ impl Scoliosis {
 
     fn find_largest_up(&self, inf: usize) -> Option<Curve> {
         let mut curves = Vec::new();
+        if inf <= 1 {
+            return None;
+        }
         let end = inf - 2;
         // search sup from bottom to top (by .rev()) so that we can break early from the loop
         for sup in (0..end).rev() {
@@ -221,16 +305,16 @@ impl Scoliosis {
         self._find_largest_curve(curves)
     }
 
-    /// Curve is invalid when it contains S curve
+    /// Curve is invalid when it contains S curve, i.e. checking if the curve is convex
     fn is_valid_curve(&self, sup: usize, inf: usize) -> bool {
-        // inf - sup <= 3
-        if inf <= sup + 3 {
+        // inf - sup <= 2
+        if inf <= sup + 2 {
             return true;
         }
         let centroids = self.tl_centroids();
         let xs = centroids.slice(s![sup..inf, 0]);
 
-        // check second derivatives
+        // check if the second derivatives have the same sign
         let dx2s = -&xs.slice(s![..xs.len() - 2]) + 2.0 * &xs.slice(s![1..xs.len() - 1])
             - xs.slice(s![2..]);
         // implement num.sign to get signs as integers
@@ -276,14 +360,49 @@ impl Scoliosis {
         Some(angles[i_max].0.clone())
     }
 
-    pub fn find_curve_set(&self) -> CurveSet {
+    fn find_apex(&self, curve: &Curve) -> ndarray_linalg::error::Result<VertebraDiscIndex> {
+        let coefs = self.spinal_poly()?;
+        let vert_disc_corners = self.tl_vert_disc_corners();
+        let vd_centroids: Centroids = vert_disc_corners.into();
+        let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
+        let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
+        let xs = polynomial(vd_centroids.0.slice(s![sup..=inf, 1]), coefs);
+        let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
+        let i_max = ts.argmax().unwrap();
+        let i_apex = VertebraDiscIndex::from((i_max + sup) as u8);
+        Ok(i_apex)
+    }
+
+    pub fn find_curve_set(&self) -> (CurveSet, ApexSet) {
         let mut curves = CurveSet::default();
+        let mut apexes = ApexSet::default();
         if let Some(largest_curve) = self.find_largest_curve() {
-            curves.pt = self.find_largest_up(largest_curve.sup);
-            curves.tll = self.find_largest_down(largest_curve.inf);
-            curves.mt = Some(largest_curve);
+            let major_apex = self.find_apex(&largest_curve).unwrap();
+            if major_apex <= VertebraDiscIndex::T5 {
+                // largest curve is PT
+                if let Some(mt) = self.find_largest_down(largest_curve.inf) {
+                    curves.tll = self.find_largest_down(mt.inf);
+                    curves.mt = Some(mt);
+                }
+                curves.pt = Some(largest_curve);
+                apexes.pt = Some(major_apex);
+            } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
+                // largest curve is MT
+                curves.pt = self.find_largest_up(largest_curve.sup);
+                curves.tll = self.find_largest_down(largest_curve.inf);
+                curves.mt = Some(largest_curve);
+                apexes.mt = Some(major_apex);
+            } else {
+                // largest curve is TLL
+                if let Some(mt) = self.find_largest_up(largest_curve.sup) {
+                    curves.pt = self.find_largest_up(mt.sup);
+                    curves.mt = Some(mt);
+                }
+                curves.tll = Some(largest_curve);
+                apexes.tll = Some(major_apex);
+            };
         }
-        curves
+        (curves, apexes)
     }
 
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
@@ -332,12 +451,14 @@ impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
     }
 }
 
+/// Corner points of structures.
+/// Points are in [tl, tr, bl, br] order
 pub struct Corners<S: Data<Elem = f32>>(pub ArrayBase<S, ndarray::Ix3>);
 
 impl<S: Data<Elem = f32>> Corners<S> {
     pub fn between(&self) -> Array3<f32> {
-        let bottom = self.0.slice(s![..(self.0.shape()[0] - 1), ..2, ..]);
-        let top = self.0.slice(s![1.., 2.., ..]);
+        let bottom = self.0.slice(s![1.., ..2, ..]);
+        let top = self.0.slice(s![..(self.0.shape()[0] - 1), 2.., ..]);
         let between = ndarray::concatenate![Axis(1), top, bottom];
         between
     }
@@ -433,29 +554,123 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
     }
 }
 
-#[test]
-fn test_check_json() -> anyhow::Result<()> {
-    use anyhow::Context;
+pub type LineColors = HashMap<String, String>;
+
+#[derive(Debug, serde::Deserialize)]
+struct LineColor {
+    label: String,
+    color: String,
+}
+
+pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
+    let mut rdr = csv::Reader::from_reader(reader);
+    let mut colors = LineColors::new();
+    for result in rdr.deserialize() {
+        let lc: LineColor = result?;
+        colors.insert(lc.label, lc.color);
+    }
+    Ok(colors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Corners, Scoliosis, VertebraDiscIndex, VertebralIndex};
+    use anyhow::{Context, Result};
+    use labelme_rs::LabelMeData;
+    use ndarray::{arr3, Array3};
+    use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
-    let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    tests.push("tests");
-    let json_filename = tests.join("case1/frontal.json");
-    let s = std::fs::read_to_string(&json_filename)
-        .with_context(|| format!("Opening {:?}", &json_filename))?;
-    let data: LabelMeData = s.as_str().try_into()?;
-    let scol = Scoliosis::try_from(&data)?;
+    #[test]
+    fn test_case1() -> Result<()> {
+        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tests.push("tests");
+        let json_filename = tests.join("case1/frontal.json");
+        let s = std::fs::read_to_string(&json_filename)
+            .with_context(|| format!("Opening {:?}", &json_filename))?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        let scol = Scoliosis::try_from(&data)?;
 
-    let curve_set = scol.find_curve_set();
-    let largest_curve = curve_set.mt.unwrap();
-    assert_eq!(largest_curve.sup, 4);
-    assert_eq!(largest_curve.inf, 11);
-    let pt_curve = curve_set.pt.unwrap();
-    assert_eq!(pt_curve.inf, largest_curve.sup);
-    assert_eq!(pt_curve.sup, 0);
-    let tll_curve = curve_set.tll.unwrap();
-    assert_eq!(tll_curve.sup, largest_curve.inf);
-    assert_eq!(tll_curve.inf, 16);
+        let (curve_set, apex_set) = scol.find_curve_set();
+        let largest_curve = curve_set.mt.unwrap();
+        assert_eq!(largest_curve.sup, VertebralIndex::T5 as usize);
+        assert_eq!(largest_curve.inf, VertebralIndex::T12 as usize);
+        let pt_curve = curve_set.pt.unwrap();
+        assert_eq!(pt_curve.inf, largest_curve.sup);
+        assert_eq!(pt_curve.sup, VertebralIndex::T1 as usize);
+        let tll_curve = curve_set.tll.unwrap();
+        assert_eq!(tll_curve.sup, largest_curve.inf);
+        assert_eq!(tll_curve.inf, VertebralIndex::L5 as usize);
 
-    Ok(())
+        assert!(apex_set.pt.is_none());
+        assert!(apex_set.tll.is_none());
+        assert_eq!(apex_set.mt.unwrap(), VertebraDiscIndex::DiscT7T8);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_case2() -> Result<()> {
+        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tests.push("tests");
+        let json_filename = tests.join("case2/frontal.json");
+        let s = std::fs::read_to_string(&json_filename)
+            .with_context(|| format!("Opening {:?}", &json_filename))?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        let scol = Scoliosis::try_from(&data)?;
+
+        let (_curve_set, apex_set) = scol.find_curve_set();
+
+        // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
+
+        // largest curve is tll though.
+        assert!(apex_set.pt.is_none());
+        assert!(apex_set.mt.is_none());
+        assert!(apex_set.tll.is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_case3() -> Result<()> {
+        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tests.push("tests");
+        let json_filename = tests.join("case3/frontal.json");
+        let s = std::fs::read_to_string(&json_filename)
+            .with_context(|| format!("Opening {:?}", &json_filename))?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        let scol = Scoliosis::try_from(&data)?;
+
+        let (curve_set, apex_set) = scol.find_curve_set();
+        let mt_curve = curve_set.mt.unwrap();
+        assert_eq!(mt_curve.sup, VertebralIndex::T7 as usize);
+        assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
+        let pt_curve = curve_set.pt.unwrap();
+        assert_eq!(pt_curve.inf, mt_curve.sup);
+        assert_eq!(pt_curve.sup, VertebralIndex::T2 as usize);
+        let tll_curve = curve_set.tll.unwrap();
+        assert_eq!(tll_curve.sup, mt_curve.inf);
+        assert_eq!(tll_curve.inf, VertebralIndex::L4 as usize);
+
+        assert!(apex_set.pt.is_some());
+        assert!(apex_set.mt.is_none());
+        assert!(apex_set.tll.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_corners() -> Result<()> {
+        let arr: Array3<f32> = arr3(&[
+            [[1.0, 1.0], [2.0, 1.0], [1.0, 2.0], [2.0, 2.0]],
+            [[1.0, 3.0], [2.0, 3.0], [1.0, 4.0], [2.0, 4.0]],
+        ]);
+        let corners = Corners(arr);
+        let bet = corners.between();
+
+        let expected: Array3<f32> =
+            ndarray::arr3(&[[[1.0, 2.0], [2.0, 2.0], [1.0, 3.0], [2.0, 3.0]]]);
+        assert_eq!(bet, expected);
+        Ok(())
+    }
 }

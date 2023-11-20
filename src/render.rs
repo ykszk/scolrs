@@ -1,10 +1,11 @@
 use std::ops::{AddAssign, SubAssign};
 
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
-use ndarray::s;
+use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDataWImage};
+use ndarray::{s, Axis};
 // use scolrs::{Centroids, Corners, VertebraeTL};
-use scolrs::{RenderParam, VERTEBRAL_LABELS};
+use log::debug;
+use scolrs::{LineColors, RenderParam, VERTEBRAL_LABELS};
 use svg::node::element;
 
 use crate::cli::RenderArgs;
@@ -46,6 +47,24 @@ where
         (p1, p3)
     }
 }
+
+trait JoinWith {
+    fn join(&self, delim: &str) -> String;
+}
+
+impl<S, D> JoinWith for ndarray::ArrayBase<S, D>
+where
+    S: ndarray::Data<Elem = f32>,
+    D: ndarray::Dimension,
+{
+    fn join(&self, delim: &str) -> String {
+        self.into_iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(delim)
+    }
+}
+
 impl Renderer {
     fn new(param: RenderParam, size: (usize, usize)) -> Self {
         Self { param, size }
@@ -70,6 +89,25 @@ impl Renderer {
             .set("y1", start_end[[0, 1]])
             .set("x2", start_end[[1, 0]])
             .set("y2", start_end[[1, 1]])
+    }
+
+    fn polyline<S>(
+        &self,
+        points: ndarray::ArrayBase<S, ndarray::Ix2>,
+    ) -> svg::node::element::Polyline
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        let s = points.join(" ");
+        element::Polyline::new().set("points", s)
+    }
+
+    fn polygon<S>(&self, points: ndarray::ArrayBase<S, ndarray::Ix2>) -> svg::node::element::Polygon
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        let s = points.join(" ");
+        element::Polygon::new().set("points", s)
     }
 
     fn text<S>(
@@ -139,7 +177,7 @@ impl Renderer {
                 && intersection.x < self.size.0 as f32
                 && intersection.y > 0.0
                 && intersection.y < self.size.1 as f32;
-            let angle = scol.angle(&curve).unwrap(); // lines can't be parallel if there is an intersection point
+            let angle = scol.angle(curve).unwrap(); // lines can't be parallel if there is an intersection point
             if is_inside {
                 // draw intersection point
                 for plate in [sup_plate, inf_plate] {
@@ -181,11 +219,11 @@ impl Renderer {
                         plate.slice(s![1, ..]),
                         projed_aux.view(),
                     );
-                    let line = self.line(ndarray::stack![ndarray::Axis(0), p1, p2]);
+                    let line = self.line(ndarray::stack![Axis(0), p1, p2]);
                     group = group.add(line);
                     let pa_a = &aux_point - &projed_aux;
                     let line = self.line(ndarray::stack![
-                        ndarray::Axis(0),
+                        Axis(0),
                         1.4 * pa_a + &projed_aux,
                         projed_aux
                     ]);
@@ -195,8 +233,7 @@ impl Renderer {
                     .text(format!("{:.1}°", angle.to_degrees()).as_str(), aux_point)
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
-                    .set("fill", self.param.text_fill.as_str())
-                    .set("style", "font-size: 24px; font-family:sans-serif");
+                    .set("fill", self.param.text_fill.as_str());
                 group = group.add(text);
             }
         } else {
@@ -247,6 +284,69 @@ where
     lyon_geom::Line { point, vector }
 }
 
+/// Trait to provide common interface from HashMap and IndexMap
+trait TryGet<K, V> {
+    fn try_get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: ?Sized + core::hash::Hash + std::cmp::Eq;
+}
+
+impl TryGet<String, String> for LabelColorsHex {
+    fn try_get<Q>(&self, key: &Q) -> Option<&String>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: ?Sized + core::hash::Hash + std::cmp::Eq,
+    {
+        self.get(key)
+    }
+}
+
+impl TryGet<String, String> for LineColors {
+    fn try_get<Q>(&self, key: &Q) -> Option<&String>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: ?Sized + core::hash::Hash + std::cmp::Eq,
+    {
+        self.get(key)
+    }
+}
+
+struct ColorPaletts<T>
+where
+    T: TryGet<String, String>,
+{
+    color_map: T,
+    color_cycler: labelme_rs::ColorCycler,
+}
+
+impl<T> ColorPaletts<T>
+where
+    T: TryGet<String, String>,
+{
+    fn new(color_map: T) -> ColorPaletts<T> {
+        let color_cycler = labelme_rs::ColorCycler::new();
+        Self {
+            color_map,
+            color_cycler,
+        }
+    }
+
+    fn get_or_new<Q>(&mut self, key: &Q) -> &str
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: ?Sized + core::hash::Hash + std::cmp::Eq + std::fmt::Display,
+    {
+        self.color_map.try_get(&key).map_or_else(
+            || {
+                debug!("New color generated for {}", key);
+                self.color_cycler.cycle()
+            },
+            |s| s.as_str(),
+        )
+    }
+}
+
 pub fn cmd(args: RenderArgs) -> Result<()> {
     let render_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(filename)?;
@@ -254,6 +354,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     } else {
         RenderParam::default()
     };
+    debug!("Loading {:?}", args.input);
     let s = std::fs::read_to_string(&args.input)
         .with_context(|| format!("reading file {:?}", &args.input))?;
     let data: LabelMeData = s.as_str().try_into()?;
@@ -266,34 +367,41 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         std::env::set_current_dir(&orig_wd)?;
     }
     let scol = scolrs::Scoliosis::try_from(&data.data)?;
-    // let v = VertebraeTL::try_from(&data.data)?;
     let corners = scol.tl_corners();
     let centroids = scol.tl_centroids();
-    // let discs = corners.between();
-    // let disc_centroids = Centroids::try_from(&discs)?;
 
-    let label_colors = if let Some(filename) = args.label_colors {
-        labelme_rs::load_label_colors(&filename)?
+    let mut label_colors = if let Some(filename) = args.label_colors {
+        ColorPaletts::new(labelme_rs::load_label_colors(&filename)?)
     } else {
-        labelme_rs::LabelColorsHex::default()
+        ColorPaletts::new(labelme_rs::LabelColorsHex::default())
     };
-    let mut color_cycler = labelme_rs::ColorCycler::new();
+    let mut line_colors = if let Some(filename) = args.line_colors {
+        let reader = std::fs::File::open(filename)?;
+        ColorPaletts::new(scolrs::load_line_colors(reader)?)
+    } else {
+        ColorPaletts::new(scolrs::LineColors::new())
+    };
 
     let renderer = Renderer::new(
         render_param.clone(),
         (data.image.width() as usize, data.image.height() as usize),
     );
     let mut document = renderer.doc_w_background(&data.image);
+    let text_style = "text {font-size: 24px; font-family:sans-serif;}";
+    let line_style = format!(
+        "line, polyline, polygon {{stroke-width: {}; fill: none}}",
+        render_param.line_width
+    );
+    let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
+    document = document.add(style);
     let mut g_corners = element::Group::new();
-    for (i_label, label) in scolrs::CORNER_LABELS.iter().enumerate() {
-        let color = label_colors
-            .get(*label)
-            .map_or_else(|| color_cycler.cycle(), |s| s.as_str());
+    for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
+        let color = label_colors.get_or_new(label);
         let mut sub_group = element::Group::new()
-            .set("class", format!("{} {}", CLS_POINT, label))
+            .set("class", format!("{CLS_POINT} {label}"))
             .set("fill", color);
-        let points = corners.0.index_axis(ndarray::Axis(1), i_label);
-        for point in points.axis_iter(ndarray::Axis(0)) {
+        let points = corners.0.index_axis(Axis(1), i_label);
+        for point in points.axis_iter(Axis(0)) {
             let p = renderer.point(point);
             sub_group = sub_group.add(p);
         }
@@ -306,34 +414,29 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         .set("dominant-baseline", "central")
         .set("stroke", render_param.text_stroke.as_str())
         .set("stroke-width", render_param.text_stroke_width)
-        .set("fill", render_param.text_fill.as_str())
-        .set("style", "font-size: 24px; font-family:sans-serif");
-    for (coords, label) in std::iter::zip(
-        centroids.axis_iter(ndarray::Axis(0)),
-        VERTEBRAL_LABELS.into_iter(),
-    ) {
+        .set("fill", render_param.text_fill.as_str());
+    for (coords, label) in
+        std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
+    {
         let t = renderer.text(label, coords);
         g_vert_labels = g_vert_labels.add(t);
     }
     document = document.add(g_vert_labels);
 
     let label = "Centroid";
-    let color = label_colors
-        .get(label)
-        .map_or_else(|| color_cycler.cycle(), |s| s.as_str());
+    let color = label_colors.get_or_new(label);
     let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
-    for point in centroids.axis_iter(ndarray::Axis(0)) {
+    for point in centroids.axis_iter(Axis(0)) {
         let p = renderer.point(point);
         g_centroids = g_centroids.add(p);
     }
-    document = document.add(g_centroids);
-    let curve_set = scol.find_curve_set();
-    println!("curve set:{:?}", curve_set);
+
+    let (curve_set, apex_set) = scol.find_curve_set();
+    debug!("Curve set:{:?}", curve_set);
     if let Some(largest_curve) = curve_set.mt {
         let g_mt = element::Group::new()
             .set("class", "MT")
-            .set("line-width", renderer.param.line_width)
-            .set("stroke", "lime");
+            .set("stroke", line_colors.get_or_new("MT"));
         let group = renderer.cobb(g_mt, &scol, &largest_curve);
         document = document.add(group);
     }
@@ -341,8 +444,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     if let Some(pt_curve) = curve_set.pt {
         let g_pt = element::Group::new()
             .set("class", "PT")
-            .set("line-width", renderer.param.line_width)
-            .set("stroke", "red");
+            .set("stroke", line_colors.get_or_new("PT"));
         let group = renderer.cobb(g_pt, &scol, &pt_curve);
         document = document.add(group);
     }
@@ -350,11 +452,34 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     if let Some(tll_curve) = curve_set.tll {
         let g_tll = element::Group::new()
             .set("class", "TLL")
-            .set("line-width", renderer.param.line_width)
-            .set("stroke", "blue");
+            .set("stroke", line_colors.get_or_new("TLL"));
         let group = renderer.cobb(g_tll, &scol, &tll_curve);
         document = document.add(group);
     }
+    let coefs = scolrs::polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6).unwrap();
+    let ys = ndarray::Array::linspace(
+        centroids[[0, 1]],
+        centroids[[centroids.len_of(Axis(0)) - 1, 1]],
+        50,
+    );
+    let xs = scolrs::polynomial(ys.view(), coefs);
+    let spinal_line = renderer
+        .polyline(ndarray::stack![Axis(1), xs, ys])
+        .set("stroke", "orange");
+    let vert_discs = scol.tl_vert_disc_corners().0;
+    for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
+        .into_iter()
+        .flatten()
+    {
+        let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
+        corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
+        corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
+        let polygon = renderer.polygon(corners).set("stroke", "orange");
+        g_centroids = g_centroids.add(polygon);
+    }
+
+    g_centroids = g_centroids.add(spinal_line);
+    document = document.add(g_centroids);
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

@@ -3,6 +3,9 @@ pub const VERTEBRAL_LABELS: [&str; 18] = [
     "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1", "L2", "L3",
     "L4", "L5", "L6",
 ];
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebralIndex {
     T1 = 0,
     T2 = 1,
@@ -24,40 +27,61 @@ pub enum VertebralIndex {
     L6 = 17,
 }
 
+impl From<u8> for VertebralIndex {
+    fn from(value: u8) -> Self {
+        unsafe { ::std::mem::transmute(value) }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebraDiscIndex {
     T1 = 0,
-    DT1T2 = 1,
+    DiscT1T2 = 1,
     T2 = 2,
-    DT2T3 = 3,
+    DiscT2T3 = 3,
     T3 = 4,
-    DT3T4 = 5,
+    DiscT3T4 = 5,
     T4 = 6,
-    DT4T5 = 7,
+    DiscT4T5 = 7,
     T5 = 8,
-    DT5T6 = 9,
+    DiscT5T6 = 9,
     T6 = 10,
-    DT6T7 = 11,
+    DiscT6T7 = 11,
     T7 = 12,
-    DT7T8 = 13,
+    DiscT7T8 = 13,
     T8 = 14,
-    DT8T9 = 15,
+    DiscT8T9 = 15,
     T9 = 16,
-    DT9T10 = 17,
+    DiscT9T10 = 17,
     T10 = 18,
-    DT10T11 = 19,
+    DiscT10T11 = 19,
     T11 = 20,
-    DT11T12 = 21,
+    DiscT11T12 = 21,
     T12 = 22,
-    DT12L1 = 23,
+    DiscT12L1 = 23,
     L1 = 24,
-    DL1L2 = 25,
+    DiscL1L2 = 25,
     L2 = 26,
-    DL2L3 = 27,
+    DiscL2L3 = 27,
     L3 = 28,
-    DL3L4 = 29,
+    DiscL3L4 = 29,
     L4 = 30,
-    DL4L5 = 31,
+    DiscL4L5 = 31,
     L5 = 32,
-    DL5L6 = 33,
+    DiscL5L6 = 33,
     L6 = 34,
+}
+
+impl From<VertebralIndex> for VertebraDiscIndex {
+    fn from(index: VertebralIndex) -> Self {
+        let v_i = index as u8;
+        unsafe { ::std::mem::transmute(2 * v_i) }
+    }
+}
+
+impl From<u8> for VertebraDiscIndex {
+    fn from(value: u8) -> Self {
+        unsafe { ::std::mem::transmute(value) }
+    }
 }

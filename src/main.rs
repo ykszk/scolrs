@@ -2,10 +2,8 @@ use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-use clap::Parser;
-#[macro_use]
-extern crate log;
 use anyhow::Result;
+use clap::Parser;
 
 mod cli;
 mod curve;
@@ -15,6 +13,7 @@ use cli::Cli;
 use cli::Command;
 
 fn main() -> Result<()> {
+    env_logger::init();
     let cli = Cli::parse();
     match cli.command {
         Command::Render(args) => render::cmd(args),
