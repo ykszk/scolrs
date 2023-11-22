@@ -7,7 +7,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
     let s = std::fs::read_to_string(args.input)?;
     let data: LabelMeData = s.as_str().try_into()?;
     let scol = scolrs::Scoliosis::try_from(&data)?;
-    let (curves, _apexes) = scol.find_curve_set();
+    let (curves, _apexes, _major_curve) = scol.identify_curves();
     println!("{}", serde_json::to_string(&curves)?);
     Ok(())
 }

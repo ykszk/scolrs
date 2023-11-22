@@ -7,7 +7,7 @@ use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
 use scolrs::{ApexSet, CurveSet, LineColors, RenderParam, Scoliosis, VERTEBRAL_LABELS};
 use svg::node::element;
 
-use crate::cli::RenderArgs;
+use crate::cli::{Direction, RenderArgs};
 
 struct Renderer {
     pub param: RenderParam,
@@ -57,6 +57,33 @@ where
             .join(delim)
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+struct CobbAux {
+    plate_scale: f32,
+    perpendicular_scale: f32,
+}
+
+impl Default for CobbAux {
+    fn default() -> Self {
+        Self {
+            plate_scale: 4.0,
+            perpendicular_scale: 1.4,
+        }
+    }
+}
+
+impl CobbAux {
+    fn opposite_default() -> Self {
+        let mut dft = Self::default();
+        dft.plate_scale *= -1.0;
+        dft
+    }
+}
+
+// enum CobbParam {
+//     Aux(CobbAux),
+// }
 
 impl Renderer {
     fn new(param: RenderParam, size: (usize, usize)) -> Self {
@@ -148,6 +175,7 @@ impl Renderer {
         mut group: element::Group,
         scol: &scolrs::Scoliosis,
         curve: &scolrs::Curve,
+        aux_param: &CobbAux,
     ) -> element::Group {
         let sup_plate = scol.tl_sup_plate(curve.sup);
         let inf_plate = scol.tl_inf_plate(curve.inf);
@@ -187,14 +215,14 @@ impl Renderer {
                 let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
                 let i = Self::plate_end(sup_plate, arr_int.view());
                 let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
-                let aux_scale = 4.0;
-                let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![i, ..]) + aux_scale * &d;
-                let aux_point = Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle / 2.0);
+                let aux_on_sup: ndarray::Array1<_> =
+                    &sup_plate.slice(s![i, ..]) + aux_param.plate_scale * &d;
+                let aux_cross = Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle / 2.0);
 
                 for plate in [sup_plate, inf_plate] {
                     let i = Self::plate_end(sup_plate, arr_int.view());
                     let d = &plate.slice(s![1 - i, ..]) - &plate.slice(s![i, ..]);
-                    let d_aux = &aux_point - &plate.slice(s![i, ..]);
+                    let d_aux = &aux_cross - &plate.slice(s![i, ..]);
                     let t = d_aux.dot(&d) / d.mapv(|a| a * a).sum();
                     let projed_aux = &plate.slice(s![i, ..]) + t * &d;
                     let (p1, p2) = distanced_pair3(
@@ -204,16 +232,16 @@ impl Renderer {
                     );
                     let line = self.line(ndarray::stack![Axis(0), p1, p2]);
                     group = group.add(line);
-                    let pa_a = &aux_point - &projed_aux;
+                    let pa_a = &aux_cross - &projed_aux;
                     let line = self.line(ndarray::stack![
                         Axis(0),
-                        1.4 * pa_a + &projed_aux,
+                        aux_param.perpendicular_scale * pa_a + &projed_aux,
                         projed_aux
                     ]);
                     group = group.add(line);
                 }
                 let text = self
-                    .text(format!("{:.1}°", angle.to_degrees()).as_str(), aux_point)
+                    .text(format!("{:.1}°", angle.to_degrees()).as_str(), aux_cross)
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
                     .set("fill", self.param.text_fill.as_str());
@@ -221,6 +249,7 @@ impl Renderer {
             }
         } else {
             // parallel lines
+            debug!("Drawing parallel line: {}, {}", curve.sup, curve.inf);
             for plate in [sup_plate, inf_plate] {
                 let mut line = plate.to_owned();
                 let d = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
@@ -415,8 +444,8 @@ impl Component for Centroids {
     }
 }
 
-struct CobbAngles<'a>(&'a CurveSet);
-impl<'a> Component for CobbAngles<'a> {
+struct FrontalCobbAngles<'a>(&'a CurveSet);
+impl<'a> Component for FrontalCobbAngles<'a> {
     fn render(
         &self,
         scol: &Scoliosis,
@@ -427,28 +456,29 @@ impl<'a> Component for CobbAngles<'a> {
         let curve_set = self.0;
         debug!("Curve set:{:?}", curve_set);
         let mut g_angles = element::Group::new().set("class", "CobbAngles");
+        let aux_param = CobbAux::default();
 
-        if let Some(largest_curve) = &curve_set.mt {
+        if let Some((mt_curve, _angle)) = &curve_set.mt {
             let g_mt = element::Group::new()
                 .set("class", "MT")
                 .set("stroke", line_colors.get_or_new("MT"));
-            let group = renderer.cobb(g_mt, scol, largest_curve);
+            let group = renderer.cobb(g_mt, scol, mt_curve, &aux_param);
             g_angles = g_angles.add(group);
         };
 
-        if let Some(pt_curve) = &curve_set.pt {
+        if let Some((pt_curve, _angle)) = &curve_set.pt {
             let g_pt = element::Group::new()
                 .set("class", "PT")
                 .set("stroke", line_colors.get_or_new("PT"));
-            let group = renderer.cobb(g_pt, scol, pt_curve);
+            let group = renderer.cobb(g_pt, scol, pt_curve, &aux_param);
             g_angles = g_angles.add(group);
         }
 
-        if let Some(tll_curve) = &curve_set.tll {
+        if let Some((tll_curve, _angle)) = &curve_set.tll {
             let g_tll = element::Group::new()
                 .set("class", "TLL")
                 .set("stroke", line_colors.get_or_new("TLL"));
-            let group = renderer.cobb(g_tll, scol, tll_curve);
+            let group = renderer.cobb(g_tll, scol, tll_curve, &aux_param);
             g_angles = g_angles.add(group);
         }
         g_angles
@@ -558,17 +588,10 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         render_param.line_width
     );
     let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
-    let mut curve_set: Option<CurveSet> = None;
-    let mut apex_set: Option<ApexSet> = None;
     document = document.add(style);
-    for component in [
-        "VertebralLabels",
-        "VertebralPoints",
-        "Centroids",
-        "CobbAngles",
-        "CurveApex",
-        "SpinalLine",
-    ] {
+
+    // common components
+    for component in ["VertebralLabels", "VertebralPoints"] {
         let group = match component {
             "VertebralLabels" => {
                 VertebralLabels {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
@@ -576,43 +599,112 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             "VertebralPoints" => {
                 VertebralPoints {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
             }
-            "Centroids" => {
-                Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
-            }
-            "CobbAngles" => {
-                if curve_set.is_none() {
-                    let (cs, apexes) = scol.find_curve_set();
-                    curve_set = Some(cs);
-                    apex_set = Some(apexes);
-                }
-                CobbAngles(curve_set.as_ref().unwrap()).render(
-                    &scol,
-                    &renderer,
-                    &mut label_colors,
-                    &mut line_colors,
-                )
-            }
-            "CurveApex" => {
-                if apex_set.is_none() {
-                    let (cs, apexes) = scol.find_curve_set();
-                    curve_set = Some(cs);
-                    apex_set = Some(apexes);
-                }
-                let vert_discs = scol.tl_vert_disc_corners();
-                CurveApex(apex_set.as_ref().unwrap(), &vert_discs).render(
-                    &scol,
-                    &renderer,
-                    &mut label_colors,
-                    &mut line_colors,
-                )
-            }
-            "SpinalLine" => {
-                SpinalLine {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
-            }
             _ => panic!("Unknown component"),
         };
         document = document.add(group);
     }
+
+    if let Direction::Frontal = args.direction {
+        let mut curve_set: Option<CurveSet> = None;
+        let mut apex_set: Option<ApexSet> = None;
+        for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine"] {
+            let group = match component {
+                "Centroids" => {
+                    Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                }
+                "CobbAngles" => {
+                    if curve_set.is_none() {
+                        let (cs, apexes, _major_curve) = scol.identify_curves();
+                        curve_set = Some(cs);
+                        apex_set = Some(apexes);
+                    }
+                    FrontalCobbAngles(curve_set.as_ref().unwrap()).render(
+                        &scol,
+                        &renderer,
+                        &mut label_colors,
+                        &mut line_colors,
+                    )
+                }
+                "CurveApex" => {
+                    if apex_set.is_none() {
+                        let (cs, apexes, _major_curve) = scol.identify_curves();
+                        curve_set = Some(cs);
+                        apex_set = Some(apexes);
+                    }
+                    let vert_discs = scol.tl_vert_disc_corners();
+                    CurveApex(apex_set.as_ref().unwrap(), &vert_discs).render(
+                        &scol,
+                        &renderer,
+                        &mut label_colors,
+                        &mut line_colors,
+                    )
+                }
+                "SpinalLine" => {
+                    SpinalLine {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                }
+                _ => panic!("Unknown component"),
+            };
+            document = document.add(group);
+        }
+    } else {
+        let aux_param = CobbAux::default();
+        {
+            let mut opposite_param = CobbAux::opposite_default();
+            opposite_param.plate_scale = -3.0;
+            let label = "ThoracicKyphosis";
+            let group = element::Group::new()
+                .set("class", label)
+                .set("stroke", line_colors.get_or_new(label));
+            let sup = scolrs::VertebralIndex::T2 as usize;
+            let inf = scolrs::VertebralIndex::T12 as usize;
+            document = document.add(renderer.cobb(
+                group,
+                &scol,
+                &scolrs::Curve { sup, inf },
+                &opposite_param,
+            ));
+        }
+        {
+            let label = "Mid/LowerThoracicKyphosis";
+            let group = element::Group::new()
+                .set("class", label)
+                .set("stroke", line_colors.get_or_new(label));
+            let sup = scolrs::VertebralIndex::T5 as usize;
+            let inf = scolrs::VertebralIndex::T12 as usize;
+            document =
+                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+        }
+        {
+            let label = "ProximalThoracicKyphosis";
+            let group = element::Group::new()
+                .set("class", label)
+                .set("stroke", line_colors.get_or_new(label));
+            let sup = scolrs::VertebralIndex::T2 as usize;
+            let inf = scolrs::VertebralIndex::T5 as usize;
+            document =
+                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+        }
+        // {
+        //     let label = "LumbarLordosis";
+        //     let group = element::Group::new()
+        //         .set("class", label)
+        //         .set("stroke", line_colors.get_or_new(label));
+        //     let sup = scolrs::VertebralIndex::T12 as usize;
+        //     // let inf = Sacral top!!
+        //     document = document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }));
+        // }
+        {
+            // required for structural/non-structural analysis for thoracic and tl/l curves
+            let label = "T10L2";
+            let group = element::Group::new()
+                .set("class", label)
+                .set("stroke", line_colors.get_or_new(label));
+            let sup = scolrs::VertebralIndex::T10 as usize;
+            let inf = scolrs::VertebralIndex::L2 as usize;
+            document =
+                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+        }
+    };
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -16,6 +16,12 @@ pub enum Command {
     Curve(CurveArgs),
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone)]
+pub enum Direction {
+    Frontal,
+    Lateral,
+}
+
 #[derive(Parser, Debug)]
 pub struct RenderArgs {
     /// Input labelme json filename
@@ -31,6 +37,9 @@ pub struct RenderArgs {
     /// Line colors in csv with `label` and `color` columns
     #[clap(long)]
     pub line_colors: Option<PathBuf>,
+    /// Scan direction
+    #[clap(short, long, default_value = "frontal")]
+    pub direction: Direction,
 }
 
 #[derive(Parser, Debug)]

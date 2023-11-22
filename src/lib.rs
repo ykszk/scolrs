@@ -150,9 +150,9 @@ pub struct Curve {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CurveSet {
-    pub pt: Option<Curve>,
-    pub mt: Option<Curve>,
-    pub tll: Option<Curve>,
+    pub pt: Option<(Curve, f32)>,
+    pub mt: Option<(Curve, f32)>,
+    pub tll: Option<(Curve, f32)>,
 }
 
 #[derive(Debug, Default)]
@@ -212,6 +212,13 @@ impl From<(ArrayView1<'_, f32>, ArrayView1<'_, f32>)> for LineSegmentFactory {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MajorCurve {
+    PT,
+    MT,
+    TLL,
+}
+
 impl Scoliosis {
     pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f32>> {
         let tl = self.v_c7tl.0.slice(s![1.., .., ..]);
@@ -259,7 +266,7 @@ impl Scoliosis {
         coefs
     }
 
-    fn find_largest_curve(&self) -> Option<Curve> {
+    fn find_largest_curve(&self) -> Option<(Curve, f32)> {
         let n = self.tl_corners().0.len_of(ndarray::Axis(0));
         let mut curves = Vec::new();
         for sup in 0..n - 2 {
@@ -274,7 +281,7 @@ impl Scoliosis {
         self._find_largest_curve(curves)
     }
 
-    fn find_largest_up(&self, inf: usize) -> Option<Curve> {
+    fn find_largest_up(&self, inf: usize) -> Option<(Curve, f32)> {
         let mut curves = Vec::new();
         if inf <= 1 {
             return None;
@@ -291,7 +298,7 @@ impl Scoliosis {
         self._find_largest_curve(curves)
     }
 
-    fn find_largest_down(&self, sup: usize) -> Option<Curve> {
+    fn find_largest_down(&self, sup: usize) -> Option<(Curve, f32)> {
         let n = self.tl_corners().0.len_of(ndarray::Axis(0));
         let mut curves = Vec::new();
         let start = (sup + 2).min(n);
@@ -339,7 +346,7 @@ impl Scoliosis {
         !sing_changes
     }
 
-    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<Curve> {
+    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f32)> {
         let angles: Vec<_> = curves
             .iter()
             .filter_map(|c| self.angle(c).map(|a| (c, a)))
@@ -357,7 +364,7 @@ impl Scoliosis {
                 }
             },
         );
-        Some(angles[i_max].0.clone())
+        Some((angles[i_max].0.clone(), _max_value))
     }
 
     fn find_apex(&self, curve: &Curve) -> ndarray_linalg::error::Result<VertebraDiscIndex> {
@@ -373,36 +380,46 @@ impl Scoliosis {
         Ok(i_apex)
     }
 
-    pub fn find_curve_set(&self) -> (CurveSet, ApexSet) {
+    pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
         let mut curves = CurveSet::default();
         let mut apexes = ApexSet::default();
+        let mut major_curve = None;
         if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.find_apex(&largest_curve).unwrap();
-            if major_apex <= VertebraDiscIndex::T5 {
+            let major_apex = self.find_apex(&largest_curve.0).unwrap();
+            major_curve = if major_apex <= VertebraDiscIndex::T5 {
                 // largest curve is PT
-                if let Some(mt) = self.find_largest_down(largest_curve.inf) {
-                    curves.tll = self.find_largest_down(mt.inf);
+                if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
+                    curves.tll = self.find_largest_down(mt.0.inf);
+                    apexes.tll = curves.tll.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
+                    apexes.mt = Some(self.find_apex(&mt.0).unwrap());
                     curves.mt = Some(mt);
                 }
                 curves.pt = Some(largest_curve);
                 apexes.pt = Some(major_apex);
+                Some(MajorCurve::PT)
             } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
                 // largest curve is MT
-                curves.pt = self.find_largest_up(largest_curve.sup);
-                curves.tll = self.find_largest_down(largest_curve.inf);
+                curves.pt = self.find_largest_up(largest_curve.0.sup);
+                apexes.pt = curves.pt.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
+                curves.tll = self.find_largest_down(largest_curve.0.inf);
+                apexes.tll = curves.tll.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
                 curves.mt = Some(largest_curve);
                 apexes.mt = Some(major_apex);
+                Some(MajorCurve::MT)
             } else {
                 // largest curve is TLL
-                if let Some(mt) = self.find_largest_up(largest_curve.sup) {
-                    curves.pt = self.find_largest_up(mt.sup);
+                if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
+                    curves.pt = self.find_largest_up(mt.0.sup);
+                    apexes.pt = curves.pt.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
+                    apexes.mt = Some(self.find_apex(&mt.0).unwrap());
                     curves.mt = Some(mt);
                 }
                 curves.tll = Some(largest_curve);
                 apexes.tll = Some(major_apex);
+                Some(MajorCurve::TLL)
             };
         }
-        (curves, apexes)
+        (curves, apexes, major_curve)
     }
 
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
@@ -576,6 +593,8 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
 
 #[cfg(test)]
 mod tests {
+    use crate::MajorCurve;
+
     use super::{Corners, Scoliosis, VertebraDiscIndex, VertebralIndex};
     use anyhow::{Context, Result};
     use labelme_rs::LabelMeData;
@@ -593,19 +612,20 @@ mod tests {
         let data: LabelMeData = s.as_str().try_into()?;
         let scol = Scoliosis::try_from(&data)?;
 
-        let (curve_set, apex_set) = scol.find_curve_set();
-        let largest_curve = curve_set.mt.unwrap();
-        assert_eq!(largest_curve.sup, VertebralIndex::T5 as usize);
-        assert_eq!(largest_curve.inf, VertebralIndex::T12 as usize);
-        let pt_curve = curve_set.pt.unwrap();
-        assert_eq!(pt_curve.inf, largest_curve.sup);
+        let (curve_set, apex_set, major_curve) = scol.identify_curves();
+        assert_eq!(major_curve.unwrap(), MajorCurve::MT);
+        let (mt_curve, _angle) = curve_set.mt.unwrap();
+        assert_eq!(mt_curve.sup, VertebralIndex::T5 as usize);
+        assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
+        let (pt_curve, _angle) = curve_set.pt.unwrap();
+        assert_eq!(pt_curve.inf, mt_curve.sup);
         assert_eq!(pt_curve.sup, VertebralIndex::T1 as usize);
-        let tll_curve = curve_set.tll.unwrap();
-        assert_eq!(tll_curve.sup, largest_curve.inf);
+        let (tll_curve, _angle) = curve_set.tll.unwrap();
+        assert_eq!(tll_curve.sup, mt_curve.inf);
         assert_eq!(tll_curve.inf, VertebralIndex::L5 as usize);
 
-        assert!(apex_set.pt.is_none());
-        assert!(apex_set.tll.is_none());
+        assert!(apex_set.pt.is_some());
+        assert!(apex_set.tll.is_some());
         assert_eq!(apex_set.mt.unwrap(), VertebraDiscIndex::DiscT7T8);
 
         Ok(())
@@ -621,13 +641,16 @@ mod tests {
         let data: LabelMeData = s.as_str().try_into()?;
         let scol = Scoliosis::try_from(&data)?;
 
-        let (_curve_set, apex_set) = scol.find_curve_set();
-
+        let (curve_set, apex_set, major_curve) = scol.identify_curves();
         // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
+        assert!(curve_set.pt.is_some());
+        assert!(curve_set.mt.is_some());
+        assert!(curve_set.tll.is_some());
 
         // largest curve is tll though.
-        assert!(apex_set.pt.is_none());
-        assert!(apex_set.mt.is_none());
+        assert_eq!(major_curve.unwrap(), MajorCurve::TLL);
+        assert!(apex_set.pt.is_some());
+        assert!(apex_set.mt.is_some());
         assert!(apex_set.tll.is_some());
 
         Ok(())
@@ -643,20 +666,45 @@ mod tests {
         let data: LabelMeData = s.as_str().try_into()?;
         let scol = Scoliosis::try_from(&data)?;
 
-        let (curve_set, apex_set) = scol.find_curve_set();
-        let mt_curve = curve_set.mt.unwrap();
+        let (curve_set, apex_set, major_curve) = scol.identify_curves();
+        assert_eq!(major_curve.unwrap(), MajorCurve::PT);
+        let (mt_curve, _angle) = curve_set.mt.unwrap();
         assert_eq!(mt_curve.sup, VertebralIndex::T7 as usize);
         assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
-        let pt_curve = curve_set.pt.unwrap();
+        let (pt_curve, _angle) = curve_set.pt.unwrap();
         assert_eq!(pt_curve.inf, mt_curve.sup);
         assert_eq!(pt_curve.sup, VertebralIndex::T2 as usize);
-        let tll_curve = curve_set.tll.unwrap();
+        let (tll_curve, _angle) = curve_set.tll.unwrap();
         assert_eq!(tll_curve.sup, mt_curve.inf);
         assert_eq!(tll_curve.inf, VertebralIndex::L4 as usize);
 
         assert!(apex_set.pt.is_some());
-        assert!(apex_set.mt.is_none());
-        assert!(apex_set.tll.is_none());
+        assert!(apex_set.mt.is_some());
+        assert!(apex_set.tll.is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lenke() -> Result<()> {
+        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tests.push("tests");
+        let json_filename = tests.join("case1/frontal.json");
+        let s = std::fs::read_to_string(&json_filename)
+            .with_context(|| format!("Opening {:?}", &json_filename))?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        let scol = Scoliosis::try_from(&data)?;
+
+        let (curve_set, apex_set, major_curve) = scol.identify_curves();
+        println!("apex_set: {:?}", apex_set);
+        let major_curve = major_curve.unwrap();
+        // match major_curve {
+        //     crate::MajorCurve::PT => {}
+        //     crate::MajorCurve::MT => todo!(),
+        //     crate::MajorCurve::TLL => todo!(),
+        // }
+        // let angles = [curve_set.pt, curve_set.mt, curve_set.tll]
+        //     .map(|c| c.map_or(0.0, |c| scol.angle(&c).unwrap_or(0.0)));
 
         Ok(())
     }

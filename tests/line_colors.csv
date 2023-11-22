@@ -17,6 +17,7 @@ Mid/LowerThoracicKyphosis,lime
 ProximalThoracicKyphosis,blue
 LumbarLordosis,blue
 SacralSlope,magenta
+T10L2,magenta
 C7SVA,red
 PelvicIncidence,cyan
 PelvicRadiusAngle,blue
