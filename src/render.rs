@@ -2,23 +2,19 @@ use std::ops::{AddAssign, SubAssign};
 
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDataWImage};
-use ndarray::{s, Axis};
-// use scolrs::{Centroids, Corners, VertebraeTL};
 use log::debug;
-use scolrs::{LineColors, RenderParam, VERTEBRAL_LABELS};
+use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
+use scolrs::{ApexSet, CurveSet, LineColors, RenderParam, Scoliosis, VERTEBRAL_LABELS};
 use svg::node::element;
 
 use crate::cli::RenderArgs;
 
 struct Renderer {
-    param: RenderParam,
-    size: (usize, usize),
+    pub param: RenderParam,
+    pub size: (usize, usize),
 }
 
-fn squared_distance<S>(
-    p1: ndarray::ArrayBase<S, ndarray::Ix1>,
-    p2: ndarray::ArrayBase<S, ndarray::Ix1>,
-) -> f32
+fn squared_distance<S>(p1: ArrayBase<S, Ix1>, p2: ArrayBase<S, Ix1>) -> f32
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -26,13 +22,10 @@ where
 }
 
 fn distanced_pair3<S>(
-    p1: ndarray::ArrayBase<S, ndarray::Ix1>,
-    p2: ndarray::ArrayBase<S, ndarray::Ix1>,
-    p3: ndarray::ArrayBase<S, ndarray::Ix1>,
-) -> (
-    ndarray::ArrayBase<S, ndarray::Ix1>,
-    ndarray::ArrayBase<S, ndarray::Ix1>,
-)
+    p1: ArrayBase<S, Ix1>,
+    p2: ArrayBase<S, Ix1>,
+    p3: ArrayBase<S, Ix1>,
+) -> (ArrayBase<S, Ix1>, ArrayBase<S, Ix1>)
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -52,7 +45,7 @@ trait JoinWith {
     fn join(&self, delim: &str) -> String;
 }
 
-impl<S, D> JoinWith for ndarray::ArrayBase<S, D>
+impl<S, D> JoinWith for ArrayBase<S, D>
 where
     S: ndarray::Data<Elem = f32>,
     D: ndarray::Dimension,
@@ -70,7 +63,7 @@ impl Renderer {
         Self { param, size }
     }
 
-    fn point<S>(&self, point: ndarray::ArrayBase<S, ndarray::Ix1>) -> svg::node::element::Circle
+    fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -80,7 +73,7 @@ impl Renderer {
             .set("r", self.param.radius)
     }
 
-    fn line<S>(&self, start_end: ndarray::ArrayBase<S, ndarray::Ix2>) -> svg::node::element::Line
+    fn line<S>(&self, start_end: ArrayBase<S, Ix2>) -> element::Line
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -91,10 +84,7 @@ impl Renderer {
             .set("y2", start_end[[1, 1]])
     }
 
-    fn polyline<S>(
-        &self,
-        points: ndarray::ArrayBase<S, ndarray::Ix2>,
-    ) -> svg::node::element::Polyline
+    fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -102,7 +92,7 @@ impl Renderer {
         element::Polyline::new().set("points", s)
     }
 
-    fn polygon<S>(&self, points: ndarray::ArrayBase<S, ndarray::Ix2>) -> svg::node::element::Polygon
+    fn polygon<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polygon
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -110,11 +100,7 @@ impl Renderer {
         element::Polygon::new().set("points", s)
     }
 
-    fn text<S>(
-        &self,
-        text: &str,
-        coords: ndarray::ArrayBase<S, ndarray::Ix1>,
-    ) -> svg::node::element::Text
+    fn text<S>(&self, text: &str, coords: ArrayBase<S, Ix1>) -> element::Text
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -124,10 +110,7 @@ impl Renderer {
             .add(svg::node::Text::new(text))
     }
 
-    fn plate_end<S, T>(
-        plate: ndarray::ArrayBase<S, ndarray::Ix2>,
-        point: ndarray::ArrayBase<T, ndarray::Ix1>,
-    ) -> usize
+    fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
     where
         S: ndarray::Data<Elem = f32>,
         T: ndarray::Data<Elem = f32>,
@@ -143,8 +126,8 @@ impl Renderer {
     }
 
     fn rotate_around<S, T>(
-        point: ndarray::ArrayBase<S, ndarray::Ix1>,
-        origin: ndarray::ArrayBase<T, ndarray::Ix1>,
+        point: ArrayBase<S, Ix1>,
+        origin: ArrayBase<T, Ix1>,
         rad_angle: f32,
     ) -> ndarray::Array1<f32>
     where
@@ -274,7 +257,7 @@ impl Renderer {
 
 const CLS_POINT: &str = "Points";
 
-fn plate2line<S>(plate: ndarray::ArrayBase<S, ndarray::Ix2>) -> lyon_geom::Line<f32>
+fn plate2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -337,13 +320,196 @@ where
         String: std::borrow::Borrow<Q>,
         Q: ?Sized + core::hash::Hash + std::cmp::Eq + std::fmt::Display,
     {
-        self.color_map.try_get(&key).map_or_else(
+        self.color_map.try_get(key).map_or_else(
             || {
                 debug!("New color generated for {}", key);
                 self.color_cycler.cycle()
             },
             |s| s.as_str(),
         )
+    }
+}
+
+trait Component {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group;
+}
+
+struct VertebralLabels;
+impl Component for VertebralLabels {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        _line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let render_param = &renderer.param;
+        let mut g_vert_labels = element::Group::new()
+            .set("text-anchor", "middle")
+            .set("dominant-baseline", "central")
+            .set("stroke", render_param.text_stroke.as_str())
+            .set("stroke-width", render_param.text_stroke_width)
+            .set("fill", render_param.text_fill.as_str());
+        let centroids = scol.tl_centroids();
+        for (coords, label) in
+            std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
+        {
+            let t = renderer.text(label, coords);
+            g_vert_labels = g_vert_labels.add(t);
+        }
+        g_vert_labels
+    }
+}
+
+struct VertebralPoints;
+impl Component for VertebralPoints {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        label_colors: &mut ColorPaletts<LabelColorsHex>,
+        _line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let corners = scol.tl_corners();
+        let mut g_corners = element::Group::new();
+        for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
+            let color = label_colors.get_or_new(label);
+            let mut sub_group = element::Group::new()
+                .set("class", format!("{CLS_POINT} {label}"))
+                .set("fill", color);
+            let points = corners.0.index_axis(Axis(1), i_label);
+            for point in points.axis_iter(Axis(0)) {
+                let p = renderer.point(point);
+                sub_group = sub_group.add(p);
+            }
+            g_corners = g_corners.add(sub_group);
+        }
+        g_corners
+    }
+}
+
+struct Centroids;
+impl Component for Centroids {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        label_colors: &mut ColorPaletts<LabelColorsHex>,
+        _line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let label = "Centroid";
+        let color = label_colors.get_or_new(label);
+        let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
+        let centroids = scol.tl_centroids();
+        for point in centroids.axis_iter(Axis(0)) {
+            let p = renderer.point(point);
+            g_centroids = g_centroids.add(p);
+        }
+        g_centroids
+    }
+}
+
+struct CobbAngles<'a>(&'a CurveSet);
+impl<'a> Component for CobbAngles<'a> {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let curve_set = self.0;
+        debug!("Curve set:{:?}", curve_set);
+        let mut g_angles = element::Group::new().set("class", "CobbAngles");
+
+        if let Some(largest_curve) = &curve_set.mt {
+            let g_mt = element::Group::new()
+                .set("class", "MT")
+                .set("stroke", line_colors.get_or_new("MT"));
+            let group = renderer.cobb(g_mt, scol, largest_curve);
+            g_angles = g_angles.add(group);
+        };
+
+        if let Some(pt_curve) = &curve_set.pt {
+            let g_pt = element::Group::new()
+                .set("class", "PT")
+                .set("stroke", line_colors.get_or_new("PT"));
+            let group = renderer.cobb(g_pt, scol, pt_curve);
+            g_angles = g_angles.add(group);
+        }
+
+        if let Some(tll_curve) = &curve_set.tll {
+            let g_tll = element::Group::new()
+                .set("class", "TLL")
+                .set("stroke", line_colors.get_or_new("TLL"));
+            let group = renderer.cobb(g_tll, scol, tll_curve);
+            g_angles = g_angles.add(group);
+        }
+        g_angles
+    }
+}
+
+struct CurveApex<'a>(&'a ApexSet, &'a scolrs::Corners<ndarray::OwnedRepr<f32>>);
+impl<'a> Component for CurveApex<'a> {
+    fn render(
+        &self,
+        _scol: &Scoliosis,
+        renderer: &Renderer,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let apex_set = &self.0;
+        let vert_discs = &self.1 .0;
+        let label = "CurveApex";
+        let mut g = element::Group::new().set("class", label);
+
+        for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
+            .into_iter()
+            .flatten()
+        {
+            let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
+            corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
+            corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
+            let polygon = renderer
+                .polygon(corners)
+                .set("stroke", line_colors.get_or_new(label));
+            g = g.add(polygon);
+        }
+        g
+    }
+}
+
+struct SpinalLine;
+impl Component for SpinalLine {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let label = "SpinalLine";
+        let g = element::Group::new().set("class", label);
+        let centroids = scol.tl_centroids();
+        let coefs =
+            scolrs::polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6).unwrap();
+        let ys = ndarray::Array::linspace(
+            centroids[[0, 1]],
+            centroids[[centroids.len_of(Axis(0)) - 1, 1]],
+            50,
+        );
+        let xs = scolrs::polynomial(ys.view(), coefs);
+        let spinal_line = renderer
+            .polyline(ndarray::stack![Axis(1), xs, ys])
+            .set("stroke", line_colors.get_or_new(label));
+
+        g.add(spinal_line)
     }
 }
 
@@ -354,6 +520,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     } else {
         RenderParam::default()
     };
+
     debug!("Loading {:?}", args.input);
     let s = std::fs::read_to_string(&args.input)
         .with_context(|| format!("reading file {:?}", &args.input))?;
@@ -367,8 +534,6 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         std::env::set_current_dir(&orig_wd)?;
     }
     let scol = scolrs::Scoliosis::try_from(&data.data)?;
-    let corners = scol.tl_corners();
-    let centroids = scol.tl_centroids();
 
     let mut label_colors = if let Some(filename) = args.label_colors {
         ColorPaletts::new(labelme_rs::load_label_colors(&filename)?)
@@ -393,93 +558,61 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         render_param.line_width
     );
     let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
+    let mut curve_set: Option<CurveSet> = None;
+    let mut apex_set: Option<ApexSet> = None;
     document = document.add(style);
-    let mut g_corners = element::Group::new();
-    for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
-        let color = label_colors.get_or_new(label);
-        let mut sub_group = element::Group::new()
-            .set("class", format!("{CLS_POINT} {label}"))
-            .set("fill", color);
-        let points = corners.0.index_axis(Axis(1), i_label);
-        for point in points.axis_iter(Axis(0)) {
-            let p = renderer.point(point);
-            sub_group = sub_group.add(p);
-        }
-        g_corners = g_corners.add(sub_group);
-    }
-    document = document.add(g_corners);
-
-    let mut g_vert_labels = element::Group::new()
-        .set("text-anchor", "middle")
-        .set("dominant-baseline", "central")
-        .set("stroke", render_param.text_stroke.as_str())
-        .set("stroke-width", render_param.text_stroke_width)
-        .set("fill", render_param.text_fill.as_str());
-    for (coords, label) in
-        std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
-    {
-        let t = renderer.text(label, coords);
-        g_vert_labels = g_vert_labels.add(t);
-    }
-    document = document.add(g_vert_labels);
-
-    let label = "Centroid";
-    let color = label_colors.get_or_new(label);
-    let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
-    for point in centroids.axis_iter(Axis(0)) {
-        let p = renderer.point(point);
-        g_centroids = g_centroids.add(p);
-    }
-
-    let (curve_set, apex_set) = scol.find_curve_set();
-    debug!("Curve set:{:?}", curve_set);
-    if let Some(largest_curve) = curve_set.mt {
-        let g_mt = element::Group::new()
-            .set("class", "MT")
-            .set("stroke", line_colors.get_or_new("MT"));
-        let group = renderer.cobb(g_mt, &scol, &largest_curve);
+    for component in [
+        "VertebralLabels",
+        "VertebralPoints",
+        "Centroids",
+        "CobbAngles",
+        "CurveApex",
+        "SpinalLine",
+    ] {
+        let group = match component {
+            "VertebralLabels" => {
+                VertebralLabels {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+            }
+            "VertebralPoints" => {
+                VertebralPoints {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+            }
+            "Centroids" => {
+                Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+            }
+            "CobbAngles" => {
+                if curve_set.is_none() {
+                    let (cs, apexes) = scol.find_curve_set();
+                    curve_set = Some(cs);
+                    apex_set = Some(apexes);
+                }
+                CobbAngles(curve_set.as_ref().unwrap()).render(
+                    &scol,
+                    &renderer,
+                    &mut label_colors,
+                    &mut line_colors,
+                )
+            }
+            "CurveApex" => {
+                if apex_set.is_none() {
+                    let (cs, apexes) = scol.find_curve_set();
+                    curve_set = Some(cs);
+                    apex_set = Some(apexes);
+                }
+                let vert_discs = scol.tl_vert_disc_corners();
+                CurveApex(apex_set.as_ref().unwrap(), &vert_discs).render(
+                    &scol,
+                    &renderer,
+                    &mut label_colors,
+                    &mut line_colors,
+                )
+            }
+            "SpinalLine" => {
+                SpinalLine {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+            }
+            _ => panic!("Unknown component"),
+        };
         document = document.add(group);
     }
-
-    if let Some(pt_curve) = curve_set.pt {
-        let g_pt = element::Group::new()
-            .set("class", "PT")
-            .set("stroke", line_colors.get_or_new("PT"));
-        let group = renderer.cobb(g_pt, &scol, &pt_curve);
-        document = document.add(group);
-    }
-
-    if let Some(tll_curve) = curve_set.tll {
-        let g_tll = element::Group::new()
-            .set("class", "TLL")
-            .set("stroke", line_colors.get_or_new("TLL"));
-        let group = renderer.cobb(g_tll, &scol, &tll_curve);
-        document = document.add(group);
-    }
-    let coefs = scolrs::polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6).unwrap();
-    let ys = ndarray::Array::linspace(
-        centroids[[0, 1]],
-        centroids[[centroids.len_of(Axis(0)) - 1, 1]],
-        50,
-    );
-    let xs = scolrs::polynomial(ys.view(), coefs);
-    let spinal_line = renderer
-        .polyline(ndarray::stack![Axis(1), xs, ys])
-        .set("stroke", "orange");
-    let vert_discs = scol.tl_vert_disc_corners().0;
-    for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
-        .into_iter()
-        .flatten()
-    {
-        let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
-        corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
-        corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
-        let polygon = renderer.polygon(corners).set("stroke", "orange");
-        g_centroids = g_centroids.add(polygon);
-    }
-
-    g_centroids = g_centroids.add(spinal_line);
-    document = document.add(g_centroids);
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

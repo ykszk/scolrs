@@ -467,6 +467,8 @@ impl<S: Data<Elem = f32>> Corners<S> {
 pub struct Centroids(pub Array2<f32>);
 
 impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
+    /// Calculate centroids from list of four corners.
+    /// Centroids are not geometric centers but the intersections of mid-lines
     fn from(corners: Corners<S>) -> Self {
         let top = corners.0.slice(s![.., ..2, ..]).mean_axis(Axis(1)).unwrap();
         let bottom = corners.0.slice(s![.., 2.., ..]).mean_axis(Axis(1)).unwrap();
