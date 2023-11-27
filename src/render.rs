@@ -202,7 +202,7 @@ impl Renderer {
                 }
                 let text = self
                     .text(
-                        format!("{:.1}°", angle.to_degrees()).as_str(),
+                        format!("{:.1}°", angle).as_str(),
                         ndarray::arr1(&[intersection.x, intersection.y]),
                     )
                     .set("stroke", self.param.text_stroke.as_str())
@@ -217,7 +217,11 @@ impl Renderer {
                 let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
                 let aux_on_sup: ndarray::Array1<_> =
                     &sup_plate.slice(s![i, ..]) + aux_param.plate_scale * &d;
-                let aux_cross = Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle / 2.0);
+                let aux_cross = Self::rotate_around(
+                    aux_on_sup.view(),
+                    arr_int.view(),
+                    angle.to_radians() / 2.0,
+                );
 
                 for plate in [sup_plate, inf_plate] {
                     let i = Self::plate_end(sup_plate, arr_int.view());
@@ -241,7 +245,7 @@ impl Renderer {
                     group = group.add(line);
                 }
                 let text = self
-                    .text(format!("{:.1}°", angle.to_degrees()).as_str(), aux_cross)
+                    .text(format!("{:.1}°", angle).as_str(), aux_cross)
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
                     .set("fill", self.param.text_fill.as_str());

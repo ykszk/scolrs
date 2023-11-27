@@ -1,7 +1,10 @@
+use documented::DocumentedFields;
 use labelme_rs::LabelMeData;
+use log::debug;
 use ndarray::{
     s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
 };
+
 use ndarray_linalg::Solve;
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
@@ -137,12 +140,13 @@ where
     ys.mapv(|e| e as f32)
 }
 
+#[derive(Debug, Clone)]
 pub struct Scoliosis {
     v_c7tl: VertebraeC7TL,
     c_c7tl: Centroids,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Curve {
     pub sup: usize,
     pub inf: usize,
@@ -214,7 +218,6 @@ impl From<(ArrayView1<'_, f32>, ArrayView1<'_, f32>)> for LineSegmentFactory {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MajorCurve {
-    PT,
     MT,
     TLL,
 }
@@ -396,7 +399,7 @@ impl Scoliosis {
                 }
                 curves.pt = Some(largest_curve);
                 apexes.pt = Some(major_apex);
-                Some(MajorCurve::PT)
+                Some(MajorCurve::MT) // PT is never major
             } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
                 // largest curve is MT
                 curves.pt = self.find_largest_up(largest_curve.0.sup);
@@ -422,6 +425,7 @@ impl Scoliosis {
         (curves, apexes, major_curve)
     }
 
+    /// Calculate angle in degrees
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
         let sup_line = self.tl_sup_plate(curve.sup);
         let inf_line = self.tl_inf_plate(curve.inf);
@@ -436,11 +440,11 @@ impl Scoliosis {
         let v_inf = &v_inf / len_inf;
         let cos = v_sup.dot(&v_inf);
         let cos = cos.max(-1.0).min(1.0);
-        let rad = cos.acos();
+        let deg = cos.acos().to_degrees();
         if v_sup[1] < v_inf[1] {
-            Some(-rad)
+            Some(-deg)
         } else {
-            Some(rad)
+            Some(deg)
         }
     }
 }
@@ -456,6 +460,7 @@ impl TryFrom<&LabelMeData> for Scoliosis {
 }
 
 /// C7, thoracic and lumber vertebrae
+#[derive(Debug, Clone)]
 pub struct VertebraeC7TL(pub Array3<f32>);
 
 /// Thoracic and lumber vertebrae
@@ -481,6 +486,7 @@ impl<S: Data<Elem = f32>> Corners<S> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Centroids(pub Array2<f32>);
 
 impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
@@ -527,6 +533,125 @@ impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
         }
         Centroids(right)
     }
+}
+
+const FRONTAL_ANGLE_THRESH: f32 = 25.0_f32;
+const BEND_ANGLE_THRESH: f32 = 25.0_f32;
+const LATERAL_ANGLE_THRESH: f32 = 20.0_f32;
+
+pub struct Study {
+    pub coronal: Scoliosis,
+    pub left_bend: Option<Scoliosis>,
+    pub right_bend: Option<Scoliosis>,
+    pub sagittal: Option<Scoliosis>,
+}
+
+impl Study {
+    pub fn new(
+        coronal: Scoliosis,
+        left_bend: Scoliosis,
+        right_bend: Scoliosis,
+        sagittal: Scoliosis,
+    ) -> Study {
+        let left_bend = Some(left_bend);
+        let right_bend = Some(right_bend);
+        let sagittal = Some(sagittal);
+        Study {
+            coronal,
+            left_bend,
+            right_bend,
+            sagittal,
+        }
+    }
+
+    pub fn minor_param(
+        &self,
+        coronal: f32,
+        coronal_curve: &Curve,
+        sagittal_curve: &Curve,
+    ) -> MinorStructuralParam {
+        let right_bend = self
+            .right_bend
+            .as_ref()
+            .map(|scol| scol.angle(coronal_curve).unwrap());
+        let left_bend = self
+            .left_bend
+            .as_ref()
+            .map(|scol| scol.angle(coronal_curve).unwrap());
+        let sagittal = self
+            .sagittal
+            .as_ref()
+            .map(|scol| (sagittal_curve.clone(), scol.angle(sagittal_curve).unwrap()));
+        MinorStructuralParam {
+            coronal,
+            right_bend,
+            left_bend,
+            sagittal,
+        }
+    }
+
+    pub fn chart(&self, curve_set: &CurveSet, major_curve: MajorCurve) -> Chart {
+        let pt = curve_set.pt.as_ref().map(|pt| {
+            let t2t5_curve = Curve {
+                sup: VertebralIndex::T2 as usize,
+                inf: VertebralIndex::T5 as usize,
+            };
+            self.minor_param(pt.1, &pt.0, &t2t5_curve).is_structural()
+        });
+        let t10l2_curve = Curve {
+            sup: VertebralIndex::T2 as usize,
+            inf: VertebralIndex::T5 as usize,
+        };
+        let mt = if major_curve == MajorCurve::MT {
+            Some(RegionalCurveType::Structural(StructuralReason::Major()))
+        } else {
+            curve_set
+                .mt
+                .as_ref()
+                .map(|mt| self.minor_param(mt.1, &mt.0, &t10l2_curve).is_structural())
+        };
+        let tll = if major_curve == MajorCurve::TLL {
+            Some(RegionalCurveType::Structural(StructuralReason::Major()))
+        } else {
+            curve_set.tll.as_ref().map(|tll| {
+                self.minor_param(tll.1, &tll.0, &t10l2_curve)
+                    .is_structural()
+            })
+        };
+        Chart { pt, mt, tll }
+    }
+
+    // fn minor_structural_reasons(
+    //     &self,
+    //     frontal_curve: &(Curve, f32),
+    //     left: &Scoliosis,
+    //     right: &Scoliosis,
+    //     lateral: &Scoliosis,
+    //     curve: &Curve,
+    // ) -> MinorStructuralParam {
+    //     let bend = structural_bend(frontal_curve, left, right);
+    //     let sagittal = structural_lateral(frontal_curve, lateral, curve);
+    //     MinorStructuralParam { bend, sagittal }
+    // }
+
+    // fn structural_bend(&self, frontal_curve: &(Curve, f32)) -> Option<f32> {
+    //     let left = self.left_bend.as_ref().unwrap();
+    //     let right = self.right_bend.as_ref().unwrap();
+    //     let angle_thresh = FRONTAL_ANGLE_THRESH.to_radians();
+    //     let bend_angle_thresh = BEND_ANGLE_THRESH.to_radians();
+    //     if frontal_curve.1.abs() >= angle_thresh {
+    //         let left_angle = left.angle(&frontal_curve.0).unwrap();
+    //         let right_angle = right.angle(&frontal_curve.0).unwrap();
+    //         let min_angle = f32::min(left_angle, right_angle);
+    //         if min_angle >= bend_angle_thresh {
+    //             Some(min_angle)
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // }
 }
 
 impl TryFrom<&LabelMeData> for VertebraeC7TL {
@@ -591,26 +716,221 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
     Ok(colors)
 }
 
+#[repr(u8)]
+#[derive(Debug, PartialEq, Eq, std::hash::Hash, DocumentedFields)]
+pub enum CurveType {
+    /// Main Thoracic
+    Type1,
+    /// Double Thoracic
+    Type2,
+    /// Double Major
+    Type3,
+    /// Triple Major
+    Type4,
+    /// Thoracolumbar/Lumbar
+    Type5,
+    /// Thoracolumbar/Lumbar - Main Thoracic
+    Type6,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RegionalCurveType {
+    Structural(StructuralReason),
+    NonStructural(MinorReasons),
+    Uncertain(MinorReasons),
+}
+
+#[derive(Debug)]
+pub struct Chart {
+    pub pt: Option<RegionalCurveType>,
+    pub mt: Option<RegionalCurveType>,
+    pub tll: Option<RegionalCurveType>,
+}
+
+impl Chart {
+    pub fn classify(&self) -> CurveType {
+        use std::collections::HashSet;
+        let mut types = HashSet::from([
+            CurveType::Type1,
+            CurveType::Type2,
+            CurveType::Type3,
+            CurveType::Type4,
+            CurveType::Type5,
+            CurveType::Type6,
+        ]);
+        if let Some(mt) = self.mt.as_ref() {
+            match mt {
+                RegionalCurveType::Structural(reason) => match reason {
+                    StructuralReason::Major() => {
+                        types.remove(&CurveType::Type5);
+                        types.remove(&CurveType::Type6);
+                    }
+                    StructuralReason::Minor(_) => return CurveType::Type6,
+                },
+                RegionalCurveType::NonStructural(_) => return CurveType::Type5,
+                RegionalCurveType::Uncertain(_) => {}
+            }
+        }
+        if let Some(tll) = self.tll.as_ref() {
+            match tll {
+                RegionalCurveType::Structural(_) => {
+                    types.remove(&CurveType::Type1);
+                    types.remove(&CurveType::Type2);
+                }
+                RegionalCurveType::NonStructural(_) => {
+                    types.remove(&CurveType::Type3);
+                    types.remove(&CurveType::Type4);
+                }
+                RegionalCurveType::Uncertain(_) => {}
+            }
+        }
+        if let Some(pt) = self.pt.as_ref() {
+            match pt {
+                RegionalCurveType::Structural(_) => {
+                    types.remove(&CurveType::Type1);
+                    types.remove(&CurveType::Type3);
+                }
+                RegionalCurveType::NonStructural(_) => {
+                    types.remove(&CurveType::Type2);
+                    types.remove(&CurveType::Type4);
+                }
+                RegionalCurveType::Uncertain(_) => {}
+            }
+        }
+        if types.len() == 1 {
+            let t = types.into_iter().next().unwrap();
+            debug!("Eliminated to one type: {:?}", t);
+            t
+        } else {
+            // TODO: don't panic!
+            panic!("More than one type or zero type: {:?}", types)
+        }
+    }
+}
+
+type MinorReasons = Vec<MinorReason>;
+
+#[derive(Debug, PartialEq)]
+pub enum BendDir {
+    Right,
+    Left,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MinorReason {
+    Coronal(f32),
+    Bend(BendDir, f32),
+    Sagittal((Curve, f32)),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct MinorStructuralParam {
+    coronal: f32,
+    right_bend: Option<f32>,
+    left_bend: Option<f32>,
+    sagittal: Option<(Curve, f32)>,
+}
+
+impl MinorStructuralParam {
+    pub fn is_structural(&self) -> RegionalCurveType {
+        if self.coronal < FRONTAL_ANGLE_THRESH {
+            return RegionalCurveType::NonStructural(Vec::from([MinorReason::Coronal(
+                self.coronal,
+            )]));
+        }
+        let mut reasons = Vec::from([MinorReason::Coronal(self.coronal)]);
+        let mut non_reasons = Vec::new();
+        let min_angle = self.right_bend.map(|r| {
+            self.left_bend.map_or((BendDir::Right, r.abs()), |l| {
+                if l.abs() < r.abs() {
+                    (BendDir::Left, l.abs())
+                } else {
+                    (BendDir::Right, r.abs())
+                }
+            })
+        });
+        if let Some((dir, min_angle)) = min_angle {
+            if min_angle >= BEND_ANGLE_THRESH {
+                reasons.push(MinorReason::Bend(dir, min_angle))
+            } else {
+                for (bend, dir) in [
+                    (self.right_bend, BendDir::Right),
+                    (self.left_bend, BendDir::Left),
+                ] {
+                    if let Some(angle) = bend {
+                        let angle = angle.abs();
+                        let r = MinorReason::Bend(dir, angle);
+                        if angle >= BEND_ANGLE_THRESH {
+                            // reasons.push(r)
+                        } else {
+                            non_reasons.push(r)
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(sagittal) = self.sagittal.as_ref() {
+            let r = MinorReason::Sagittal(sagittal.clone());
+            if sagittal.1.abs() >= LATERAL_ANGLE_THRESH {
+                reasons.push(r);
+            } else {
+                non_reasons.push(r);
+            }
+        }
+        if reasons.len() > 1 {
+            return RegionalCurveType::Structural(StructuralReason::Minor(reasons));
+        }
+        if self.right_bend.is_some() && self.left_bend.is_some() && self.sagittal.is_some() {
+            return RegionalCurveType::NonStructural(non_reasons);
+        }
+
+        RegionalCurveType::Uncertain(non_reasons)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StructuralReason {
+    Major(),
+    Minor(MinorReasons),
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::MajorCurve;
+    use crate::{
+        BendDir, Curve, CurveType, MajorCurve, MinorReason, RegionalCurveType, StructuralReason,
+        Study,
+    };
 
     use super::{Corners, Scoliosis, VertebraDiscIndex, VertebralIndex};
     use anyhow::{Context, Result};
     use labelme_rs::LabelMeData;
     use ndarray::{arr3, Array3};
     use pretty_assertions::assert_eq;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    fn setup() {
+        env_logger::init();
+    }
+
+    fn load_scoliosis(filename: &Path) -> Result<Scoliosis> {
+        let s =
+            std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        Ok(Scoliosis::try_from(&data)?)
+    }
+
+    fn test_directory() -> PathBuf {
+        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tests.push("tests");
+        tests
+    }
 
     #[test]
     fn test_case1() -> Result<()> {
-        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tests.push("tests");
+        let tests = test_directory();
         let json_filename = tests.join("case1/frontal.json");
-        let s = std::fs::read_to_string(&json_filename)
-            .with_context(|| format!("Opening {:?}", &json_filename))?;
-        let data: LabelMeData = s.as_str().try_into()?;
-        let scol = Scoliosis::try_from(&data)?;
+        let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
         assert_eq!(major_curve.unwrap(), MajorCurve::MT);
@@ -633,13 +953,9 @@ mod tests {
 
     #[test]
     fn test_case2() -> Result<()> {
-        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tests.push("tests");
+        let tests = test_directory();
         let json_filename = tests.join("case2/frontal.json");
-        let s = std::fs::read_to_string(&json_filename)
-            .with_context(|| format!("Opening {:?}", &json_filename))?;
-        let data: LabelMeData = s.as_str().try_into()?;
-        let scol = Scoliosis::try_from(&data)?;
+        let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
         // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
@@ -661,13 +977,10 @@ mod tests {
         let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         tests.push("tests");
         let json_filename = tests.join("case3/frontal.json");
-        let s = std::fs::read_to_string(&json_filename)
-            .with_context(|| format!("Opening {:?}", &json_filename))?;
-        let data: LabelMeData = s.as_str().try_into()?;
-        let scol = Scoliosis::try_from(&data)?;
+        let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
-        assert_eq!(major_curve.unwrap(), MajorCurve::PT);
+        assert_eq!(major_curve.unwrap(), MajorCurve::MT); // largest curve is PT but major curve is MT
         let (mt_curve, _angle) = curve_set.mt.unwrap();
         assert_eq!(mt_curve.sup, VertebralIndex::T7 as usize);
         assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
@@ -687,24 +1000,76 @@ mod tests {
 
     #[test]
     fn test_lenke() -> Result<()> {
+        setup();
         let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         tests.push("tests");
         let json_filename = tests.join("case1/frontal.json");
-        let s = std::fs::read_to_string(&json_filename)
-            .with_context(|| format!("Opening {:?}", &json_filename))?;
-        let data: LabelMeData = s.as_str().try_into()?;
-        let scol = Scoliosis::try_from(&data)?;
+        let frontal_scol = load_scoliosis(&json_filename)?;
 
-        let (curve_set, apex_set, major_curve) = scol.identify_curves();
-        println!("apex_set: {:?}", apex_set);
-        let major_curve = major_curve.unwrap();
-        // match major_curve {
-        //     crate::MajorCurve::PT => {}
-        //     crate::MajorCurve::MT => todo!(),
-        //     crate::MajorCurve::TLL => todo!(),
-        // }
-        // let angles = [curve_set.pt, curve_set.mt, curve_set.tll]
-        //     .map(|c| c.map_or(0.0, |c| scol.angle(&c).unwrap_or(0.0)));
+        let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
+
+        let json_filename = tests.join("case1/left_lateral_bend.json");
+        let left_scol = load_scoliosis(&json_filename)?;
+        let json_filename = tests.join("case1/right_lateral_bend.json");
+        let right_scol = load_scoliosis(&json_filename)?;
+        let json_filename = tests.join("case1/lateral.json");
+        let lateral_scol = load_scoliosis(&json_filename)?;
+
+        assert_eq!(frontal_scol.c_c7tl.0.len(), left_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.0.len(), right_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+
+        let study = Study::new(frontal_scol, left_scol, right_scol, lateral_scol);
+
+        let chart = study.chart(&curve_set, major_curve.unwrap());
+
+        assert_eq!(
+            chart.mt.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Major())
+        );
+        let t2t5 = Curve {
+            sup: VertebralIndex::T2 as usize,
+            inf: VertebralIndex::T5 as usize,
+        };
+        let reasons = Vec::from([
+            MinorReason::Bend(
+                BendDir::Left,
+                study
+                    .left_bend
+                    .as_ref()
+                    .unwrap()
+                    .angle(&curve_set.pt.as_ref().unwrap().0)
+                    .unwrap()
+                    .abs(),
+            ),
+            MinorReason::Sagittal((
+                t2t5.clone(),
+                study.sagittal.as_ref().unwrap().angle(&t2t5).unwrap(),
+            )),
+        ]);
+        assert_eq!(
+            chart.pt.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reasons)
+        );
+
+        let reasons = Vec::from([
+            MinorReason::Coronal(curve_set.tll.as_ref().unwrap().1),
+            MinorReason::Bend(
+                BendDir::Left,
+                study
+                    .left_bend
+                    .unwrap()
+                    .angle(&curve_set.tll.unwrap().0)
+                    .unwrap()
+                    .abs(),
+            ),
+        ]);
+        assert_eq!(
+            chart.tll.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Minor(reasons))
+        );
+
+        assert_eq!(chart.classify(), CurveType::Type3);
 
         Ok(())
     }
