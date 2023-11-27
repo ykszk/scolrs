@@ -28,6 +28,9 @@ pub struct RenderArgs {
     pub input: PathBuf,
     /// Output svg filename
     pub output: PathBuf,
+    /// Use specified curves instaed of calculating from the points
+    #[clap(long)]
+    pub curve_set: Option<PathBuf>,
     /// Config file in toml
     #[clap(long)]
     pub config: Option<PathBuf>,

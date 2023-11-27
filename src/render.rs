@@ -545,7 +545,8 @@ impl Component for SpinalLine {
 
 pub fn cmd(args: RenderArgs) -> Result<()> {
     let render_param = if let Some(filename) = args.config {
-        let s = std::fs::read_to_string(filename)?;
+        let s = std::fs::read_to_string(&filename)
+            .with_context(|| format!("reading file {:?}", filename))?;
         toml::from_str(&s)?
     } else {
         RenderParam::default()
@@ -566,12 +567,16 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     let scol = scolrs::Scoliosis::try_from(&data.data)?;
 
     let mut label_colors = if let Some(filename) = args.label_colors {
-        ColorPaletts::new(labelme_rs::load_label_colors(&filename)?)
+        ColorPaletts::new(
+            labelme_rs::load_label_colors(&filename)
+                .with_context(|| format!("reading file {:?}", filename))?,
+        )
     } else {
         ColorPaletts::new(labelme_rs::LabelColorsHex::default())
     };
     let mut line_colors = if let Some(filename) = args.line_colors {
-        let reader = std::fs::File::open(filename)?;
+        let reader = std::fs::File::open(&filename)
+            .with_context(|| format!("reading file {:?}", filename))?;
         ColorPaletts::new(scolrs::load_line_colors(reader)?)
     } else {
         ColorPaletts::new(scolrs::LineColors::new())
@@ -605,7 +610,14 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     }
 
     if let Direction::Frontal = args.direction {
-        let mut curve_set: Option<CurveSet> = None;
+        let mut curve_set: Option<CurveSet> = if let Some(filename) = args.curve_set {
+            let reader = std::fs::File::open(&filename)
+                .with_context(|| format!("reading file {:?}", filename))?;
+            let cs: CurveSet = labelme_rs::serde_json::from_reader(reader)?;
+            Some(cs)
+        } else {
+            None
+        };
         let mut apex_set: Option<ApexSet> = None;
         for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine"] {
             let group = match component {
