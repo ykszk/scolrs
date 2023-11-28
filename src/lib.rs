@@ -1,4 +1,3 @@
-use documented::DocumentedFields;
 use labelme_rs::LabelMeData;
 use log::debug;
 use ndarray::{
@@ -15,56 +14,8 @@ use std::ops::AddAssign;
 use std::result::Result;
 use thiserror::Error;
 
-fn default_radius() -> usize {
-    2
-}
-fn default_line_width() -> usize {
-    1
-}
-fn default_text_stroke() -> String {
-    "black".into()
-}
-fn default_text_stroke_width() -> usize {
-    1
-}
-fn default_text_fill() -> String {
-    "white".into()
-}
-
 mod defs;
 pub use defs::*;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RenderParam {
-    /// Point radius
-    #[serde(default = "default_radius")]
-    pub radius: usize,
-    /// Line width
-    #[serde(default = "default_line_width")]
-    pub line_width: usize,
-
-    /// `stroke` for texts
-    #[serde(default = "default_text_stroke")]
-    pub text_stroke: String,
-    /// `stroke-width` for texts
-    #[serde(default = "default_text_stroke_width")]
-    pub text_stroke_width: usize,
-    /// `fill` for texts
-    #[serde(default = "default_text_fill")]
-    pub text_fill: String,
-}
-
-impl Default for RenderParam {
-    fn default() -> Self {
-        Self {
-            radius: default_radius(),
-            line_width: default_line_width(),
-            text_stroke: default_text_stroke(),
-            text_stroke_width: default_text_stroke_width(),
-            text_fill: default_text_fill(),
-        }
-    }
-}
 
 #[derive(Error, Debug)]
 pub enum ScolError {
@@ -151,6 +102,20 @@ pub struct Curve {
     pub sup: usize,
     pub inf: usize,
 }
+
+const T2T5_CURVE: Curve = Curve {
+    sup: VertebralIndex::T2 as usize,
+    inf: VertebralIndex::T5 as usize,
+};
+
+const T10L2_CURVE: Curve = Curve {
+    sup: VertebralIndex::T10 as usize,
+    inf: VertebralIndex::L2 as usize,
+};
+
+const KYOPHOSIS_CURVE_PT: Curve = T2T5_CURVE;
+const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
+const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CurveSet {
@@ -592,66 +557,27 @@ impl Study {
 
     pub fn chart(&self, curve_set: &CurveSet, major_curve: MajorCurve) -> Chart {
         let pt = curve_set.pt.as_ref().map(|pt| {
-            let t2t5_curve = Curve {
-                sup: VertebralIndex::T2 as usize,
-                inf: VertebralIndex::T5 as usize,
-            };
-            self.minor_param(pt.1, &pt.0, &t2t5_curve).is_structural()
+            self.minor_param(pt.1, &pt.0, &KYOPHOSIS_CURVE_PT)
+                .curve_type()
         });
-        let t10l2_curve = Curve {
-            sup: VertebralIndex::T2 as usize,
-            inf: VertebralIndex::T5 as usize,
-        };
         let mt = if major_curve == MajorCurve::MT {
             Some(RegionalCurveType::Structural(StructuralReason::Major()))
         } else {
-            curve_set
-                .mt
-                .as_ref()
-                .map(|mt| self.minor_param(mt.1, &mt.0, &t10l2_curve).is_structural())
+            curve_set.mt.as_ref().map(|mt| {
+                self.minor_param(mt.1, &mt.0, &KYOPHOSIS_CURVE_MT)
+                    .curve_type()
+            })
         };
         let tll = if major_curve == MajorCurve::TLL {
             Some(RegionalCurveType::Structural(StructuralReason::Major()))
         } else {
             curve_set.tll.as_ref().map(|tll| {
-                self.minor_param(tll.1, &tll.0, &t10l2_curve)
-                    .is_structural()
+                self.minor_param(tll.1, &tll.0, &KYOPHOSIS_CURVE_TLL)
+                    .curve_type()
             })
         };
         Chart { pt, mt, tll }
     }
-
-    // fn minor_structural_reasons(
-    //     &self,
-    //     frontal_curve: &(Curve, f32),
-    //     left: &Scoliosis,
-    //     right: &Scoliosis,
-    //     lateral: &Scoliosis,
-    //     curve: &Curve,
-    // ) -> MinorStructuralParam {
-    //     let bend = structural_bend(frontal_curve, left, right);
-    //     let sagittal = structural_lateral(frontal_curve, lateral, curve);
-    //     MinorStructuralParam { bend, sagittal }
-    // }
-
-    // fn structural_bend(&self, frontal_curve: &(Curve, f32)) -> Option<f32> {
-    //     let left = self.left_bend.as_ref().unwrap();
-    //     let right = self.right_bend.as_ref().unwrap();
-    //     let angle_thresh = FRONTAL_ANGLE_THRESH.to_radians();
-    //     let bend_angle_thresh = BEND_ANGLE_THRESH.to_radians();
-    //     if frontal_curve.1.abs() >= angle_thresh {
-    //         let left_angle = left.angle(&frontal_curve.0).unwrap();
-    //         let right_angle = right.angle(&frontal_curve.0).unwrap();
-    //         let min_angle = f32::min(left_angle, right_angle);
-    //         if min_angle >= bend_angle_thresh {
-    //             Some(min_angle)
-    //         } else {
-    //             None
-    //         }
-    //     } else {
-    //         None
-    //     }
-    // }
 }
 
 impl TryFrom<&LabelMeData> for VertebraeC7TL {
@@ -717,7 +643,7 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, std::hash::Hash, DocumentedFields)]
+#[derive(Debug, PartialEq, Eq, std::hash::Hash)]
 pub enum CurveType {
     /// Main Thoracic
     Type1,
@@ -736,8 +662,8 @@ pub enum CurveType {
 #[derive(Debug, PartialEq)]
 pub enum RegionalCurveType {
     Structural(StructuralReason),
-    NonStructural(MinorReasons),
-    Uncertain(MinorReasons),
+    NonStructural(MinorReason),
+    Uncertain(MinorReason),
 }
 
 #[derive(Debug)]
@@ -808,19 +734,56 @@ impl Chart {
     }
 }
 
-type MinorReasons = Vec<MinorReason>;
-
 #[derive(Debug, PartialEq)]
-pub enum BendDir {
-    Right,
-    Left,
+struct BendParam {
+    coronal: f32,
+    bend: f32,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum MinorReason {
-    Coronal(f32),
-    Bend(BendDir, f32),
-    Sagittal((Curve, f32)),
+impl BendParam {
+    fn new(coronal: f32, bend: f32) -> BendParam {
+        BendParam { coronal, bend }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IsStructural {
+    // True
+    T,
+    // False
+    F,
+}
+
+impl From<IsStructural> for bool {
+    fn from(s: IsStructural) -> Self {
+        match s {
+            IsStructural::T => true,
+            IsStructural::F => false,
+        }
+    }
+}
+
+impl From<bool> for IsStructural {
+    fn from(is_structural: bool) -> Self {
+        if is_structural {
+            IsStructural::T
+        } else {
+            IsStructural::F
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct BendReason {
+    left: Option<(IsStructural, BendParam)>,
+    right: Option<(IsStructural, BendParam)>,
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub struct MinorReason {
+    coronal: Option<(IsStructural, f32)>,
+    bend: BendReason,
+    sagittal: Option<(IsStructural, (Curve, f32))>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -831,75 +794,75 @@ pub struct MinorStructuralParam {
     sagittal: Option<(Curve, f32)>,
 }
 
+trait TestStructural {
+    fn is_structural(&self) -> bool;
+    fn is_non_structural(&self) -> bool;
+}
+
+impl<T> TestStructural for Option<(IsStructural, T)> {
+    fn is_structural(&self) -> bool {
+        self.as_ref().map_or(false, |v| v.0.into())
+    }
+
+    fn is_non_structural(&self) -> bool {
+        self.as_ref().map_or(false, |p| !bool::from(p.0))
+    }
+}
+
 impl MinorStructuralParam {
-    pub fn is_structural(&self) -> RegionalCurveType {
+    pub fn curve_type(&self) -> RegionalCurveType {
+        let mut reason = MinorReason::default();
         if self.coronal < FRONTAL_ANGLE_THRESH {
-            return RegionalCurveType::NonStructural(Vec::from([MinorReason::Coronal(
-                self.coronal,
-            )]));
+            reason.coronal = Some((IsStructural::F, self.coronal));
+        } else {
+            reason.coronal = Some((IsStructural::T, self.coronal));
         }
-        let mut reasons = Vec::from([MinorReason::Coronal(self.coronal)]);
-        let mut non_reasons = Vec::new();
-        let min_angle = self.right_bend.map(|r| {
-            self.left_bend.map_or((BendDir::Right, r.abs()), |l| {
-                if l.abs() < r.abs() {
-                    (BendDir::Left, l.abs())
+
+        for (bend, is_right) in [(self.right_bend, true), (self.left_bend, false)] {
+            if let Some(angle) = bend {
+                let angle = angle.abs();
+
+                let is_structural = (angle >= BEND_ANGLE_THRESH).into();
+                if is_right {
+                    reason.bend.right = Some((is_structural, BendParam::new(self.coronal, angle)));
                 } else {
-                    (BendDir::Right, r.abs())
-                }
-            })
-        });
-        if let Some((dir, min_angle)) = min_angle {
-            if min_angle >= BEND_ANGLE_THRESH {
-                reasons.push(MinorReason::Bend(dir, min_angle))
-            } else {
-                for (bend, dir) in [
-                    (self.right_bend, BendDir::Right),
-                    (self.left_bend, BendDir::Left),
-                ] {
-                    if let Some(angle) = bend {
-                        let angle = angle.abs();
-                        let r = MinorReason::Bend(dir, angle);
-                        if angle >= BEND_ANGLE_THRESH {
-                            // reasons.push(r)
-                        } else {
-                            non_reasons.push(r)
-                        }
-                    }
+                    reason.bend.left = Some((is_structural, BendParam::new(self.coronal, angle)));
                 }
             }
         }
 
         if let Some(sagittal) = self.sagittal.as_ref() {
-            let r = MinorReason::Sagittal(sagittal.clone());
-            if sagittal.1.abs() >= LATERAL_ANGLE_THRESH {
-                reasons.push(r);
-            } else {
-                non_reasons.push(r);
-            }
+            let is_structural = (sagittal.1.abs() >= LATERAL_ANGLE_THRESH).into();
+            reason.sagittal = Some((is_structural, sagittal.clone()));
         }
-        if reasons.len() > 1 {
-            return RegionalCurveType::Structural(StructuralReason::Minor(reasons));
+        if (reason.bend.left.is_structural() && reason.bend.right.is_structural())
+            || reason.sagittal.is_structural()
+        {
+            return RegionalCurveType::Structural(StructuralReason::Minor(reason));
         }
-        if self.right_bend.is_some() && self.left_bend.is_some() && self.sagittal.is_some() {
-            return RegionalCurveType::NonStructural(non_reasons);
+        if reason.coronal.is_non_structural() && reason.sagittal.is_non_structural() {
+            return RegionalCurveType::NonStructural(reason);
         }
-
-        RegionalCurveType::Uncertain(non_reasons)
+        if (reason.bend.right.is_non_structural() || reason.bend.left.is_non_structural())
+            && reason.sagittal.is_non_structural()
+        {
+            return RegionalCurveType::NonStructural(reason);
+        }
+        RegionalCurveType::Uncertain(reason)
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum StructuralReason {
     Major(),
-    Minor(MinorReasons),
+    Minor(MinorReason),
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        BendDir, Curve, CurveType, MajorCurve, MinorReason, RegionalCurveType, StructuralReason,
-        Study,
+        BendParam, CurveType, IsStructural, MajorCurve, MinorReason, RegionalCurveType,
+        StructuralReason, Study, KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
     };
 
     use super::{Corners, Scoliosis, VertebraDiscIndex, VertebralIndex};
@@ -908,9 +871,13 @@ mod tests {
     use ndarray::{arr3, Array3};
     use pretty_assertions::assert_eq;
     use std::path::{Path, PathBuf};
+    use std::sync::Once;
 
+    static INIT: Once = Once::new();
     fn setup() {
-        env_logger::init();
+        INIT.call_once(|| {
+            env_logger::init();
+        });
     }
 
     fn load_scoliosis(filename: &Path) -> Result<Scoliosis> {
@@ -974,8 +941,7 @@ mod tests {
 
     #[test]
     fn test_case3() -> Result<()> {
-        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tests.push("tests");
+        let tests = test_directory();
         let json_filename = tests.join("case3/frontal.json");
         let scol = load_scoliosis(&json_filename)?;
 
@@ -999,10 +965,9 @@ mod tests {
     }
 
     #[test]
-    fn test_lenke() -> Result<()> {
+    fn test_lenke_case1() -> Result<()> {
         setup();
-        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tests.push("tests");
+        let tests = test_directory();
         let json_filename = tests.join("case1/frontal.json");
         let frontal_scol = load_scoliosis(&json_filename)?;
 
@@ -1027,13 +992,12 @@ mod tests {
             chart.mt.as_ref().unwrap(),
             &RegionalCurveType::Structural(StructuralReason::Major())
         );
-        let t2t5 = Curve {
-            sup: VertebralIndex::T2 as usize,
-            inf: VertebralIndex::T5 as usize,
-        };
-        let reasons = Vec::from([
-            MinorReason::Bend(
-                BendDir::Left,
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+        reason.bend.left = Some((
+            IsStructural::F,
+            BendParam::new(
+                curve_set.pt.as_ref().unwrap().1,
                 study
                     .left_bend
                     .as_ref()
@@ -1042,34 +1006,313 @@ mod tests {
                     .unwrap()
                     .abs(),
             ),
-            MinorReason::Sagittal((
-                t2t5.clone(),
-                study.sagittal.as_ref().unwrap().angle(&t2t5).unwrap(),
-            )),
-        ]);
-        assert_eq!(
-            chart.pt.as_ref().unwrap(),
-            &RegionalCurveType::NonStructural(reasons)
-        );
-
-        let reasons = Vec::from([
-            MinorReason::Coronal(curve_set.tll.as_ref().unwrap().1),
-            MinorReason::Bend(
-                BendDir::Left,
+        ));
+        reason.bend.right = Some((
+            IsStructural::T,
+            BendParam::new(
+                curve_set.pt.as_ref().unwrap().1,
                 study
-                    .left_bend
+                    .right_bend
+                    .as_ref()
                     .unwrap()
-                    .angle(&curve_set.tll.unwrap().0)
+                    .angle(&curve_set.pt.as_ref().unwrap().0)
                     .unwrap()
                     .abs(),
             ),
-        ]);
+        ));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_PT.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_PT)
+                    .unwrap(),
+            ),
+        ));
         assert_eq!(
-            chart.tll.as_ref().unwrap(),
-            &RegionalCurveType::Structural(StructuralReason::Minor(reasons))
+            chart.pt.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
         );
 
-        assert_eq!(chart.classify(), CurveType::Type3);
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::T, curve_set.tll.as_ref().unwrap().1));
+
+        reason.bend.left = Some((
+            IsStructural::T,
+            BendParam::new(
+                curve_set.tll.as_ref().unwrap().1,
+                study
+                    .left_bend
+                    .unwrap()
+                    .angle(&curve_set.tll.as_ref().unwrap().0)
+                    .unwrap()
+                    .abs(),
+            ),
+        ));
+        reason.bend.right = Some((
+            IsStructural::T,
+            BendParam::new(
+                curve_set.tll.as_ref().unwrap().1,
+                study
+                    .right_bend
+                    .unwrap()
+                    .angle(&curve_set.tll.as_ref().unwrap().0)
+                    .unwrap()
+                    .abs(),
+            ),
+        ));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_TLL.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_TLL)
+                    .unwrap(),
+            ),
+        ));
+
+        assert_eq!(
+            chart.tll.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Minor(reason))
+        );
+
+        let curve_type = chart.classify();
+        assert_eq!(curve_type, CurveType::Type3);
+        println!("{:?}: {:?}", curve_type, chart);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lenke_case2() -> Result<()> {
+        setup();
+        let tests = test_directory();
+        let json_filename = tests.join("case2/frontal.json");
+        let frontal_scol = load_scoliosis(&json_filename)?;
+
+        let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
+
+        let json_filename = tests.join("case2/lateral.json");
+        let lateral_scol = load_scoliosis(&json_filename)?;
+
+        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+
+        let study = Study {
+            coronal: frontal_scol,
+            left_bend: None,
+            right_bend: None,
+            sagittal: Some(lateral_scol),
+        };
+
+        let chart = study.chart(&curve_set, major_curve.unwrap());
+
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::F, curve_set.mt.as_ref().unwrap().1));
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_MT,
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_MT)
+                    .unwrap(),
+            ),
+        ));
+
+        assert_eq!(
+            chart.mt.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
+        );
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_PT,
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_PT)
+                    .unwrap(),
+            ),
+        ));
+
+        assert_eq!(
+            chart.pt.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
+        );
+
+        assert_eq!(
+            chart.tll.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Major())
+        );
+
+        let curve_type = chart.classify();
+        assert_eq!(curve_type, CurveType::Type5);
+        println!("{:?}: {:?}", curve_type, chart);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lenke_case3() -> Result<()> {
+        setup();
+        let tests = test_directory();
+        let json_filename = tests.join("case3/frontal.json");
+        let frontal_scol = load_scoliosis(&json_filename)?;
+
+        let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
+
+        let json_filename = tests.join("case3/lateral.json");
+        let lateral_scol = load_scoliosis(&json_filename)?;
+
+        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+
+        let study = Study {
+            coronal: frontal_scol,
+            left_bend: None,
+            right_bend: None,
+            sagittal: Some(lateral_scol),
+        };
+
+        let chart = study.chart(&curve_set, major_curve.unwrap());
+
+        assert_eq!(
+            chart.mt.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Major())
+        );
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+
+        reason.sagittal = Some((
+            IsStructural::T,
+            (
+                KYOPHOSIS_CURVE_PT.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_PT)
+                    .unwrap(),
+            ),
+        ));
+        assert_eq!(
+            chart.pt.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Minor(reason))
+        );
+
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_TLL.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_TLL)
+                    .unwrap(),
+            ),
+        ));
+
+        assert_eq!(
+            chart.tll.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
+        );
+
+        let curve_type = chart.classify();
+        assert_eq!(curve_type, CurveType::Type2);
+        println!("{:?}: {:?}", curve_type, chart);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lenke_case4() -> Result<()> {
+        setup();
+        let tests = test_directory();
+        let json_filename = tests.join("case4/frontal.json");
+        let frontal_scol = load_scoliosis(&json_filename)?;
+
+        let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
+
+        let json_filename = tests.join("case4/lateral.json");
+        let lateral_scol = load_scoliosis(&json_filename)?;
+
+        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+
+        let study = Study {
+            coronal: frontal_scol,
+            left_bend: None,
+            right_bend: None,
+            sagittal: Some(lateral_scol),
+        };
+
+        let chart = study.chart(&curve_set, major_curve.unwrap());
+
+        assert_eq!(
+            chart.mt.as_ref().unwrap(),
+            &RegionalCurveType::Structural(StructuralReason::Major())
+        );
+
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_PT.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_PT)
+                    .unwrap(),
+            ),
+        ));
+        assert_eq!(
+            chart.pt.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
+        );
+
+        let mut reason = MinorReason::default();
+        reason.coronal = Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+
+        reason.sagittal = Some((
+            IsStructural::F,
+            (
+                KYOPHOSIS_CURVE_TLL.clone(),
+                study
+                    .sagittal
+                    .as_ref()
+                    .unwrap()
+                    .angle(&KYOPHOSIS_CURVE_TLL)
+                    .unwrap(),
+            ),
+        ));
+
+        assert_eq!(
+            chart.tll.as_ref().unwrap(),
+            &RegionalCurveType::NonStructural(reason)
+        );
+
+        let curve_type = chart.classify();
+        assert_eq!(curve_type, CurveType::Type1);
+        println!("{:?}: {:?}", curve_type, chart);
 
         Ok(())
     }

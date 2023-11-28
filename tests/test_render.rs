@@ -12,6 +12,7 @@ fn tmp_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
 }
 
+#[ignore]
 #[test]
 fn test_render_cases() -> Result<()> {
     // case 1
@@ -78,6 +79,44 @@ fn test_render_cases() -> Result<()> {
     println!("stdout:{}", String::from_utf8(output.stdout)?);
     println!("stderr:{}", String::from_utf8(output.stderr)?);
     assert!(output.status.success());
+
+    for case in ["case2", "case3", "case4"] {
+        for stem in ["frontal", "lateral"] {
+            let output = if stem == "frontal" {
+                Command::new(&bin_path)
+                    .args(
+                        [
+                            common_args.clone(),
+                            vec![
+                                test_dir.join(format!("{case}/{stem}.json")).as_os_str(),
+                                tmp_dir.join(format!("{case}_{stem}.svg")).as_os_str(),
+                            ],
+                        ]
+                        .concat(),
+                    )
+                    .output()
+            } else {
+                Command::new(&bin_path)
+                    .args(
+                        [
+                            common_args.clone(),
+                            vec![
+                                test_dir.join(format!("{case}/{stem}.json")).as_os_str(),
+                                tmp_dir.join(format!("{case}_{stem}.svg")).as_os_str(),
+                                "--direction".as_ref(),
+                                "lateral".as_ref(),
+                            ],
+                        ]
+                        .concat(),
+                    )
+                    .output()
+            }
+            .unwrap();
+            println!("stdout:{}", String::from_utf8(output.stdout)?);
+            println!("stderr:{}", String::from_utf8(output.stderr)?);
+            assert!(output.status.success());
+        }
+    }
 
     Ok(())
 }

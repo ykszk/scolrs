@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 pub const CORNER_LABELS: [&str; 4] = ["TL", "TR", "BL", "BR"];
 pub const VERTEBRAL_LABELS: [&str; 18] = [
     "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1", "L2", "L3",
@@ -83,5 +85,53 @@ impl From<VertebralIndex> for VertebraDiscIndex {
 impl From<u8> for VertebraDiscIndex {
     fn from(value: u8) -> Self {
         unsafe { ::std::mem::transmute(value) }
+    }
+}
+
+fn default_radius() -> usize {
+    2
+}
+fn default_line_width() -> usize {
+    1
+}
+fn default_text_stroke() -> String {
+    "black".into()
+}
+fn default_text_stroke_width() -> usize {
+    1
+}
+fn default_text_fill() -> String {
+    "white".into()
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RenderParam {
+    /// Point radius
+    #[serde(default = "default_radius")]
+    pub radius: usize,
+    /// Line width
+    #[serde(default = "default_line_width")]
+    pub line_width: usize,
+
+    /// `stroke` for texts
+    #[serde(default = "default_text_stroke")]
+    pub text_stroke: String,
+    /// `stroke-width` for texts
+    #[serde(default = "default_text_stroke_width")]
+    pub text_stroke_width: usize,
+    /// `fill` for texts
+    #[serde(default = "default_text_fill")]
+    pub text_fill: String,
+}
+
+impl Default for RenderParam {
+    fn default() -> Self {
+        Self {
+            radius: default_radius(),
+            line_width: default_line_width(),
+            text_stroke: default_text_stroke(),
+            text_stroke_width: default_text_stroke_width(),
+            text_fill: default_text_fill(),
+        }
     }
 }

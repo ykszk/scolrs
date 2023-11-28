@@ -17,7 +17,6 @@ path = "src/lib.rs"
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }
 csv = "1"
-documented = "0.2.0"
 env_logger = "0.10.0"
 labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git" }
 log = "0.4.20"
