@@ -4,7 +4,6 @@ use ndarray::{
     s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
 };
 
-use ndarray_linalg::Solve;
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,7 +12,6 @@ use std::iter::zip;
 use std::ops::AddAssign;
 use std::result::Result;
 use thiserror::Error;
-
 mod defs;
 pub use defs::*;
 
@@ -51,7 +49,7 @@ pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     ys: ndarray::ArrayBase<S, ndarray::Ix1>,
     deg: usize,
-) -> ndarray_linalg::error::Result<ndarray::Array1<f32>>
+) -> Result<ndarray::Array1<f32>, rulinalg::error::Error>
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -66,12 +64,16 @@ where
             .slice_mut(s![.., d])
             .assign(&xs.mapv(|x| x.powi(d as i32)));
     }
+    use rulinalg::matrix::{BaseMatrix, Matrix};
+    use rulinalg::vector::Vector;
 
-    vander
-        .t()
-        .dot(&vander)
-        .solve(&vander.t().dot(&ys))
-        .map(|arr| arr.mapv(|x| x as f32))
+    let vander = Matrix::new(vander.nrows(), vander.ncols(), vander.into_raw_vec());
+    let ys = Vector::new(ys.into_raw_vec());
+    let a = vander.transpose() * &vander;
+
+    let b = &vander.transpose() * &ys;
+    a.solve(b)
+        .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e as f32))
 }
 
 pub fn polynomial<S, T>(
@@ -228,7 +230,7 @@ impl Scoliosis {
         self.v_c7tl.0.slice(s![index + 1, 2.., ..])
     }
 
-    pub fn spinal_poly(&self) -> ndarray_linalg::error::Result<ndarray::Array1<f32>> {
+    pub fn spinal_poly(&self) -> Result<ndarray::Array1<f32>, rulinalg::error::Error> {
         let centroids = self.tl_centroids();
         let coefs = polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6);
         coefs
@@ -334,8 +336,7 @@ impl Scoliosis {
         );
         Some((angles[i_max].0.clone(), _max_value))
     }
-
-    fn find_apex(&self, curve: &Curve) -> ndarray_linalg::error::Result<VertebraDiscIndex> {
+    fn find_apex(&self, curve: &Curve) -> Result<VertebraDiscIndex, rulinalg::error::Error> {
         let coefs = self.spinal_poly()?;
         let vert_disc_corners = self.tl_vert_disc_corners();
         let vd_centroids: Centroids = vert_disc_corners.into();

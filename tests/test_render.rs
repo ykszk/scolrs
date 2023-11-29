@@ -39,6 +39,7 @@ fn test_render_cases() -> Result<()> {
 
     // render
     for stem in ["frontal", "left_lateral_bend", "right_lateral_bend"] {
+        println!("stem: {:?}", stem);
         let output = Command::new(&bin_path)
             .args(
                 [
