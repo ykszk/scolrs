@@ -902,7 +902,7 @@ mod tests {
     }
 
     fn test_directory() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests")
     }
 
     fn data_directory() -> PathBuf {

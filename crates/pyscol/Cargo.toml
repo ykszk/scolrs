@@ -1,0 +1,15 @@
+[package]
+name = "pyscol"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+
+[lib]
+name = "pyscol"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.20.0"
+scolrs = { path = "../scolrs" }
