@@ -564,9 +564,13 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     if let Some(parent) = args.input.parent() {
         std::env::set_current_dir(parent)?;
     }
-    let data = LabelMeDataWImage::try_from(data)?;
+    let mut data = LabelMeDataWImage::try_from(data)?;
     if args.input.parent().is_some() {
-        std::env::set_current_dir(&orig_wd)?;
+        std::env::set_current_dir(orig_wd)?;
+    }
+    if let Some(resize) = args.resize {
+        let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
+        data.resize(&resize_param);
     }
     let scol = scolrs::Scoliosis::try_from(&data.data)?;
 

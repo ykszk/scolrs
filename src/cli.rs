@@ -43,6 +43,9 @@ pub struct RenderArgs {
     /// Scan direction
     #[clap(short, long, default_value = "frontal")]
     pub direction: Direction,
+    /// Resize image. Specify in imagemagick's `-resize`-like format
+    #[clap(long)]
+    pub resize: Option<String>,
 }
 
 #[derive(Parser, Debug)]
