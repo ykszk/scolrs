@@ -189,6 +189,19 @@ pub enum MajorCurve {
     TLL,
 }
 
+pub trait L2Norm<T> {
+    fn l2norm(&self) -> T;
+}
+
+impl<S> L2Norm<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    fn l2norm(&self) -> f32 {
+        self.mapv(|a| a * a).sum().sqrt()
+    }
+}
+
 impl Scoliosis {
     pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f32>> {
         let tl = self.v_c7tl.0.slice(s![1.., .., ..]);
@@ -397,8 +410,8 @@ impl Scoliosis {
         let inf_line = self.tl_inf_plate(curve.inf);
         let v_sup = &sup_line.index_axis(Axis(0), 1) - &sup_line.index_axis(Axis(0), 0);
         let v_inf = &inf_line.index_axis(Axis(0), 1) - &inf_line.index_axis(Axis(0), 0);
-        let len_sup = v_sup.mapv(|a| a * a).sum().sqrt();
-        let len_inf = v_inf.mapv(|a| a * a).sum().sqrt();
+        let len_sup = v_sup.l2norm();
+        let len_inf = v_inf.l2norm();
         if len_sup == 0.0 || len_inf == 0.0 {
             return None;
         }

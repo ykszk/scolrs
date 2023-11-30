@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDataWImage};
 use log::debug;
 use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
+use ndarray_stats::DeviationExt;
+use scolrs::L2Norm;
 use scolrs::{ApexSet, CurveSet, LineColors, RenderParam, Scoliosis, VERTEBRAL_LABELS};
 use svg::node::element;
 
@@ -67,7 +69,7 @@ struct CobbAux {
 impl Default for CobbAux {
     fn default() -> Self {
         Self {
-            plate_scale: 4.0,
+            plate_scale: 3.0,
             perpendicular_scale: 1.4,
         }
     }
@@ -176,6 +178,7 @@ impl Renderer {
         scol: &scolrs::Scoliosis,
         curve: &scolrs::Curve,
         aux_param: &CobbAux,
+        base_length: f32,
     ) -> element::Group {
         let sup_plate = scol.tl_sup_plate(curve.sup);
         let inf_plate = scol.tl_inf_plate(curve.inf);
@@ -189,11 +192,23 @@ impl Renderer {
                 && intersection.y > 0.0
                 && intersection.y < self.size.1 as f32;
             let angle = scol.angle(curve).unwrap(); // lines can't be parallel if there is an intersection point
-            if is_inside {
+
+            let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
+            let i = Self::plate_end(sup_plate, arr_int.view());
+            let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
+            let unit_d = &d / d.l2norm();
+            let aux_on_sup: ndarray::Array1<_> =
+                &sup_plate.slice(s![i, ..]) + aux_param.plate_scale * base_length * &unit_d;
+            let aux_cross =
+                Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
+
+            let d_btw_aux2p = aux_cross.l2_dist(&sup_plate.slice(s![i, ..])).unwrap();
+            let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
+            let d_btw_int2p = arr_int.l2_dist(&sup_plate.slice(s![i, ..])).unwrap();
+            if is_inside && d_btw_aux2p > d_btw_int2p {
                 // draw intersection point
                 for plate in [sup_plate, inf_plate] {
-                    let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-                    let i = Self::plate_end(plate, arr_int);
+                    let i = Self::plate_end(plate, arr_int.view());
                     let line = self.line(ndarray::arr2(&[
                         [plate[[i, 0]], plate[[i, 1]]],
                         [intersection.x, intersection.y],
@@ -212,16 +227,6 @@ impl Renderer {
                 group = group.add(text);
             } else {
                 // draw aux lines and its intersection
-                let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-                let i = Self::plate_end(sup_plate, arr_int.view());
-                let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
-                let aux_on_sup: ndarray::Array1<_> =
-                    &sup_plate.slice(s![i, ..]) + aux_param.plate_scale * &d;
-                let aux_cross = Self::rotate_around(
-                    aux_on_sup.view(),
-                    arr_int.view(),
-                    angle.to_radians() / 2.0,
-                );
 
                 for plate in [sup_plate, inf_plate] {
                     let i = Self::plate_end(sup_plate, arr_int.view());
@@ -253,14 +258,24 @@ impl Renderer {
             }
         } else {
             // parallel lines
-            debug!("Drawing parallel line: {}, {}", curve.sup, curve.inf);
             for plate in [sup_plate, inf_plate] {
                 let mut line = plate.to_owned();
                 let d = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
                 line.slice_mut(s![0, ..]).sub_assign(&d);
-                line.slice_mut(s![1, ..]).sub_assign(&-d);
-                let line = self.line(plate);
+                line.slice_mut(s![1, ..]).add_assign(&d);
+                let line = self.line(line);
                 group = group.add(line);
+                // arrow
+                let unit_d = &d / d.l2norm();
+                let len = self.param.line_width as f32 * 8.0;
+                let p1 = plate.mean_axis(Axis(0)).unwrap();
+                let p2 = Self::rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f32.to_radians());
+                let p3 =
+                    Self::rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f32.to_radians());
+                let arrow = ndarray::stack![Axis(0), p1, p2, p3];
+                let arrow = self.polygon(arrow);
+
+                group = group.add(arrow);
             }
         }
         group
@@ -448,6 +463,15 @@ impl Component for Centroids {
     }
 }
 
+fn mean_plate_length(scol: &Scoliosis) -> f32 {
+    let corners = scol.tl_corners().0;
+    let sup_inf_shape = (corners.len_of(Axis(0)) * 2, 2, 2); // [n * sup_inf, lr, xy]
+
+    let plate_lr = corners.to_shape(sup_inf_shape).unwrap();
+    let diff = &plate_lr.index_axis(Axis(1), 0) - &plate_lr.index_axis(Axis(1), 1);
+    diff.map_axis(Axis(1), |a| a.l2norm()).mean().unwrap()
+}
+
 struct FrontalCobbAngles<'a>(&'a CurveSet);
 impl<'a> Component for FrontalCobbAngles<'a> {
     fn render(
@@ -462,11 +486,13 @@ impl<'a> Component for FrontalCobbAngles<'a> {
         let mut g_angles = element::Group::new().set("class", "CobbAngles");
         let aux_param = CobbAux::default();
 
+        let mean_plate_length = mean_plate_length(scol);
+
         if let Some((mt_curve, _angle)) = &curve_set.mt {
             let g_mt = element::Group::new()
                 .set("class", "MT")
                 .set("stroke", line_colors.get_or_new("MT"));
-            let group = renderer.cobb(g_mt, scol, mt_curve, &aux_param);
+            let group = renderer.cobb(g_mt, scol, mt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         };
 
@@ -474,7 +500,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_pt = element::Group::new()
                 .set("class", "PT")
                 .set("stroke", line_colors.get_or_new("PT"));
-            let group = renderer.cobb(g_pt, scol, pt_curve, &aux_param);
+            let group = renderer.cobb(g_pt, scol, pt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
 
@@ -482,7 +508,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_tll = element::Group::new()
                 .set("class", "TLL")
                 .set("stroke", line_colors.get_or_new("TLL"));
-            let group = renderer.cobb(g_tll, scol, tll_curve, &aux_param);
+            let group = renderer.cobb(g_tll, scol, tll_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
         g_angles
@@ -668,6 +694,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         }
     } else {
         let aux_param = CobbAux::default();
+        let mean_plate_length = mean_plate_length(&scol);
         {
             let mut opposite_param = CobbAux::opposite_default();
             opposite_param.plate_scale = -3.0;
@@ -682,6 +709,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 &scol,
                 &scolrs::Curve { sup, inf },
                 &opposite_param,
+                mean_plate_length,
             ));
         }
         {
@@ -691,8 +719,13 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = scolrs::VertebralIndex::T5 as usize;
             let inf = scolrs::VertebralIndex::T12 as usize;
-            document =
-                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+            document = document.add(renderer.cobb(
+                group,
+                &scol,
+                &scolrs::Curve { sup, inf },
+                &aux_param,
+                mean_plate_length,
+            ));
         }
         {
             let label = "ProximalThoracicKyphosis";
@@ -701,8 +734,13 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = scolrs::VertebralIndex::T2 as usize;
             let inf = scolrs::VertebralIndex::T5 as usize;
-            document =
-                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+            document = document.add(renderer.cobb(
+                group,
+                &scol,
+                &scolrs::Curve { sup, inf },
+                &aux_param,
+                mean_plate_length,
+            ));
         }
         // {
         //     let label = "LumbarLordosis";
@@ -721,8 +759,13 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = scolrs::VertebralIndex::T10 as usize;
             let inf = scolrs::VertebralIndex::L2 as usize;
-            document =
-                document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }, &aux_param));
+            document = document.add(renderer.cobb(
+                group,
+                &scol,
+                &scolrs::Curve { sup, inf },
+                &aux_param,
+                mean_plate_length,
+            ));
         }
     };
 
