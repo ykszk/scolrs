@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn test_data_directory() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/data")
 }
 
 fn tmp_directory() -> PathBuf {
