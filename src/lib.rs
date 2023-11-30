@@ -889,15 +889,16 @@ mod tests {
     }
 
     fn test_directory() -> PathBuf {
-        let mut tests = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        tests.push("tests");
-        tests
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests")
+    }
+
+    fn data_directory() -> PathBuf {
+        test_directory().join("data")
     }
 
     #[test]
     fn test_case1() -> Result<()> {
-        let tests = test_directory();
-        let json_filename = tests.join("case1/frontal.json");
+        let json_filename = data_directory().join("case1/frontal.json");
         let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
@@ -921,8 +922,7 @@ mod tests {
 
     #[test]
     fn test_case2() -> Result<()> {
-        let tests = test_directory();
-        let json_filename = tests.join("case2/frontal.json");
+        let json_filename = data_directory().join("case2/frontal.json");
         let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
@@ -942,8 +942,7 @@ mod tests {
 
     #[test]
     fn test_case3() -> Result<()> {
-        let tests = test_directory();
-        let json_filename = tests.join("case3/frontal.json");
+        let json_filename = data_directory().join("case3/frontal.json");
         let scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
@@ -968,17 +967,16 @@ mod tests {
     #[test]
     fn test_lenke_case1() -> Result<()> {
         setup();
-        let tests = test_directory();
-        let json_filename = tests.join("case1/frontal.json");
+        let json_filename = data_directory().join("case1/frontal.json");
         let frontal_scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
-        let json_filename = tests.join("case1/left_lateral_bend.json");
+        let json_filename = data_directory().join("case1/left_lateral_bend.json");
         let left_scol = load_scoliosis(&json_filename)?;
-        let json_filename = tests.join("case1/right_lateral_bend.json");
+        let json_filename = data_directory().join("case1/right_lateral_bend.json");
         let right_scol = load_scoliosis(&json_filename)?;
-        let json_filename = tests.join("case1/lateral.json");
+        let json_filename = data_directory().join("case1/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.0.len(), left_scol.c_c7tl.0.len());
@@ -1095,13 +1093,12 @@ mod tests {
     #[test]
     fn test_lenke_case2() -> Result<()> {
         setup();
-        let tests = test_directory();
-        let json_filename = tests.join("case2/frontal.json");
+        let json_filename = data_directory().join("case2/frontal.json");
         let frontal_scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
-        let json_filename = tests.join("case2/lateral.json");
+        let json_filename = data_directory().join("case2/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
@@ -1170,13 +1167,12 @@ mod tests {
     #[test]
     fn test_lenke_case3() -> Result<()> {
         setup();
-        let tests = test_directory();
-        let json_filename = tests.join("case3/frontal.json");
+        let json_filename = data_directory().join("case3/frontal.json");
         let frontal_scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
-        let json_filename = tests.join("case3/lateral.json");
+        let json_filename = data_directory().join("case3/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
@@ -1245,13 +1241,12 @@ mod tests {
     #[test]
     fn test_lenke_case4() -> Result<()> {
         setup();
-        let tests = test_directory();
-        let json_filename = tests.join("case4/frontal.json");
+        let json_filename = data_directory().join("case4/frontal.json");
         let frontal_scol = load_scoliosis(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
-        let json_filename = tests.join("case4/lateral.json");
+        let json_filename = data_directory().join("case4/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
