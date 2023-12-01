@@ -282,11 +282,11 @@ impl Renderer {
     }
 
     fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
-        let (image_width, image_height) = image.dimensions();
+        let (w, h) = self.size;
         let mut document = svg::Document::new()
-            .set("width", image_width)
-            .set("height", image_height)
-            .set("viewBox", (0i64, 0i64, image_width, image_height))
+            .set("width", w)
+            .set("height", h)
+            .set("viewBox", (0i64, 0i64, w, h))
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
@@ -295,8 +295,8 @@ impl Renderer {
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", image_width)
-            .set("height", image_height)
+            .set("width", w)
+            .set("height", h)
             .set("xlink:href", b64);
         document = document.add(bg);
         document
@@ -598,6 +598,15 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
     }
+    let svg_size = if let Some(size) = args.size {
+        let size_param = labelme_rs::ResizeParam::try_from(size.as_str())?;
+        data.data
+            .scale(size_param.scale(data.image.width(), data.image.height()));
+        size_param.size(data.image.width(), data.image.height())
+    } else {
+        data.image.dimensions()
+    };
+
     let scol = scolrs::Scoliosis::try_from(&data.data)?;
 
     let mut label_colors = if let Some(filename) = args.label_colors {
@@ -618,7 +627,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
 
     let renderer = Renderer::new(
         render_param.clone(),
-        (data.image.width() as usize, data.image.height() as usize),
+        (svg_size.0 as usize, svg_size.1 as usize),
     );
     let mut document = renderer.doc_w_background(&data.image);
     let text_style = "text {font-size: 24px; font-family:sans-serif;}";

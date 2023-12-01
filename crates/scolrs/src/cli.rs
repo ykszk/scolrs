@@ -43,9 +43,12 @@ pub struct RenderArgs {
     /// Scan direction
     #[clap(short, long, default_value = "frontal")]
     pub direction: Direction,
-    /// Resize image. Specify in imagemagick's `-resize`-like format
+    /// Resize x-ray image. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub resize: Option<String>,
+    /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
+    #[clap(long)]
+    pub size: Option<String>,
 }
 
 #[derive(Parser, Debug)]

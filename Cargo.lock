@@ -343,7 +343,6 @@ checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
- "serde",
 ]
 
 [[package]]
@@ -354,6 +353,7 @@ checksum = "8adf3ddd720272c6ea8bf59463c04e0f93d0bbf7c5439b691bca2987e0270897"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.1",
+ "serde",
 ]
 
 [[package]]
@@ -396,13 +396,13 @@ checksum = "bc0000e42512c92e31c2252315bda326620a4e034105e900c98ec492fa077b3e"
 
 [[package]]
 name = "labelme-rs"
-version = "0.8.2"
-source = "git+https://github.com/ykszk/labelme-rs.git#5019add1432b7f6e3eff77e51377e8f4b48eecaf"
+version = "0.8.3"
+source = "git+https://github.com/ykszk/labelme-rs.git#58c02af09f51163805bf0340c6e38ebe408433d3"
 dependencies = [
  "anyhow",
  "base64",
  "image",
- "indexmap 1.9.3",
+ "indexmap 2.0.2",
  "lazy_static",
  "regex",
  "serde",

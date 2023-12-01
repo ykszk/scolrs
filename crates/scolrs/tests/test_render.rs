@@ -33,7 +33,7 @@ fn test_render_cases() -> Result<()> {
         colors.as_os_str(),
         "--line-colors".as_ref(),
         line_colors.as_os_str(),
-        "--resize".as_ref(),
+        "--size".as_ref(),
         "1024x1024".as_ref(),
     ];
 
