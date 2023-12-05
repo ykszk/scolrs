@@ -1,0 +1,35 @@
+[package]
+name = "devsc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[lib]
+name = "devscol"
+crate-type = ["lib"]
+
+[dependencies]
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+ndarray.workspace = true
+ndarray-ndimage = "0.4.0"
+ndarray-stats = "0.5.1"
+numpy = "0.20.0"
+scolrs = { path = "../scolrs" }
+
+# [target.'cfg(target_arch = "wasm32")'.dependencies]
+# getrandom = { features = ["js"] } # for ndarray-stats
+
+[dev-dependencies]
+walkdir = "2.4.0"
+dicom = "0.6.3"
+dicom-pixeldata = { version = "0.2.2", default-features = false, features = [
+    "native",
+    "image",
+    "ndarray",
+    "gdcm",
+] }
+dicom-transfer-syntax-registry = { version = "0.6.2" }

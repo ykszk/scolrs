@@ -15,15 +15,14 @@ name = "scolrs"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0"
+anyhow.workspace = true
 clap = { version = "4.4", features = ["derive"] }
 csv = "1"
-env_logger = "0.10.0"
+env_logger.workspace = true
 labelme-rs = { version = "0.8.3", git = "https://github.com/ykszk/labelme-rs.git" }
-log = "0.4.20"
+log.workspace = true
 lyon_geom = "1.0.4"
-mimalloc = "0.1.39"
-ndarray = "0.15"
+ndarray.workspace = true
 ndarray-stats = "0"
 rulinalg = "0.4.2"
 serde = "1.0.188"

@@ -11,5 +11,13 @@ name = "pyscol"
 crate-type = ["cdylib"]
 
 [dependencies]
+numpy = "0.20.0"
 pyo3 = "0.20.0"
-scolrs = { path = "../scolrs" }
+# scolrs = { path = "../scolrs" }
+devsc = { path = "../devsc"}
+
+# [target.'cfg(target_arch = "wasm32")'.dependencies]
+# getrandom = { features = ["js"] } # for ndarray-stats
+
+[dev-dependencies]
+walkdir = "2.4.0"
