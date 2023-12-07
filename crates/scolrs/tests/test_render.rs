@@ -53,8 +53,7 @@ fn test_render_cases() -> Result<()> {
                 ]
                 .concat(),
             )
-            .output()
-            .unwrap();
+            .output()?;
         println!("stdout:{}", String::from_utf8(output.stdout)?);
         println!("stderr:{}", String::from_utf8(output.stderr)?);
         assert!(output.status.success());
@@ -75,8 +74,7 @@ fn test_render_cases() -> Result<()> {
             ]
             .concat(),
         )
-        .output()
-        .unwrap();
+        .output()?;
     println!("stdout:{}", String::from_utf8(output.stdout)?);
     println!("stderr:{}", String::from_utf8(output.stderr)?);
     assert!(output.status.success());

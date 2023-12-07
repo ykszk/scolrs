@@ -53,6 +53,6 @@ pub struct RenderArgs {
 
 #[derive(Parser, Debug)]
 pub struct CurveArgs {
-    /// Input labelme json filename
+    /// Input labelme json/ndjson filename. Specify '-' for stdin with ndjson format
     pub input: PathBuf,
 }

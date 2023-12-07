@@ -26,6 +26,7 @@ ndarray.workspace = true
 ndarray-stats = "0"
 rulinalg = "0.4.2"
 serde = "1.0.188"
+serde_repr = "0.1.17"
 svg = "0.14"
 thiserror = "1.0"
 toml = "0.8.2"

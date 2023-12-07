@@ -5,8 +5,8 @@ use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDa
 use log::debug;
 use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
-use scolrs::L2Norm;
 use scolrs::{ApexSet, CurveSet, LineColors, RenderParam, Scoliosis, VERTEBRAL_LABELS};
+use scolrs::{CurveInfo, L2Norm};
 use svg::node::element;
 
 use crate::cli::{Direction, RenderArgs};
@@ -653,41 +653,29 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     }
 
     if let Direction::Frontal = args.direction {
-        let mut curve_set: Option<CurveSet> = if let Some(filename) = args.curve_set {
+        let (curve_set, apex_set) = if let Some(filename) = args.curve_set {
             let reader = std::fs::File::open(&filename)
                 .with_context(|| format!("reading file {:?}", filename))?;
-            let cs: CurveSet = labelme_rs::serde_json::from_reader(reader)?;
-            Some(cs)
+            let cs: CurveInfo = labelme_rs::serde_json::from_reader(reader)?;
+            (cs.curves, cs.apices)
         } else {
-            None
+            let (cs, apexes, _major_curve) = scol.identify_curves();
+            (cs, apexes)
         };
-        let mut apex_set: Option<ApexSet> = None;
         for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine"] {
             let group = match component {
                 "Centroids" => {
                     Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
                 }
-                "CobbAngles" => {
-                    if curve_set.is_none() {
-                        let (cs, apexes, _major_curve) = scol.identify_curves();
-                        curve_set = Some(cs);
-                        apex_set = Some(apexes);
-                    }
-                    FrontalCobbAngles(curve_set.as_ref().unwrap()).render(
-                        &scol,
-                        &renderer,
-                        &mut label_colors,
-                        &mut line_colors,
-                    )
-                }
+                "CobbAngles" => FrontalCobbAngles(&curve_set).render(
+                    &scol,
+                    &renderer,
+                    &mut label_colors,
+                    &mut line_colors,
+                ),
                 "CurveApex" => {
-                    if apex_set.is_none() {
-                        let (cs, apexes, _major_curve) = scol.identify_curves();
-                        curve_set = Some(cs);
-                        apex_set = Some(apexes);
-                    }
                     let vert_discs = scol.tl_vert_disc_corners();
-                    CurveApex(apex_set.as_ref().unwrap(), &vert_discs).render(
+                    CurveApex(&apex_set, &vert_discs).render(
                         &scol,
                         &renderer,
                         &mut label_colors,

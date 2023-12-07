@@ -120,17 +120,50 @@ const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
 const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CurveSet {
     pub pt: Option<(Curve, f32)>,
     pub mt: Option<(Curve, f32)>,
     pub tll: Option<(Curve, f32)>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ApexSet {
     pub pt: Option<VertebraDiscIndex>,
     pub mt: Option<VertebraDiscIndex>,
     pub tll: Option<VertebraDiscIndex>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum MajorCurve {
+    MT,
+    TLL,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CurveInfo {
+    pub curves: CurveSet,
+    pub apices: ApexSet,
+    pub major_curve: Option<MajorCurve>,
+}
+
+impl CurveInfo {
+    pub fn new(curves: CurveSet, apices: ApexSet, major_curve: Option<MajorCurve>) -> Self {
+        Self {
+            curves,
+            apices,
+            major_curve,
+        }
+    }
+}
+
+/// LabeleMeData with additional `filename` field for ndjsons
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CurveInfoLine {
+    #[serde(flatten)]
+    pub info: CurveInfo,
+    pub filename: String,
 }
 
 pub struct LineFactory(lyon_geom::Line<f32>);
@@ -181,12 +214,6 @@ impl From<(ArrayView1<'_, f32>, ArrayView1<'_, f32>)> for LineSegmentFactory {
         let to = lyon_geom::Point::new(start_end.1[0], start_end.1[1]);
         Self(lyon_geom::LineSegment { from, to })
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MajorCurve {
-    MT,
-    TLL,
 }
 
 pub trait L2Norm<T> {
@@ -347,7 +374,7 @@ impl Scoliosis {
                 }
             },
         );
-        Some((angles[i_max].0.clone(), _max_value))
+        Some((angles[i_max].0.clone(), angles[i_max].1))
     }
     fn find_apex(&self, curve: &Curve) -> Result<VertebraDiscIndex, rulinalg::error::Error> {
         let coefs = self.spinal_poly()?;
@@ -826,7 +853,7 @@ impl<T> TestStructural for Option<(IsStructural, T)> {
 impl MinorStructuralParam {
     pub fn curve_type(&self) -> RegionalCurveType {
         let mut reason = MinorReason::default();
-        if self.coronal < FRONTAL_ANGLE_THRESH {
+        if self.coronal.abs() < FRONTAL_ANGLE_THRESH {
             reason.coronal = Some((IsStructural::F, self.coronal));
         } else {
             reason.coronal = Some((IsStructural::T, self.coronal));
@@ -836,7 +863,7 @@ impl MinorStructuralParam {
             if let Some(angle) = bend {
                 let angle = angle.abs();
 
-                let is_structural = (angle >= BEND_ANGLE_THRESH).into();
+                let is_structural = (angle.abs() >= BEND_ANGLE_THRESH).into();
                 if is_right {
                     reason.bend.right = Some((is_structural, BendParam::new(self.coronal, angle)));
                 } else {

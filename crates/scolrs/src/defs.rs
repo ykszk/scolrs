@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 pub const CORNER_LABELS: [&str; 4] = ["TL", "TR", "BL", "BR"];
 pub const VERTEBRAL_LABELS: [&str; 18] = [
@@ -7,7 +8,7 @@ pub const VERTEBRAL_LABELS: [&str; 18] = [
 ];
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize_repr, Serialize_repr, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebralIndex {
     T1 = 0,
     T2 = 1,
@@ -36,7 +37,7 @@ impl From<u8> for VertebralIndex {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize_repr, Serialize_repr, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebraDiscIndex {
     T1 = 0,
     DiscT1T2 = 1,
