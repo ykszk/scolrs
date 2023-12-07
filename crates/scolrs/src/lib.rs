@@ -1004,8 +1004,10 @@ mod tests {
             chart.mt.as_ref().unwrap(),
             &RegionalCurveType::Structural(StructuralReason::Major())
         );
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1)),
+            ..Default::default()
+        };
         reason.bend.left = Some((
             IsStructural::F,
             BendParam::new(
@@ -1050,8 +1052,10 @@ mod tests {
             &RegionalCurveType::NonStructural(reason)
         );
 
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::T, curve_set.tll.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::T, curve_set.tll.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.bend.left = Some((
             IsStructural::T,
@@ -1125,8 +1129,11 @@ mod tests {
 
         let chart = study.chart(&curve_set, major_curve.unwrap());
 
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::F, curve_set.mt.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::F, curve_set.mt.as_ref().unwrap().1)),
+            ..Default::default()
+        };
+
         reason.sagittal = Some((
             IsStructural::F,
             (
@@ -1144,8 +1151,10 @@ mod tests {
             chart.mt.as_ref().unwrap(),
             &RegionalCurveType::NonStructural(reason)
         );
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.sagittal = Some((
             IsStructural::F,
@@ -1203,8 +1212,10 @@ mod tests {
             chart.mt.as_ref().unwrap(),
             &RegionalCurveType::Structural(StructuralReason::Major())
         );
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::T, curve_set.pt.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.sagittal = Some((
             IsStructural::T,
@@ -1223,8 +1234,10 @@ mod tests {
             &RegionalCurveType::Structural(StructuralReason::Minor(reason))
         );
 
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.sagittal = Some((
             IsStructural::F,
@@ -1278,8 +1291,10 @@ mod tests {
             &RegionalCurveType::Structural(StructuralReason::Major())
         );
 
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::F, curve_set.pt.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.sagittal = Some((
             IsStructural::F,
@@ -1298,8 +1313,10 @@ mod tests {
             &RegionalCurveType::NonStructural(reason)
         );
 
-        let mut reason = MinorReason::default();
-        reason.coronal = Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+        let mut reason = MinorReason {
+            coronal: Some((IsStructural::F, curve_set.tll.as_ref().unwrap().1)),
+            ..Default::default()
+        };
 
         reason.sagittal = Some((
             IsStructural::F,
