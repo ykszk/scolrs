@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
 use labelme_rs::{serde_json, LabelMeDataLine};
-use scolrs::{Curve, CurveInfo};
+use scolrs::{Curve, CurveInfo, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
@@ -19,7 +19,7 @@ pub struct CurveSetLine {
 pub struct CurveSetLineAll {
     #[serde(flatten)]
     pub info: CurveInfo,
-    pub all_curves: Vec<(Curve, f32)>,
+    pub all_curves: Vec<(Curve, f32, VertebraDiscIndex)>,
     pub filename: String,
 }
 
@@ -30,6 +30,14 @@ fn print_single(line: &str, all: bool) -> Result<()> {
     let info = CurveInfo::new(curves, apex_set, major_curve);
     if all {
         let all_curves = scol.find_all_curves();
+        let coefs = scol.spinal_poly()?;
+        let all_curves: Vec<_> = all_curves
+            .into_iter()
+            .map(|(curve, angle)| {
+                let apex = scol.find_apex(&curve, coefs.view());
+                (curve, angle, apex)
+            })
+            .collect();
         let info_line = CurveSetLineAll {
             info,
             all_curves,

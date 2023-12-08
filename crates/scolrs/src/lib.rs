@@ -1,6 +1,8 @@
 use labelme_rs::LabelMeData;
 use log::debug;
-use ndarray::{s, stack, Array1, Array2, Array3, ArrayBase, ArrayView2, ArrayView3, Axis, Data};
+use ndarray::{
+    s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
+};
 
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
@@ -126,24 +128,24 @@ pub struct CurveSet {
 }
 
 impl CurveSet {
-    fn apices(&self, scol: &Scoliosis) -> Result<ApexSet, rulinalg::error::Error> {
-        Ok(ApexSet {
+    fn apices(&self, scol: &Scoliosis, coefs: ArrayView1<f32>) -> ApexSet {
+        ApexSet {
             pt: if let Some((c, _)) = self.pt.as_ref() {
-                Some(scol.find_apex(c)?)
+                Some(scol.find_apex(c, coefs))
             } else {
                 None
             },
             mt: if let Some((c, _)) = self.mt.as_ref() {
-                Some(scol.find_apex(c)?)
+                Some(scol.find_apex(c, coefs))
             } else {
                 None
             },
             tll: if let Some((c, _)) = self.tll.as_ref() {
-                Some(scol.find_apex(c)?)
+                Some(scol.find_apex(c, coefs))
             } else {
                 None
             },
-        })
+        }
     }
 }
 
@@ -338,8 +340,7 @@ impl Scoliosis {
         );
         Some((angles[i_max].0.clone(), angles[i_max].1))
     }
-    fn find_apex(&self, curve: &Curve) -> Result<VertebraDiscIndex, rulinalg::error::Error> {
-        let coefs = self.spinal_poly()?;
+    pub fn find_apex(&self, curve: &Curve, coefs: ArrayView1<f32>) -> VertebraDiscIndex {
         let vert_disc_corners = self.tl_vert_disc_corners();
         let vd_centroids: Centroids = vert_disc_corners.into();
         let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
@@ -347,8 +348,7 @@ impl Scoliosis {
         let xs = polynomial(vd_centroids.0.slice(s![sup..=inf, 1]), coefs);
         let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
         let i_max = ts.argmax().unwrap();
-        let i_apex = VertebraDiscIndex::from((i_max + sup) as u8);
-        Ok(i_apex)
+        VertebraDiscIndex::from((i_max + sup) as u8)
     }
 
     fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f32)> {
@@ -384,8 +384,9 @@ impl Scoliosis {
     pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
+        let coefs = self.spinal_poly().unwrap();
         if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.find_apex(&largest_curve.0).unwrap();
+            let major_apex = self.find_apex(&largest_curve.0, coefs.view());
             major_curve = if major_apex <= VertebraDiscIndex::T5 {
                 // largest curve is PT
                 if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
@@ -410,7 +411,7 @@ impl Scoliosis {
                 Some(MajorCurve::TLL)
             };
         }
-        let apices = curves.apices(self).unwrap();
+        let apices = curves.apices(self, coefs.view());
         (curves, apices, major_curve)
     }
 
