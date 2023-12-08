@@ -16,7 +16,6 @@ log.workspace = true
 ndarray.workspace = true
 ndarray-ndimage = "0.4.0"
 ndarray-stats = "0.5.1"
-numpy = "0.20.0"
 scolrs = { path = "../scolrs" }
 
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -24,6 +23,7 @@ scolrs = { path = "../scolrs" }
 
 [dev-dependencies]
 anyhow.workspace = true
+pretty_assertions.workspace = true
 walkdir = "2.4.0"
 dicom = "0.6.3"
 dicom-pixeldata = { version = "0.2.2", default-features = false, features = [

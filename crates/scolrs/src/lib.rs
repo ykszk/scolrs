@@ -1,8 +1,6 @@
 use labelme_rs::LabelMeData;
 use log::debug;
-use ndarray::{
-    s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
-};
+use ndarray::{s, stack, Array1, Array2, Array3, ArrayBase, ArrayView2, ArrayView3, Axis, Data};
 
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
@@ -28,7 +26,7 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
         .shapes
         .iter()
         .filter_map(|shape| {
-            if shape.label == label {
+            if shape.shape_type == "point" && shape.label == label {
                 Some(shape.points.first())
             } else {
                 None
@@ -127,6 +125,28 @@ pub struct CurveSet {
     pub tll: Option<(Curve, f32)>,
 }
 
+impl CurveSet {
+    fn apices(&self, scol: &Scoliosis) -> Result<ApexSet, rulinalg::error::Error> {
+        Ok(ApexSet {
+            pt: if let Some((c, _)) = self.pt.as_ref() {
+                Some(scol.find_apex(c)?)
+            } else {
+                None
+            },
+            mt: if let Some((c, _)) = self.mt.as_ref() {
+                Some(scol.find_apex(c)?)
+            } else {
+                None
+            },
+            tll: if let Some((c, _)) = self.tll.as_ref() {
+                Some(scol.find_apex(c)?)
+            } else {
+                None
+            },
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ApexSet {
@@ -155,64 +175,6 @@ impl CurveInfo {
             apices,
             major_curve,
         }
-    }
-}
-
-/// LabeleMeData with additional `filename` field for ndjsons
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CurveInfoLine {
-    #[serde(flatten)]
-    pub info: CurveInfo,
-    pub filename: String,
-}
-
-pub struct LineFactory(lyon_geom::Line<f32>);
-
-impl LineFactory {
-    pub fn create<T: Into<Self>>(value: T) -> lyon_geom::Line<f32> {
-        let f: Self = value.into();
-        f.0
-    }
-}
-
-impl From<ArrayView2<'_, f32>> for LineFactory {
-    fn from(start_end: ArrayView2<'_, f32>) -> Self {
-        let start = start_end.index_axis(Axis(1), 0);
-        let end = start_end.index_axis(Axis(1), 1);
-        (start, end).into()
-    }
-}
-
-impl From<(ArrayView1<'_, f32>, ArrayView1<'_, f32>)> for LineFactory {
-    fn from(start_end: (ArrayView1<'_, f32>, ArrayView1<'_, f32>)) -> Self {
-        let point = lyon_geom::Point::new(start_end.0[0], start_end.0[1]);
-        let p2 = lyon_geom::Point::new(start_end.1[0], start_end.1[1]);
-        let vector = p2 - point;
-        Self(lyon_geom::Line { point, vector })
-    }
-}
-
-pub struct LineSegmentFactory(lyon_geom::LineSegment<f32>);
-impl LineSegmentFactory {
-    pub fn create<T: Into<Self>>(value: T) -> lyon_geom::LineSegment<f32> {
-        let f: Self = value.into();
-        f.0
-    }
-}
-
-impl From<ArrayView2<'_, f32>> for LineSegmentFactory {
-    fn from(start_end: ArrayView2<'_, f32>) -> Self {
-        let from = start_end.index_axis(Axis(1), 0);
-        let to = start_end.index_axis(Axis(1), 1);
-        (from, to).into()
-    }
-}
-
-impl From<(ArrayView1<'_, f32>, ArrayView1<'_, f32>)> for LineSegmentFactory {
-    fn from(start_end: (ArrayView1<'_, f32>, ArrayView1<'_, f32>)) -> Self {
-        let from = lyon_geom::Point::new(start_end.0[0], start_end.0[1]);
-        let to = lyon_geom::Point::new(start_end.1[0], start_end.1[1]);
-        Self(lyon_geom::LineSegment { from, to })
     }
 }
 
@@ -389,9 +351,38 @@ impl Scoliosis {
         Ok(i_apex)
     }
 
+    fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f32)> {
+        let mut curves = Vec::new();
+        while let Some(largest_curve) = self.find_largest_down(sup) {
+            sup = largest_curve.0.inf;
+            curves.push(largest_curve);
+        }
+        curves
+    }
+
+    fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f32)> {
+        let mut curves = Vec::new();
+        while let Some(largest_curve) = self.find_largest_up(inf) {
+            inf = largest_curve.0.sup;
+            curves.push(largest_curve);
+        }
+        curves
+    }
+
+    pub fn find_all_curves(&self) -> Vec<(Curve, f32)> {
+        if let Some(largest_curve) = self.find_largest_curve() {
+            let mut downs = self.find_all_down(largest_curve.0.inf);
+            let ups = self.find_all_up(largest_curve.0.sup);
+            downs.extend(vec![largest_curve]);
+            downs.extend(ups);
+            downs
+        } else {
+            Vec::default()
+        }
+    }
+
     pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
         let mut curves = CurveSet::default();
-        let mut apexes = ApexSet::default();
         let mut major_curve = None;
         if let Some(largest_curve) = self.find_largest_curve() {
             let major_apex = self.find_apex(&largest_curve.0).unwrap();
@@ -399,36 +390,28 @@ impl Scoliosis {
                 // largest curve is PT
                 if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
                     curves.tll = self.find_largest_down(mt.0.inf);
-                    apexes.tll = curves.tll.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
-                    apexes.mt = Some(self.find_apex(&mt.0).unwrap());
                     curves.mt = Some(mt);
                 }
                 curves.pt = Some(largest_curve);
-                apexes.pt = Some(major_apex);
                 Some(MajorCurve::MT) // PT is never major
             } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
                 // largest curve is MT
                 curves.pt = self.find_largest_up(largest_curve.0.sup);
-                apexes.pt = curves.pt.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
                 curves.tll = self.find_largest_down(largest_curve.0.inf);
-                apexes.tll = curves.tll.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
                 curves.mt = Some(largest_curve);
-                apexes.mt = Some(major_apex);
                 Some(MajorCurve::MT)
             } else {
                 // largest curve is TLL
                 if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
                     curves.pt = self.find_largest_up(mt.0.sup);
-                    apexes.pt = curves.pt.as_ref().map(|pt| self.find_apex(&pt.0).unwrap());
-                    apexes.mt = Some(self.find_apex(&mt.0).unwrap());
                     curves.mt = Some(mt);
                 }
                 curves.tll = Some(largest_curve);
-                apexes.tll = Some(major_apex);
                 Some(MajorCurve::TLL)
             };
         }
-        (curves, apexes, major_curve)
+        let apices = curves.apices(self).unwrap();
+        (curves, apices, major_curve)
     }
 
     /// Calculate angle in degrees

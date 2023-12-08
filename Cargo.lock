@@ -324,7 +324,7 @@ dependencies = [
  "ndarray",
  "ndarray-ndimage",
  "ndarray-stats",
- "numpy",
+ "pretty_assertions",
  "scolrs",
  "walkdir",
 ]
