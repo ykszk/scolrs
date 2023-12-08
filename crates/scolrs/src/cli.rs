@@ -55,4 +55,7 @@ pub struct RenderArgs {
 pub struct CurveArgs {
     /// Input labelme json/ndjson filename. Specify '-' for stdin with ndjson format
     pub input: PathBuf,
+    /// Output all curves
+    #[clap(short, long)]
+    pub all: bool,
 }
