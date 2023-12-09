@@ -2,33 +2,40 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
-use labelme_rs::{serde_json, LabelMeDataLine};
-use scolrs::{Curve, CurveInfo, VertebraDiscIndex};
+use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
+use scolrs::{Curve, CurveInfo, Scoliosis, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CurveSetLine {
+pub struct CurveInfoLine {
     #[serde(flatten)]
     pub info: CurveInfo,
     pub filename: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CurveSetLineAll {
+pub struct CurveInfoAll {
+    #[serde(flatten)]
+    pub info: CurveInfo,
+    pub all_curves: Vec<(Curve, f32, VertebraDiscIndex)>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CurveInfoAllLine {
     #[serde(flatten)]
     pub info: CurveInfo,
     pub all_curves: Vec<(Curve, f32, VertebraDiscIndex)>,
     pub filename: String,
 }
 
-fn print_single(line: &str, all: bool) -> Result<()> {
-    let data: LabelMeDataLine = line.try_into()?;
-    let scol = scolrs::Scoliosis::try_from(&data.data)?;
-    let (curves, apex_set, major_curve) = scol.identify_curves();
-    let info = CurveInfo::new(curves, apex_set, major_curve);
-    if all {
+impl TryFrom<&LabelMeData> for CurveInfoAll {
+    type Error = anyhow::Error;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let scol = Scoliosis::try_from(data)?;
+        let (curves, apex_set, major_curve) = scol.identify_curves();
+        let info = CurveInfo::new(curves, apex_set, major_curve);
         let all_curves = scol.find_all_curves();
         let coefs = scol.spinal_poly()?;
         let all_curves: Vec<_> = all_curves
@@ -38,20 +45,33 @@ fn print_single(line: &str, all: bool) -> Result<()> {
                 (curve, angle, apex)
             })
             .collect();
-        let info_line = CurveSetLineAll {
-            info,
-            all_curves,
-            filename: data.filename,
-        };
-        println!("{}", serde_json::to_string(&info_line)?);
-    } else {
-        let info_line = CurveSetLine {
-            info,
-            filename: data.filename,
-        };
-        println!("{}", serde_json::to_string(&info_line)?);
+        Ok(CurveInfoAll { info, all_curves })
     }
-    Ok(())
+}
+
+impl TryFrom<&LabelMeDataLine> for CurveInfoLine {
+    type Error = anyhow::Error;
+
+    fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
+        let info: CurveInfo = (&data.data).try_into()?;
+        Ok(CurveInfoLine {
+            info,
+            filename: data.filename.clone(),
+        })
+    }
+}
+
+impl TryFrom<&LabelMeDataLine> for CurveInfoAllLine {
+    type Error = anyhow::Error;
+
+    fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
+        let info: CurveInfoAll = (&data.data).try_into()?;
+        Ok(CurveInfoAllLine {
+            info: info.info,
+            all_curves: info.all_curves,
+            filename: data.filename.clone(),
+        })
+    }
 }
 
 pub fn cmd(args: CurveArgs) -> Result<()> {
@@ -69,12 +89,26 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
         };
         for line in reader.lines() {
             let line = line?;
-            print_single(line.as_str(), args.all)?;
+            let data: LabelMeDataLine = line.as_str().try_into()?;
+            if args.all {
+                let info: CurveInfoAllLine = (&data).try_into()?;
+                println!("{}", serde_json::to_string(&info)?);
+            } else {
+                let info: CurveInfoLine = (&data).try_into()?;
+                println!("{}", serde_json::to_string(&info)?);
+            }
         }
     } else {
         // single json IO
         let s = std::fs::read_to_string(args.input)?;
-        print_single(s.as_str(), args.all)?;
+        let data: LabelMeData = s.as_str().try_into()?;
+        if args.all {
+            let info: CurveInfoAll = (&data).try_into()?;
+            println!("{}", serde_json::to_string(&info)?);
+        } else {
+            let info: CurveInfo = (&data).try_into()?;
+            println!("{}", serde_json::to_string(&info)?);
+        }
     }
     Ok(())
 }

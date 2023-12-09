@@ -23,6 +23,9 @@ fn test_render_cases() -> Result<()> {
         .arg("curve")
         .arg(data_dir.join("case1/frontal.json"))
         .output()?;
+    println!("stderr:{}", String::from_utf8(output.stderr)?);
+    assert!(output.status.success());
+
     let curve_set_path = tmp_dir.join("case1_frontal.json");
     std::fs::write(&curve_set_path, output.stdout)?;
     let colors = data_dir.join("colors.yaml");

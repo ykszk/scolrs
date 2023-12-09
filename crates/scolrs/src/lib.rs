@@ -180,6 +180,16 @@ impl CurveInfo {
     }
 }
 
+impl TryFrom<&LabelMeData> for CurveInfo {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let scol = Scoliosis::try_from(data)?;
+        let (curves, apex_set, major_curve) = scol.identify_curves();
+        Ok(CurveInfo::new(curves, apex_set, major_curve))
+    }
+}
+
 pub trait L2Norm<T> {
     fn l2norm(&self) -> T;
 }
