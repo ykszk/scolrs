@@ -1,7 +1,8 @@
 use labelme_rs::LabelMeData;
 use log::debug;
 use ndarray::{
-    s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3, Axis, Data,
+    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
+    Axis, Data,
 };
 
 use ndarray_stats::QuantileExt;
@@ -95,8 +96,11 @@ where
 
 #[derive(Debug, Clone)]
 pub struct Scoliosis {
-    v_c7tl: VertebraeC7TL,
-    c_c7tl: Centroids,
+    /// Corner points of all vertebrae.
+    /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
+    pub vertebrae: Vertebrae,
+    pub v_c7tl: VertebraeC7TL,
+    pub c_c7tl: Centroids,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -453,15 +457,24 @@ impl TryFrom<&LabelMeData> for Scoliosis {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let vertebrae = Vertebrae::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl = Corners(v_c7tl.0.view()).into();
-        Ok(Self { v_c7tl, c_c7tl })
+        Ok(Self {
+            vertebrae,
+            v_c7tl,
+            c_c7tl,
+        })
     }
 }
 
 /// C7, thoracic and lumber vertebrae
 #[derive(Debug, Clone)]
 pub struct VertebraeC7TL(pub Array3<f32>);
+
+/// All vertebrae including sacrum
+#[derive(Debug, Clone)]
+pub struct Vertebrae(pub Array3<f32>);
 
 /// Thoracic and lumber vertebrae
 pub struct VertebraeTL<'a>(ArrayView3<'a, f32>);
@@ -612,6 +625,51 @@ impl Study {
             })
         };
         Chart { pt, mt, tll }
+    }
+}
+
+impl TryFrom<&LabelMeData> for Vertebrae {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let mut corners = CORNER_LABELS
+            .iter()
+            .map(|label| extract_points(data, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        if corners[0].shape()[0] != corners[1].shape()[0] {
+            return Err(ScolError::InvalidPointCombo(
+                "TL".into(),
+                "TR".into(),
+                corners[0].shape()[0],
+                corners[1].shape()[0],
+            ));
+        }
+        if corners[2].shape()[0] != corners[3].shape()[0] {
+            return Err(ScolError::InvalidPointCombo(
+                "BL".into(),
+                "BR".into(),
+                corners[2].shape()[0],
+                corners[3].shape()[0],
+            ));
+        }
+        if corners[0].shape()[0] - 1 != corners[2].shape()[0] {
+            return Err(ScolError::InvalidPointCombo(
+                "TL-1".into(),
+                "BL".into(),
+                corners[0].shape()[0] - 1,
+                corners[2].shape()[0],
+            ));
+        }
+        let last = corners[0]
+            .index_axis(Axis(0), corners[0].len_of(Axis(0)) - 1)
+            .insert_axis(Axis(0));
+        corners[2] = concatenate(Axis(0), &[corners[2].view(), last]).unwrap();
+        let last = corners[1]
+            .index_axis(Axis(0), corners[1].len_of(Axis(0)) - 1)
+            .insert_axis(Axis(0));
+        corners[3] = concatenate(Axis(0), &[corners[3].view(), last]).unwrap();
+        let verts = stack![Axis(1), corners[0], corners[1], corners[2], corners[3]];
+        Ok(Vertebrae(verts))
     }
 }
 

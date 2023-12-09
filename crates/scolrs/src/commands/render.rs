@@ -5,7 +5,9 @@ use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDa
 use log::debug;
 use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
-use scolrs::{ApexSet, CurveSet, LineColors, RenderParam, Scoliosis, VERTEBRAL_LABELS};
+use scolrs::{
+    ApexSet, Curve, CurveSet, LineColors, RenderParam, Scoliosis, VertebralIndex, VERTEBRAL_LABELS,
+};
 use scolrs::{CurveInfo, L2Norm};
 use svg::node::element;
 
@@ -175,8 +177,8 @@ impl Renderer {
     fn cobb(
         &self,
         mut group: element::Group,
-        scol: &scolrs::Scoliosis,
-        curve: &scolrs::Curve,
+        scol: &Scoliosis,
+        curve: &Curve,
         aux_param: &CobbAux,
         base_length: f32,
     ) -> element::Group {
@@ -424,15 +426,19 @@ impl Component for VertebralPoints {
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
-        let corners = scol.tl_corners();
         let mut g_corners = element::Group::new();
         for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
             let color = label_colors.get_or_new(label);
             let mut sub_group = element::Group::new()
                 .set("class", format!("{CLS_POINT} {label}"))
                 .set("fill", color);
-            let points = corners.0.index_axis(Axis(1), i_label);
-            for point in points.axis_iter(Axis(0)) {
+            let points = scol.vertebrae.0.index_axis(Axis(1), i_label);
+            let n_points = if i_label < 2 {
+                points.len_of(Axis(0))
+            } else {
+                points.len_of(Axis(0)) - 1 // BL and BR points of sacrum are dummies
+            };
+            for point in points.axis_iter(Axis(0)).take(n_points) {
                 let p = renderer.point(point);
                 sub_group = sub_group.add(p);
             }
@@ -534,6 +540,7 @@ impl<'a> Component for CurveApex<'a> {
             .flatten()
         {
             let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
+            // from (tl, tr, bl, br) order to (tl, tr, br, bl)
             corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
             corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
             let polygon = renderer
@@ -573,6 +580,44 @@ impl Component for SpinalLine {
     }
 }
 
+/// center sacral vertical line (CSVL)
+struct CSVL<'a>(&'a ApexSet);
+impl<'a> Component for CSVL<'a> {
+    fn render(
+        &self,
+        scol: &Scoliosis,
+        renderer: &Renderer,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> element::Group {
+        let label = "CSVL";
+        let line_color = line_colors.get_or_new(label);
+        let mut g = element::Group::new()
+            .set("class", label)
+            .set("stroke", line_color);
+        let sacral_corners = scol
+            .vertebrae
+            .0
+            .index_axis(Axis(0), scol.vertebrae.0.len_of(Axis(0)) - 1)
+            .to_owned(); // required for reshaping?;
+        let sacral_line = renderer.line(sacral_corners.view());
+        g = g.add(sacral_line);
+        if let Some(tll) = self.0.tll {
+            let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
+            let mut vl = sacral_corners
+                .into_shape((2, 2, 2))
+                .unwrap()
+                .to_owned()
+                .mean_axis(Axis(1))
+                .unwrap();
+            let y = scol.vertebrae.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
+            vl[[0, 1]] = y;
+            g = g.add(renderer.line(vl));
+        }
+        g
+    }
+}
+
 pub fn cmd(args: RenderArgs) -> Result<()> {
     let render_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
@@ -607,7 +652,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         data.image.dimensions()
     };
 
-    let scol = scolrs::Scoliosis::try_from(&data.data)?;
+    let scol = Scoliosis::try_from(&data.data)?;
 
     let mut label_colors = if let Some(filename) = args.label_colors {
         ColorPaletts::new(
@@ -662,7 +707,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             let (cs, apexes, _major_curve) = scol.identify_curves();
             (cs, apexes)
         };
-        for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine"] {
+        for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine", "CSVL"] {
             let group = match component {
                 "Centroids" => {
                     Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
@@ -685,6 +730,9 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 "SpinalLine" => {
                     SpinalLine {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
                 }
+                "CSVL" => {
+                    CSVL(&apex_set).render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                }
                 _ => panic!("Unknown component"),
             };
             document = document.add(group);
@@ -699,12 +747,12 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             let group = element::Group::new()
                 .set("class", label)
                 .set("stroke", line_colors.get_or_new(label));
-            let sup = scolrs::VertebralIndex::T2 as usize;
-            let inf = scolrs::VertebralIndex::T12 as usize;
+            let sup = VertebralIndex::T2 as usize;
+            let inf = VertebralIndex::T12 as usize;
             document = document.add(renderer.cobb(
                 group,
                 &scol,
-                &scolrs::Curve { sup, inf },
+                &Curve { sup, inf },
                 &opposite_param,
                 mean_plate_length,
             ));
@@ -714,12 +762,12 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             let group = element::Group::new()
                 .set("class", label)
                 .set("stroke", line_colors.get_or_new(label));
-            let sup = scolrs::VertebralIndex::T5 as usize;
-            let inf = scolrs::VertebralIndex::T12 as usize;
+            let sup = VertebralIndex::T5 as usize;
+            let inf = VertebralIndex::T12 as usize;
             document = document.add(renderer.cobb(
                 group,
                 &scol,
-                &scolrs::Curve { sup, inf },
+                &Curve { sup, inf },
                 &aux_param,
                 mean_plate_length,
             ));
@@ -729,37 +777,28 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
             let group = element::Group::new()
                 .set("class", label)
                 .set("stroke", line_colors.get_or_new(label));
-            let sup = scolrs::VertebralIndex::T2 as usize;
-            let inf = scolrs::VertebralIndex::T5 as usize;
+            let sup = VertebralIndex::T2 as usize;
+            let inf = VertebralIndex::T5 as usize;
             document = document.add(renderer.cobb(
                 group,
                 &scol,
-                &scolrs::Curve { sup, inf },
+                &Curve { sup, inf },
                 &aux_param,
                 mean_plate_length,
             ));
         }
-        // {
-        //     let label = "LumbarLordosis";
-        //     let group = element::Group::new()
-        //         .set("class", label)
-        //         .set("stroke", line_colors.get_or_new(label));
-        //     let sup = scolrs::VertebralIndex::T12 as usize;
-        //     // let inf = Sacral top!!
-        //     document = document.add(renderer.cobb(group, &scol, &scolrs::Curve { sup, inf }));
-        // }
         {
             // required for structural/non-structural analysis for thoracic and tl/l curves
             let label = "T10L2";
             let group = element::Group::new()
                 .set("class", label)
                 .set("stroke", line_colors.get_or_new(label));
-            let sup = scolrs::VertebralIndex::T10 as usize;
-            let inf = scolrs::VertebralIndex::L2 as usize;
+            let sup = VertebralIndex::T10 as usize;
+            let inf = VertebralIndex::L2 as usize;
             document = document.add(renderer.cobb(
                 group,
                 &scol,
-                &scolrs::Curve { sup, inf },
+                &Curve { sup, inf },
                 &aux_param,
                 mean_plate_length,
             ));
