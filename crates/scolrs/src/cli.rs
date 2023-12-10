@@ -11,7 +11,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Create SVG
-    Render(RenderArgs),
+    SVG(SVGArgs),
     /// Determine curves
     Curve(CurveArgs),
 }
@@ -23,7 +23,7 @@ pub enum Direction {
 }
 
 #[derive(Parser, Debug)]
-pub struct RenderArgs {
+pub struct SVGArgs {
     /// Input labelme json filename
     pub input: PathBuf,
     /// Output svg filename

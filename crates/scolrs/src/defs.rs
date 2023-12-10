@@ -7,6 +7,7 @@ pub const VERTEBRAL_LABELS: [&str; 18] = [
     "L4", "L5", "L6",
 ];
 
+/// Indices for vertebrae
 #[repr(u8)]
 #[derive(Deserialize_repr, Serialize_repr, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebralIndex {
@@ -36,6 +37,7 @@ impl From<u8> for VertebralIndex {
     }
 }
 
+/// Indices for vertebrae and discs between vertebrae
 #[repr(u8)]
 #[derive(Deserialize_repr, Serialize_repr, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VertebraDiscIndex {
@@ -105,8 +107,9 @@ fn default_text_fill() -> String {
     "white".into()
 }
 
+/// Drawing parameters
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RenderParam {
+pub struct DrawParam {
     /// Point radius
     #[serde(default = "default_radius")]
     pub radius: usize,
@@ -125,7 +128,7 @@ pub struct RenderParam {
     pub text_fill: String,
 }
 
-impl Default for RenderParam {
+impl Default for DrawParam {
     fn default() -> Self {
         Self {
             radius: default_radius(),

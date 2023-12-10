@@ -6,15 +6,15 @@ use log::debug;
 use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use scolrs::{
-    ApexSet, Curve, CurveSet, LineColors, RenderParam, Scoliosis, VertebralIndex, VERTEBRAL_LABELS,
+    ApexSet, Curve, CurveSet, DrawParam, LineColors, Spine, VertebralIndex, VERTEBRAL_LABELS,
 };
-use scolrs::{CurveInfo, L2Norm};
+use scolrs::{L2Norm, ScolDesc};
 use svg::node::element;
 
-use crate::cli::{Direction, RenderArgs};
+use crate::cli::{Direction, SVGArgs};
 
-struct Renderer {
-    pub param: RenderParam,
+struct Painter {
+    pub param: DrawParam,
     pub size: (usize, usize),
 }
 
@@ -85,12 +85,8 @@ impl CobbAux {
     }
 }
 
-// enum CobbParam {
-//     Aux(CobbAux),
-// }
-
-impl Renderer {
-    fn new(param: RenderParam, size: (usize, usize)) -> Self {
+impl Painter {
+    fn new(param: DrawParam, size: (usize, usize)) -> Self {
         Self { param, size }
     }
 
@@ -177,7 +173,7 @@ impl Renderer {
     fn cobb(
         &self,
         mut group: element::Group,
-        scol: &Scoliosis,
+        scol: &Spine,
         curve: &Curve,
         aux_param: &CobbAux,
         base_length: f32,
@@ -381,10 +377,10 @@ where
 }
 
 trait Component {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group;
@@ -392,25 +388,25 @@ trait Component {
 
 struct VertebralLabels;
 impl Component for VertebralLabels {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
-        let render_param = &renderer.param;
+        let draw_param = &painter.param;
         let mut g_vert_labels = element::Group::new()
             .set("text-anchor", "middle")
             .set("dominant-baseline", "central")
-            .set("stroke", render_param.text_stroke.as_str())
-            .set("stroke-width", render_param.text_stroke_width)
-            .set("fill", render_param.text_fill.as_str());
+            .set("stroke", draw_param.text_stroke.as_str())
+            .set("stroke-width", draw_param.text_stroke_width)
+            .set("fill", draw_param.text_fill.as_str());
         let centroids = scol.tl_centroids();
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
         {
-            let t = renderer.text(label, coords);
+            let t = painter.text(label, coords);
             g_vert_labels = g_vert_labels.add(t);
         }
         g_vert_labels
@@ -419,10 +415,10 @@ impl Component for VertebralLabels {
 
 struct VertebralPoints;
 impl Component for VertebralPoints {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -432,14 +428,14 @@ impl Component for VertebralPoints {
             let mut sub_group = element::Group::new()
                 .set("class", format!("{CLS_POINT} {label}"))
                 .set("fill", color);
-            let points = scol.vertebrae.0.index_axis(Axis(1), i_label);
+            let points = scol.c7tls.0.index_axis(Axis(1), i_label);
             let n_points = if i_label < 2 {
                 points.len_of(Axis(0))
             } else {
                 points.len_of(Axis(0)) - 1 // BL and BR points of sacrum are dummies
             };
             for point in points.axis_iter(Axis(0)).take(n_points) {
-                let p = renderer.point(point);
+                let p = painter.point(point);
                 sub_group = sub_group.add(p);
             }
             g_corners = g_corners.add(sub_group);
@@ -450,10 +446,10 @@ impl Component for VertebralPoints {
 
 struct Centroids;
 impl Component for Centroids {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -462,14 +458,14 @@ impl Component for Centroids {
         let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
         let centroids = scol.tl_centroids();
         for point in centroids.axis_iter(Axis(0)) {
-            let p = renderer.point(point);
+            let p = painter.point(point);
             g_centroids = g_centroids.add(p);
         }
         g_centroids
     }
 }
 
-fn mean_plate_length(scol: &Scoliosis) -> f32 {
+fn mean_plate_length(scol: &Spine) -> f32 {
     let corners = scol.tl_corners().0;
     let sup_inf_shape = (corners.len_of(Axis(0)) * 2, 2, 2); // [n * sup_inf, lr, xy]
 
@@ -480,10 +476,10 @@ fn mean_plate_length(scol: &Scoliosis) -> f32 {
 
 struct FrontalCobbAngles<'a>(&'a CurveSet);
 impl<'a> Component for FrontalCobbAngles<'a> {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -498,7 +494,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_mt = element::Group::new()
                 .set("class", "MT")
                 .set("stroke", line_colors.get_or_new("MT"));
-            let group = renderer.cobb(g_mt, scol, mt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_mt, scol, mt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         };
 
@@ -506,7 +502,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_pt = element::Group::new()
                 .set("class", "PT")
                 .set("stroke", line_colors.get_or_new("PT"));
-            let group = renderer.cobb(g_pt, scol, pt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_pt, scol, pt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
 
@@ -514,7 +510,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_tll = element::Group::new()
                 .set("class", "TLL")
                 .set("stroke", line_colors.get_or_new("TLL"));
-            let group = renderer.cobb(g_tll, scol, tll_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_tll, scol, tll_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
         g_angles
@@ -523,10 +519,10 @@ impl<'a> Component for FrontalCobbAngles<'a> {
 
 struct CurveApex<'a>(&'a ApexSet, &'a scolrs::Corners<ndarray::OwnedRepr<f32>>);
 impl<'a> Component for CurveApex<'a> {
-    fn render(
+    fn draw(
         &self,
-        _scol: &Scoliosis,
-        renderer: &Renderer,
+        _scol: &Spine,
+        painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -543,7 +539,7 @@ impl<'a> Component for CurveApex<'a> {
             // from (tl, tr, bl, br) order to (tl, tr, br, bl)
             corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
             corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
-            let polygon = renderer
+            let polygon = painter
                 .polygon(corners)
                 .set("stroke", line_colors.get_or_new(label));
             g = g.add(polygon);
@@ -554,10 +550,10 @@ impl<'a> Component for CurveApex<'a> {
 
 struct SpinalLine;
 impl Component for SpinalLine {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -572,7 +568,7 @@ impl Component for SpinalLine {
             50,
         );
         let xs = scolrs::polynomial(ys.view(), coefs);
-        let spinal_line = renderer
+        let spinal_line = painter
             .polyline(ndarray::stack![Axis(1), xs, ys])
             .set("stroke", line_colors.get_or_new(label));
 
@@ -583,10 +579,10 @@ impl Component for SpinalLine {
 /// center sacral vertical line (CSVL)
 struct CSVL<'a>(&'a ApexSet);
 impl<'a> Component for CSVL<'a> {
-    fn render(
+    fn draw(
         &self,
-        scol: &Scoliosis,
-        renderer: &Renderer,
+        scol: &Spine,
+        painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
     ) -> element::Group {
@@ -596,11 +592,11 @@ impl<'a> Component for CSVL<'a> {
             .set("class", label)
             .set("stroke", line_color);
         let sacral_corners = scol
-            .vertebrae
+            .c7tls
             .0
-            .index_axis(Axis(0), scol.vertebrae.0.len_of(Axis(0)) - 1)
+            .index_axis(Axis(0), scol.c7tls.0.len_of(Axis(0)) - 1)
             .to_owned(); // required for reshaping?;
-        let sacral_line = renderer.line(sacral_corners.view());
+        let sacral_line = painter.line(sacral_corners.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.0.tll {
             let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
@@ -610,21 +606,21 @@ impl<'a> Component for CSVL<'a> {
                 .to_owned()
                 .mean_axis(Axis(1))
                 .unwrap();
-            let y = scol.vertebrae.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
+            let y = scol.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
             vl[[0, 1]] = y;
-            g = g.add(renderer.line(vl));
+            g = g.add(painter.line(vl));
         }
         g
     }
 }
 
-pub fn cmd(args: RenderArgs) -> Result<()> {
-    let render_param = if let Some(filename) = args.config {
+pub fn cmd(args: SVGArgs) -> Result<()> {
+    let draw_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
             .with_context(|| format!("reading file {:?}", filename))?;
         toml::from_str(&s)?
     } else {
-        RenderParam::default()
+        DrawParam::default()
     };
 
     debug!("Loading {:?}", args.input);
@@ -652,7 +648,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         data.image.dimensions()
     };
 
-    let scol = Scoliosis::try_from(&data.data)?;
+    let scol = Spine::try_from(&data.data)?;
 
     let mut label_colors = if let Some(filename) = args.label_colors {
         ColorPaletts::new(
@@ -670,15 +666,15 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         ColorPaletts::new(scolrs::LineColors::new())
     };
 
-    let renderer = Renderer::new(
-        render_param.clone(),
+    let painter = Painter::new(
+        draw_param.clone(),
         (svg_size.0 as usize, svg_size.1 as usize),
     );
-    let mut document = renderer.doc_w_background(&data.image);
+    let mut document = painter.doc_w_background(&data.image);
     let text_style = "text {font-size: 24px; font-family:sans-serif;}";
     let line_style = format!(
         "line, polyline, polygon {{stroke-width: {}; fill: none}}",
-        render_param.line_width
+        draw_param.line_width
     );
     let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
     document = document.add(style);
@@ -687,10 +683,10 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
     for component in ["VertebralLabels", "VertebralPoints"] {
         let group = match component {
             "VertebralLabels" => {
-                VertebralLabels {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                VertebralLabels {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
             }
             "VertebralPoints" => {
-                VertebralPoints {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                VertebralPoints {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
             }
             _ => panic!("Unknown component"),
         };
@@ -701,7 +697,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         let (curve_set, apex_set) = if let Some(filename) = args.curve_set {
             let reader = std::fs::File::open(&filename)
                 .with_context(|| format!("reading file {:?}", filename))?;
-            let cs: CurveInfo = labelme_rs::serde_json::from_reader(reader)?;
+            let cs: ScolDesc = labelme_rs::serde_json::from_reader(reader)?;
             (cs.curves, cs.apices)
         } else {
             let (cs, apexes, _major_curve) = scol.identify_curves();
@@ -710,28 +706,28 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
         for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine", "CSVL"] {
             let group = match component {
                 "Centroids" => {
-                    Centroids {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                    Centroids {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
-                "CobbAngles" => FrontalCobbAngles(&curve_set).render(
+                "CobbAngles" => FrontalCobbAngles(&curve_set).draw(
                     &scol,
-                    &renderer,
+                    &painter,
                     &mut label_colors,
                     &mut line_colors,
                 ),
                 "CurveApex" => {
                     let vert_discs = scol.tl_vert_disc_corners();
-                    CurveApex(&apex_set, &vert_discs).render(
+                    CurveApex(&apex_set, &vert_discs).draw(
                         &scol,
-                        &renderer,
+                        &painter,
                         &mut label_colors,
                         &mut line_colors,
                     )
                 }
                 "SpinalLine" => {
-                    SpinalLine {}.render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                    SpinalLine {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
                 "CSVL" => {
-                    CSVL(&apex_set).render(&scol, &renderer, &mut label_colors, &mut line_colors)
+                    CSVL(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
                 _ => panic!("Unknown component"),
             };
@@ -749,7 +745,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = VertebralIndex::T2 as usize;
             let inf = VertebralIndex::T12 as usize;
-            document = document.add(renderer.cobb(
+            document = document.add(painter.cobb(
                 group,
                 &scol,
                 &Curve { sup, inf },
@@ -764,7 +760,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = VertebralIndex::T5 as usize;
             let inf = VertebralIndex::T12 as usize;
-            document = document.add(renderer.cobb(
+            document = document.add(painter.cobb(
                 group,
                 &scol,
                 &Curve { sup, inf },
@@ -779,7 +775,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = VertebralIndex::T2 as usize;
             let inf = VertebralIndex::T5 as usize;
-            document = document.add(renderer.cobb(
+            document = document.add(painter.cobb(
                 group,
                 &scol,
                 &Curve { sup, inf },
@@ -795,7 +791,7 @@ pub fn cmd(args: RenderArgs) -> Result<()> {
                 .set("stroke", line_colors.get_or_new(label));
             let sup = VertebralIndex::T10 as usize;
             let inf = VertebralIndex::L2 as usize;
-            document = document.add(renderer.cobb(
+            document = document.add(painter.cobb(
                 group,
                 &scol,
                 &Curve { sup, inf },

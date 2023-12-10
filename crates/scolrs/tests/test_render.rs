@@ -12,7 +12,7 @@ fn tmp_directory() -> PathBuf {
 
 #[ignore]
 #[test]
-fn test_render_cases() -> Result<()> {
+fn test_svg() -> Result<()> {
     // case 1
     let bin_path = PathBuf::from(env!("CARGO_BIN_EXE_scolrs"));
     let data_dir = test_data_directory();
@@ -31,7 +31,7 @@ fn test_render_cases() -> Result<()> {
     let colors = data_dir.join("colors.yaml");
     let line_colors = data_dir.join("line_colors.csv");
     let common_args: Vec<&std::ffi::OsStr> = vec![
-        "render".as_ref(),
+        "svg".as_ref(),
         "--label-colors".as_ref(),
         colors.as_os_str(),
         "--line-colors".as_ref(),
@@ -40,7 +40,6 @@ fn test_render_cases() -> Result<()> {
         "1024x1024".as_ref(),
     ];
 
-    // render
     for stem in ["frontal", "left_lateral_bend", "right_lateral_bend"] {
         println!("stem: {:?}", stem);
         let output = Command::new(&bin_path)

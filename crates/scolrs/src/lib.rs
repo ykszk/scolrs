@@ -18,9 +18,9 @@ pub use defs::*;
 
 #[derive(Error, Debug)]
 pub enum ScolError {
-    #[error("Invalid points for label: {0}")]
+    #[error("Invalid number of points for label: {0}")]
     InvalidPointCount(String),
-    #[error("Invalid combination points for {0} and {1}: {2} vs. {3}")]
+    #[error("Invalid combination of the numbeer of points for {0} and {1}: {2} vs. {3}")]
     InvalidPointCombo(String, String, usize, usize),
 }
 
@@ -46,6 +46,7 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     Ok(arr)
 }
 
+/// Polynomial fitting of `deg` degrees
 pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     ys: ndarray::ArrayBase<S, ndarray::Ix1>,
@@ -77,6 +78,7 @@ where
         .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e as f32))
 }
 
+/// Calculate polynomial curve points
 pub fn polynomial<S, T>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     coef: ndarray::ArrayBase<T, ndarray::Ix1>,
@@ -94,15 +96,18 @@ where
     ys.mapv(|e| e as f32)
 }
 
+/// Point sets representing a spine
 #[derive(Debug, Clone)]
-pub struct Scoliosis {
-    /// Corner points of all vertebrae.
-    /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
-    pub vertebrae: Vertebrae,
+pub struct Spine {
+    pub c7tls: C7TLS,
+
+    /// Corner points of C7, thoracic, and lumbar vertebrae
+    /// The number of points/vertebrae can vary because some spine have 4 or 6 lumbar vertebrae
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
 }
 
+/// Spinal curve represented by superior and inferior indices of vertebrae
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Curve {
     pub sup: usize,
@@ -123,6 +128,7 @@ const KYOPHOSIS_CURVE_PT: Curve = T2T5_CURVE;
 const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
 const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
+/// Set of PT, MT, and TLL curves
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CurveSet {
@@ -132,20 +138,20 @@ pub struct CurveSet {
 }
 
 impl CurveSet {
-    fn apices(&self, scol: &Scoliosis, coefs: ArrayView1<f32>) -> ApexSet {
+    fn apices(&self, scol: &Spine, coefs: ArrayView1<f32>) -> ApexSet {
         ApexSet {
             pt: if let Some((c, _)) = self.pt.as_ref() {
-                Some(scol.find_apex(c, coefs))
+                Some(scol.id_apex(c, coefs))
             } else {
                 None
             },
             mt: if let Some((c, _)) = self.mt.as_ref() {
-                Some(scol.find_apex(c, coefs))
+                Some(scol.id_apex(c, coefs))
             } else {
                 None
             },
             tll: if let Some((c, _)) = self.tll.as_ref() {
-                Some(scol.find_apex(c, coefs))
+                Some(scol.id_apex(c, coefs))
             } else {
                 None
             },
@@ -153,6 +159,7 @@ impl CurveSet {
     }
 }
 
+/// Set of PT, MT, and TLL apices
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ApexSet {
@@ -161,20 +168,23 @@ pub struct ApexSet {
     pub tll: Option<VertebraDiscIndex>,
 }
 
+/// Major curve in Lenke classification
+/// PT can't be the major curve
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum MajorCurve {
     MT,
     TLL,
 }
 
+/// Descriptor for scoliosis consisting of curves, apices, and major-curve-kind (MT or TLL)
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CurveInfo {
+pub struct ScolDesc {
     pub curves: CurveSet,
     pub apices: ApexSet,
     pub major_curve: Option<MajorCurve>,
 }
 
-impl CurveInfo {
+impl ScolDesc {
     pub fn new(curves: CurveSet, apices: ApexSet, major_curve: Option<MajorCurve>) -> Self {
         Self {
             curves,
@@ -184,16 +194,17 @@ impl CurveInfo {
     }
 }
 
-impl TryFrom<&LabelMeData> for CurveInfo {
+impl TryFrom<&LabelMeData> for ScolDesc {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let scol = Scoliosis::try_from(data)?;
+        let scol = Spine::try_from(data)?;
         let (curves, apex_set, major_curve) = scol.identify_curves();
-        Ok(CurveInfo::new(curves, apex_set, major_curve))
+        Ok(ScolDesc::new(curves, apex_set, major_curve))
     }
 }
 
+/// Trait that enables `arr.l2norm()` to a vector (Array1 or ArrayView1)
 pub trait L2Norm<T> {
     fn l2norm(&self) -> T;
 }
@@ -207,7 +218,8 @@ where
     }
 }
 
-impl Scoliosis {
+impl Spine {
+    /// Corner points of thoracic and lumbar vertebrae
     pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f32>> {
         let tl = self.v_c7tl.0.slice(s![1.., .., ..]);
         Corners(tl)
@@ -238,7 +250,7 @@ impl Scoliosis {
         self.v_c7tl.0.slice(s![1.., 2.., ..])
     }
     pub fn tl_centroids(&self) -> ArrayView2<'_, f32> {
-        self.c_c7tl.0.slice(s![1.., ..])
+        self.c_c7tl.slice(s![1.., ..])
     }
 
     pub fn tl_sup_plate(&self, index: usize) -> ArrayView2<'_, f32> {
@@ -354,12 +366,12 @@ impl Scoliosis {
         );
         Some((angles[i_max].0.clone(), angles[i_max].1))
     }
-    pub fn find_apex(&self, curve: &Curve, coefs: ArrayView1<f32>) -> VertebraDiscIndex {
+    pub fn id_apex(&self, curve: &Curve, coefs: ArrayView1<f32>) -> VertebraDiscIndex {
         let vert_disc_corners = self.tl_vert_disc_corners();
         let vd_centroids: Centroids = vert_disc_corners.into();
         let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
         let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
-        let xs = polynomial(vd_centroids.0.slice(s![sup..=inf, 1]), coefs);
+        let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), coefs);
         let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
         let i_max = ts.argmax().unwrap();
         VertebraDiscIndex::from((i_max + sup) as u8)
@@ -400,7 +412,7 @@ impl Scoliosis {
         let mut major_curve = None;
         let coefs = self.spinal_poly().unwrap();
         if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.find_apex(&largest_curve.0, coefs.view());
+            let major_apex = self.id_apex(&largest_curve.0, coefs.view());
             major_curve = if major_apex <= VertebraDiscIndex::T5 {
                 // largest curve is PT
                 if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
@@ -429,7 +441,7 @@ impl Scoliosis {
         (curves, apices, major_curve)
     }
 
-    /// Calculate angle in degrees
+    /// Calculate Cobb angle in degrees
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
         let sup_line = self.tl_sup_plate(curve.sup);
         let inf_line = self.tl_inf_plate(curve.inf);
@@ -453,28 +465,29 @@ impl Scoliosis {
     }
 }
 
-impl TryFrom<&LabelMeData> for Scoliosis {
+impl TryFrom<&LabelMeData> for Spine {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let vertebrae = Vertebrae::try_from(data)?;
+        let vertebrae = C7TLS::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl = Corners(v_c7tl.0.view()).into();
         Ok(Self {
-            vertebrae,
+            c7tls: vertebrae,
             v_c7tl,
             c_c7tl,
         })
     }
 }
 
+/// Corner points of all C7, thoracic, and lumbar vertebrae and sacrum top plate.
+/// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
+#[derive(Debug, Clone)]
+pub struct C7TLS(pub Array3<f32>);
+
 /// C7, thoracic and lumber vertebrae
 #[derive(Debug, Clone)]
 pub struct VertebraeC7TL(pub Array3<f32>);
-
-/// All vertebrae including sacrum
-#[derive(Debug, Clone)]
-pub struct Vertebrae(pub Array3<f32>);
 
 /// Thoracic and lumber vertebrae
 pub struct VertebraeTL<'a>(ArrayView3<'a, f32>);
@@ -499,9 +512,7 @@ impl<S: Data<Elem = f32>> Corners<S> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Centroids(pub Array2<f32>);
-
+type Centroids = Array2<f32>;
 impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
     /// Calculate centroids from list of four corners.
     /// Centroids are not geometric centers but the intersections of mid-lines
@@ -537,14 +548,14 @@ impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
             dap[[1]] = da[[0]];
             let denom = dap.dot(&db);
             if denom == 0.0 {
-                unreachable!("No centroid found for a corner");
+                unreachable!("Parallel mid-lines of a vertebrae thus no centroid");
             } else {
                 let num = dap.dot(&dp);
                 let c = num / denom * db + b1;
                 r.assign(&c);
             }
         }
-        Centroids(right)
+        right
     }
 }
 
@@ -552,20 +563,16 @@ const FRONTAL_ANGLE_THRESH: f32 = 25.0_f32;
 const BEND_ANGLE_THRESH: f32 = 25.0_f32;
 const LATERAL_ANGLE_THRESH: f32 = 20.0_f32;
 
+/// Set of `Spine`s required for Lenke classification
 pub struct Study {
-    pub coronal: Scoliosis,
-    pub left_bend: Option<Scoliosis>,
-    pub right_bend: Option<Scoliosis>,
-    pub sagittal: Option<Scoliosis>,
+    pub coronal: Spine,
+    pub left_bend: Option<Spine>,
+    pub right_bend: Option<Spine>,
+    pub sagittal: Option<Spine>,
 }
 
 impl Study {
-    pub fn new(
-        coronal: Scoliosis,
-        left_bend: Scoliosis,
-        right_bend: Scoliosis,
-        sagittal: Scoliosis,
-    ) -> Study {
+    pub fn new(coronal: Spine, left_bend: Spine, right_bend: Spine, sagittal: Spine) -> Study {
         let left_bend = Some(left_bend);
         let right_bend = Some(right_bend);
         let sagittal = Some(sagittal);
@@ -628,7 +635,7 @@ impl Study {
     }
 }
 
-impl TryFrom<&LabelMeData> for Vertebrae {
+impl TryFrom<&LabelMeData> for C7TLS {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
@@ -669,7 +676,7 @@ impl TryFrom<&LabelMeData> for Vertebrae {
             .insert_axis(Axis(0));
         corners[3] = concatenate(Axis(0), &[corners[3].view(), last]).unwrap();
         let verts = stack![Axis(1), corners[0], corners[1], corners[2], corners[3]];
-        Ok(Vertebrae(verts))
+        Ok(C7TLS(verts))
     }
 }
 
@@ -678,41 +685,14 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
 
     /// From [C7[TL, TR, BL, BR] - Sacral[TL, TR]] points
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let corners = CORNER_LABELS
-            .iter()
-            .map(|label| extract_points(data, label))
-            .collect::<Result<Vec<_>, _>>()?;
-        if corners[0].shape()[0] != corners[1].shape()[0] {
-            return Err(ScolError::InvalidPointCombo(
-                "TL".into(),
-                "TR".into(),
-                corners[0].shape()[0],
-                corners[1].shape()[0],
-            ));
-        }
-        if corners[2].shape()[0] != corners[3].shape()[0] {
-            return Err(ScolError::InvalidPointCombo(
-                "BL".into(),
-                "BR".into(),
-                corners[2].shape()[0],
-                corners[3].shape()[0],
-            ));
-        }
-        if corners[0].shape()[0] - 1 != corners[2].shape()[0] {
-            return Err(ScolError::InvalidPointCombo(
-                "TL-1".into(),
-                "BL".into(),
-                corners[0].shape()[0] - 1,
-                corners[2].shape()[0],
-            ));
-        }
-        let verts_c7_t_l = stack![
-            Axis(1),
-            corners[0].slice(s![0..(corners[0].shape()[0] - 1), ..]),
-            corners[1].slice(s![0..(corners[1].shape()[0] - 1), ..]),
-            corners[2],
-            corners[3]
-        ];
+        let vertebrae: C7TLS = data.try_into()?;
+        let verts_c7_t_l = vertebrae
+            .0
+            .slice_axis(
+                Axis(0),
+                ndarray::Slice::from(0..vertebrae.0.len_of(Axis(0)) - 1),
+            )
+            .to_owned();
         Ok(VertebraeC7TL(verts_c7_t_l))
     }
 }
@@ -735,6 +715,7 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
     Ok(colors)
 }
 
+/// Curve types in Lenke classification
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, std::hash::Hash)]
 pub enum CurveType {
@@ -756,9 +737,11 @@ pub enum CurveType {
 pub enum RegionalCurveType {
     Structural(StructuralReason),
     NonStructural(MinorReason),
+    /// Uncertain due to the lack of some images
     Uncertain(MinorReason),
 }
 
+/// Chart for Lenke classification
 #[derive(Debug)]
 pub struct Chart {
     pub pt: Option<RegionalCurveType>,
@@ -827,15 +810,18 @@ impl Chart {
     }
 }
 
+/// Angles descriving bending criteria
 #[derive(Debug, PartialEq)]
-struct BendParam {
+pub struct BendReasonAngles {
+    /// angle in normal coronal image
     coronal: f32,
+    /// angle in bending image
     bend: f32,
 }
 
-impl BendParam {
-    fn new(coronal: f32, bend: f32) -> BendParam {
-        BendParam { coronal, bend }
+impl BendReasonAngles {
+    fn new(coronal: f32, bend: f32) -> BendReasonAngles {
+        BendReasonAngles { coronal, bend }
     }
 }
 
@@ -867,18 +853,19 @@ impl From<bool> for IsStructural {
 }
 
 #[derive(Debug, Default, PartialEq)]
-struct BendReason {
-    left: Option<(IsStructural, BendParam)>,
-    right: Option<(IsStructural, BendParam)>,
+pub struct BendReason {
+    pub left: Option<(IsStructural, BendReasonAngles)>,
+    pub right: Option<(IsStructural, BendReasonAngles)>,
 }
 
 #[derive(Debug, PartialEq, Default)]
 pub struct MinorReason {
-    coronal: Option<(IsStructural, f32)>,
-    bend: BendReason,
-    sagittal: Option<(IsStructural, (Curve, f32))>,
+    pub coronal: Option<(IsStructural, f32)>,
+    pub bend: BendReason,
+    pub sagittal: Option<(IsStructural, (Curve, f32))>,
 }
 
+/// Parameters that explain why it's structural or non-structural
 #[derive(Debug, PartialEq)]
 pub struct MinorStructuralParam {
     coronal: f32,
@@ -893,10 +880,12 @@ trait TestStructural {
 }
 
 impl<T> TestStructural for Option<(IsStructural, T)> {
+    /// Some(is_structural)
     fn is_structural(&self) -> bool {
         self.as_ref().map_or(false, |v| v.0.into())
     }
 
+    /// Some(is_non_structural)
     fn is_non_structural(&self) -> bool {
         self.as_ref().map_or(false, |p| !bool::from(p.0))
     }
@@ -917,17 +906,19 @@ impl MinorStructuralParam {
 
                 let is_structural = (angle.abs() >= BEND_ANGLE_THRESH).into();
                 if is_right {
-                    reason.bend.right = Some((is_structural, BendParam::new(self.coronal, angle)));
+                    reason.bend.right =
+                        Some((is_structural, BendReasonAngles::new(self.coronal, angle)));
                 } else {
-                    reason.bend.left = Some((is_structural, BendParam::new(self.coronal, angle)));
+                    reason.bend.left =
+                        Some((is_structural, BendReasonAngles::new(self.coronal, angle)));
                 }
             }
         }
-
         if let Some(sagittal) = self.sagittal.as_ref() {
             let is_structural = (sagittal.1.abs() >= LATERAL_ANGLE_THRESH).into();
             reason.sagittal = Some((is_structural, sagittal.clone()));
         }
+
         if (reason.bend.left.is_structural() && reason.bend.right.is_structural())
             || reason.sagittal.is_structural()
         {
@@ -954,11 +945,11 @@ pub enum StructuralReason {
 #[cfg(test)]
 mod tests {
     use crate::{
-        BendParam, CurveType, IsStructural, MajorCurve, MinorReason, RegionalCurveType,
+        BendReasonAngles, CurveType, IsStructural, MajorCurve, MinorReason, RegionalCurveType,
         StructuralReason, Study, KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
     };
 
-    use super::{Corners, Scoliosis, VertebraDiscIndex, VertebralIndex};
+    use super::{Corners, Spine, VertebraDiscIndex, VertebralIndex};
     use anyhow::{Context, Result};
     use labelme_rs::LabelMeData;
     use ndarray::{arr3, Array3};
@@ -973,11 +964,11 @@ mod tests {
         });
     }
 
-    fn load_scoliosis(filename: &Path) -> Result<Scoliosis> {
+    fn load_scoliosis(filename: &Path) -> Result<Spine> {
         let s =
             std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
         let data: LabelMeData = s.as_str().try_into()?;
-        Ok(Scoliosis::try_from(&data)?)
+        Ok(Spine::try_from(&data)?)
     }
 
     fn test_directory() -> PathBuf {
@@ -1071,9 +1062,9 @@ mod tests {
         let json_filename = data_directory().join("case1/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
-        assert_eq!(frontal_scol.c_c7tl.0.len(), left_scol.c_c7tl.0.len());
-        assert_eq!(frontal_scol.c_c7tl.0.len(), right_scol.c_c7tl.0.len());
-        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), left_scol.c_c7tl.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), right_scol.c_c7tl.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
         let study = Study::new(frontal_scol, left_scol, right_scol, lateral_scol);
 
@@ -1089,7 +1080,7 @@ mod tests {
         };
         reason.bend.left = Some((
             IsStructural::F,
-            BendParam::new(
+            BendReasonAngles::new(
                 curve_set.pt.as_ref().unwrap().1,
                 study
                     .left_bend
@@ -1102,7 +1093,7 @@ mod tests {
         ));
         reason.bend.right = Some((
             IsStructural::T,
-            BendParam::new(
+            BendReasonAngles::new(
                 curve_set.pt.as_ref().unwrap().1,
                 study
                     .right_bend
@@ -1138,7 +1129,7 @@ mod tests {
 
         reason.bend.left = Some((
             IsStructural::T,
-            BendParam::new(
+            BendReasonAngles::new(
                 curve_set.tll.as_ref().unwrap().1,
                 study
                     .left_bend
@@ -1150,7 +1141,7 @@ mod tests {
         ));
         reason.bend.right = Some((
             IsStructural::T,
-            BendParam::new(
+            BendReasonAngles::new(
                 curve_set.tll.as_ref().unwrap().1,
                 study
                     .right_bend
@@ -1197,7 +1188,7 @@ mod tests {
         let json_filename = data_directory().join("case2/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
-        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
         let study = Study {
             coronal: frontal_scol,
@@ -1276,7 +1267,7 @@ mod tests {
         let json_filename = data_directory().join("case3/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
-        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
         let study = Study {
             coronal: frontal_scol,
@@ -1354,7 +1345,7 @@ mod tests {
         let json_filename = data_directory().join("case4/lateral.json");
         let lateral_scol = load_scoliosis(&json_filename)?;
 
-        assert_eq!(frontal_scol.c_c7tl.0.len(), lateral_scol.c_c7tl.0.len());
+        assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
         let study = Study {
             coronal: frontal_scol,

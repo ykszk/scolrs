@@ -1,2 +1,2 @@
 pub mod curve;
-pub mod render;
+pub mod svg;
