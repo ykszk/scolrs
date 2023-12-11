@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -29,6 +31,12 @@ pub enum VertebralIndex {
     L4 = 15,
     L5 = 16,
     L6 = 17,
+}
+
+impl Display for VertebralIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl From<u8> for VertebralIndex {
