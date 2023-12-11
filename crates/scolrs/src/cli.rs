@@ -11,9 +11,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Create SVG
-    SVG(SVGArgs),
+    Svg(SvgArgs),
     /// Determine curves
     Curve(CurveArgs),
+    /// Lenke classification
+    Lenke(LenkeArgs),
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
@@ -23,7 +25,7 @@ pub enum Direction {
 }
 
 #[derive(Parser, Debug)]
-pub struct SVGArgs {
+pub struct SvgArgs {
     /// Input labelme json filename
     pub input: PathBuf,
     /// Output svg filename
@@ -58,4 +60,20 @@ pub struct CurveArgs {
     /// Output all curves
     #[clap(short, long)]
     pub all: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct LenkeArgs {
+    /// coronal
+    #[clap(short, long)]
+    pub coronal: PathBuf,
+    /// sagittal
+    #[clap(short, long)]
+    pub sagittal: Option<PathBuf>,
+    /// right bend
+    #[clap(short, long)]
+    pub right: Option<PathBuf>,
+    /// left bend
+    #[clap(short, long)]
+    pub left: Option<PathBuf>,
 }

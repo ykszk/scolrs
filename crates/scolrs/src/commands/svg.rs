@@ -11,7 +11,7 @@ use scolrs::{
 use scolrs::{L2Norm, ScolDesc};
 use svg::node::element;
 
-use crate::cli::{Direction, SVGArgs};
+use crate::cli::{Direction, SvgArgs};
 
 struct Painter {
     pub param: DrawParam,
@@ -577,8 +577,8 @@ impl Component for SpinalLine {
 }
 
 /// center sacral vertical line (CSVL)
-struct CSVL<'a>(&'a ApexSet);
-impl<'a> Component for CSVL<'a> {
+struct Csvl<'a>(&'a ApexSet);
+impl<'a> Component for Csvl<'a> {
     fn draw(
         &self,
         scol: &Spine,
@@ -591,21 +591,13 @@ impl<'a> Component for CSVL<'a> {
         let mut g = element::Group::new()
             .set("class", label)
             .set("stroke", line_color);
-        let sacral_corners = scol
-            .c7tls
-            .0
-            .index_axis(Axis(0), scol.c7tls.0.len_of(Axis(0)) - 1)
-            .to_owned(); // required for reshaping?;
-        let sacral_line = painter.line(sacral_corners.view());
+        let sup_plate = scol.sacral_sup_plate();
+        let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.0.tll {
             let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
-            let mut vl = sacral_corners
-                .into_shape((2, 2, 2))
-                .unwrap()
-                .to_owned()
-                .mean_axis(Axis(1))
-                .unwrap();
+            let mid = sup_plate.mean_axis(Axis(0)).unwrap();
+            let mut vl = ndarray::stack![Axis(0), mid, mid];
             let y = scol.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
             vl[[0, 1]] = y;
             g = g.add(painter.line(vl));
@@ -614,7 +606,7 @@ impl<'a> Component for CSVL<'a> {
     }
 }
 
-pub fn cmd(args: SVGArgs) -> Result<()> {
+pub fn cmd(args: SvgArgs) -> Result<()> {
     let draw_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
             .with_context(|| format!("reading file {:?}", filename))?;
@@ -727,7 +719,7 @@ pub fn cmd(args: SVGArgs) -> Result<()> {
                     SpinalLine {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
                 "CSVL" => {
-                    CSVL(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                    Csvl(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
                 _ => panic!("Unknown component"),
             };

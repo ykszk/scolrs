@@ -1,5 +1,4 @@
 use labelme_rs::LabelMeData;
-use log::debug;
 use ndarray::{
     concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
     Axis, Data,
@@ -8,6 +7,7 @@ use ndarray::{
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::io::Read;
 use std::iter::zip;
 use std::ops::AddAssign;
@@ -114,19 +114,24 @@ pub struct Curve {
     pub inf: usize,
 }
 
-const T2T5_CURVE: Curve = Curve {
+pub const T2T5_CURVE: Curve = Curve {
     sup: VertebralIndex::T2 as usize,
     inf: VertebralIndex::T5 as usize,
 };
 
-const T10L2_CURVE: Curve = Curve {
+pub const T5T12: Curve = Curve {
+    sup: VertebralIndex::T5 as usize,
+    inf: VertebralIndex::T12 as usize,
+};
+
+pub const T10L2_CURVE: Curve = Curve {
     sup: VertebralIndex::T10 as usize,
     inf: VertebralIndex::L2 as usize,
 };
 
-const KYOPHOSIS_CURVE_PT: Curve = T2T5_CURVE;
-const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
-const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
+pub const KYOPHOSIS_CURVE_PT: Curve = T2T5_CURVE;
+pub const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
+pub const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
 /// Set of PT, MT, and TLL curves
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -258,6 +263,31 @@ impl Spine {
     }
     pub fn tl_inf_plate(&self, index: usize) -> ArrayView2<'_, f32> {
         self.v_c7tl.0.slice(s![index + 1, 2.., ..])
+    }
+
+    pub fn sacral_sup_plate(&self) -> ArrayView2<f32> {
+        self.c7tls
+            .0
+            .slice(s![self.c7tls.0.len_of(Axis(0)) - 1, 0..2, ..])
+    }
+
+    // mean point of sacral TL and TR
+    pub fn sacral_center(&self) -> Array1<f32> {
+        self.sacral_sup_plate().mean_axis(Axis(0)).unwrap()
+    }
+
+    pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {
+        let x_scvl = self.sacral_center()[0];
+        let vertebra = self.v_c7tl.0.index_axis(Axis(0), (apex as u8 / 2) as usize);
+        let v_xs = vertebra.index_axis(Axis(1), 0);
+        let x_min = v_xs.min().unwrap();
+        let x_max = v_xs.max().unwrap();
+        if x_scvl < *x_min || *x_max < x_scvl {
+            LumbarModifier::C
+        } else {
+            // TODO: implement pedicle checking
+            LumbarModifier::B
+        }
     }
 
     pub fn spinal_poly(&self) -> Result<ndarray::Array1<f32>, rulinalg::error::Error> {
@@ -572,7 +602,21 @@ pub struct Study {
 }
 
 impl Study {
-    pub fn new(coronal: Spine, left_bend: Spine, right_bend: Spine, sagittal: Spine) -> Study {
+    pub fn new(
+        coronal: Spine,
+        left_bend: Option<Spine>,
+        right_bend: Option<Spine>,
+        sagittal: Option<Spine>,
+    ) -> Study {
+        Study {
+            coronal,
+            left_bend,
+            right_bend,
+            sagittal,
+        }
+    }
+
+    pub fn full(coronal: Spine, left_bend: Spine, right_bend: Spine, sagittal: Spine) -> Study {
         let left_bend = Some(left_bend);
         let right_bend = Some(right_bend);
         let sagittal = Some(sagittal);
@@ -717,7 +761,7 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
 
 /// Curve types in Lenke classification
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq, std::hash::Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CurveType {
     /// Main Thoracic
     Type1,
@@ -731,6 +775,49 @@ pub enum CurveType {
     Type5,
     /// Thoracolumbar/Lumbar - Main Thoracic
     Type6,
+}
+
+/// Modifier based on T5-T12 sagittal angle
+#[derive(Debug, Clone, Copy)]
+pub enum SagittalModifier {
+    /// angle < 10
+    Hypokyphosis,
+    /// 10 <= angle < 40
+    Normokyphosis,
+    /// 40 <= angle
+    Hyperkyphosis,
+}
+
+impl From<f32> for SagittalModifier {
+    fn from(angle: f32) -> Self {
+        if angle < 10.0 {
+            SagittalModifier::Hypokyphosis
+        } else if angle < 40.0 {
+            SagittalModifier::Normokyphosis
+        } else {
+            SagittalModifier::Hyperkyphosis
+        }
+    }
+}
+
+impl Display for SagittalModifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SagittalModifier::Hypokyphosis => write!(f, "-"),
+            SagittalModifier::Normokyphosis => write!(f, "N"),
+            SagittalModifier::Hyperkyphosis => write!(f, "+"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LumbarModifier {
+    /// CSVL between pedicles
+    A,
+    /// CSVL touches apical predicle
+    B,
+    /// The apical vertebral bodies are completely lateral to the CSVL
+    C,
 }
 
 #[derive(Debug, PartialEq)]
@@ -749,39 +836,53 @@ pub struct Chart {
     pub tll: Option<RegionalCurveType>,
 }
 
+impl Display for Chart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PT: {:?}\nMT: {:?}\nTLL: {:?}",
+            self.pt.as_ref().map_or("NA".into(), |e| format!("{:?}", e)),
+            self.mt.as_ref().map_or("NA".into(), |e| format!("{:?}", e)),
+            self.tll
+                .as_ref()
+                .map_or("NA".into(), |e| format!("{:?}", e)),
+        )
+    }
+}
+
 impl Chart {
-    pub fn classify(&self) -> CurveType {
-        use std::collections::HashSet;
-        let mut types = HashSet::from([
-            CurveType::Type1,
-            CurveType::Type2,
-            CurveType::Type3,
-            CurveType::Type4,
-            CurveType::Type5,
-            CurveType::Type6,
-        ]);
+    pub fn classify(&self) -> Result<CurveType, Vec<CurveType>> {
+        let mut types = [
+            None,
+            Some(CurveType::Type1),
+            Some(CurveType::Type2),
+            Some(CurveType::Type3),
+            Some(CurveType::Type4),
+            Some(CurveType::Type5),
+            Some(CurveType::Type6),
+        ];
         if let Some(mt) = self.mt.as_ref() {
             match mt {
                 RegionalCurveType::Structural(reason) => match reason {
                     StructuralReason::Major() => {
-                        types.remove(&CurveType::Type5);
-                        types.remove(&CurveType::Type6);
+                        types[5] = None; // Type5
+                        types[6] = None; // Type6
                     }
-                    StructuralReason::Minor(_) => return CurveType::Type6,
+                    StructuralReason::Minor(_) => return Ok(CurveType::Type6),
                 },
-                RegionalCurveType::NonStructural(_) => return CurveType::Type5,
+                RegionalCurveType::NonStructural(_) => return Ok(CurveType::Type5),
                 RegionalCurveType::Uncertain(_) => {}
             }
         }
         if let Some(tll) = self.tll.as_ref() {
             match tll {
                 RegionalCurveType::Structural(_) => {
-                    types.remove(&CurveType::Type1);
-                    types.remove(&CurveType::Type2);
+                    types[1] = None; // Type1
+                    types[2] = None; // Type2
                 }
                 RegionalCurveType::NonStructural(_) => {
-                    types.remove(&CurveType::Type3);
-                    types.remove(&CurveType::Type4);
+                    types[3] = None; // Type3
+                    types[4] = None; // Type4
                 }
                 RegionalCurveType::Uncertain(_) => {}
             }
@@ -789,23 +890,21 @@ impl Chart {
         if let Some(pt) = self.pt.as_ref() {
             match pt {
                 RegionalCurveType::Structural(_) => {
-                    types.remove(&CurveType::Type1);
-                    types.remove(&CurveType::Type3);
+                    types[1] = None; // Type1
+                    types[3] = None; // Type3
                 }
                 RegionalCurveType::NonStructural(_) => {
-                    types.remove(&CurveType::Type2);
-                    types.remove(&CurveType::Type4);
+                    types[2] = None; // Type2
+                    types[4] = None; // Type4
                 }
                 RegionalCurveType::Uncertain(_) => {}
             }
         }
+        let types: Vec<_> = types.into_iter().flatten().collect();
         if types.len() == 1 {
-            let t = types.into_iter().next().unwrap();
-            debug!("Eliminated to one type: {:?}", t);
-            t
+            Ok(types[0])
         } else {
-            // TODO: don't panic!
-            panic!("More than one type or zero type: {:?}", types)
+            Err(types)
         }
     }
 }
@@ -964,7 +1063,7 @@ mod tests {
         });
     }
 
-    fn load_scoliosis(filename: &Path) -> Result<Spine> {
+    fn load_spine(filename: &Path) -> Result<Spine> {
         let s =
             std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
         let data: LabelMeData = s.as_str().try_into()?;
@@ -982,7 +1081,7 @@ mod tests {
     #[test]
     fn test_case1() -> Result<()> {
         let json_filename = data_directory().join("case1/frontal.json");
-        let scol = load_scoliosis(&json_filename)?;
+        let scol = load_spine(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
         assert_eq!(major_curve.unwrap(), MajorCurve::MT);
@@ -1006,7 +1105,7 @@ mod tests {
     #[test]
     fn test_case2() -> Result<()> {
         let json_filename = data_directory().join("case2/frontal.json");
-        let scol = load_scoliosis(&json_filename)?;
+        let scol = load_spine(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
         // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
@@ -1026,7 +1125,7 @@ mod tests {
     #[test]
     fn test_case3() -> Result<()> {
         let json_filename = data_directory().join("case3/frontal.json");
-        let scol = load_scoliosis(&json_filename)?;
+        let scol = load_spine(&json_filename)?;
 
         let (curve_set, apex_set, major_curve) = scol.identify_curves();
         assert_eq!(major_curve.unwrap(), MajorCurve::MT); // largest curve is PT but major curve is MT
@@ -1051,22 +1150,22 @@ mod tests {
     fn test_lenke_case1() -> Result<()> {
         setup();
         let json_filename = data_directory().join("case1/frontal.json");
-        let frontal_scol = load_scoliosis(&json_filename)?;
+        let frontal_scol = load_spine(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
         let json_filename = data_directory().join("case1/left_lateral_bend.json");
-        let left_scol = load_scoliosis(&json_filename)?;
+        let left_scol = load_spine(&json_filename)?;
         let json_filename = data_directory().join("case1/right_lateral_bend.json");
-        let right_scol = load_scoliosis(&json_filename)?;
+        let right_scol = load_spine(&json_filename)?;
         let json_filename = data_directory().join("case1/lateral.json");
-        let lateral_scol = load_scoliosis(&json_filename)?;
+        let lateral_scol = load_spine(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.len(), left_scol.c_c7tl.len());
         assert_eq!(frontal_scol.c_c7tl.len(), right_scol.c_c7tl.len());
         assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
-        let study = Study::new(frontal_scol, left_scol, right_scol, lateral_scol);
+        let study = Study::full(frontal_scol, left_scol, right_scol, lateral_scol);
 
         let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -1170,7 +1269,7 @@ mod tests {
             &RegionalCurveType::Structural(StructuralReason::Minor(reason))
         );
 
-        let curve_type = chart.classify();
+        let curve_type = chart.classify().unwrap();
         assert_eq!(curve_type, CurveType::Type3);
         println!("{:?}: {:?}", curve_type, chart);
 
@@ -1181,12 +1280,12 @@ mod tests {
     fn test_lenke_case2() -> Result<()> {
         setup();
         let json_filename = data_directory().join("case2/frontal.json");
-        let frontal_scol = load_scoliosis(&json_filename)?;
+        let frontal_scol = load_spine(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
         let json_filename = data_directory().join("case2/lateral.json");
-        let lateral_scol = load_scoliosis(&json_filename)?;
+        let lateral_scol = load_spine(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
@@ -1249,7 +1348,7 @@ mod tests {
             &RegionalCurveType::Structural(StructuralReason::Major())
         );
 
-        let curve_type = chart.classify();
+        let curve_type = chart.classify().unwrap();
         assert_eq!(curve_type, CurveType::Type5);
         println!("{:?}: {:?}", curve_type, chart);
 
@@ -1260,12 +1359,12 @@ mod tests {
     fn test_lenke_case3() -> Result<()> {
         setup();
         let json_filename = data_directory().join("case3/frontal.json");
-        let frontal_scol = load_scoliosis(&json_filename)?;
+        let frontal_scol = load_spine(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
         let json_filename = data_directory().join("case3/lateral.json");
-        let lateral_scol = load_scoliosis(&json_filename)?;
+        let lateral_scol = load_spine(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
@@ -1327,7 +1426,7 @@ mod tests {
             &RegionalCurveType::NonStructural(reason)
         );
 
-        let curve_type = chart.classify();
+        let curve_type = chart.classify().unwrap();
         assert_eq!(curve_type, CurveType::Type2);
         println!("{:?}: {:?}", curve_type, chart);
 
@@ -1338,12 +1437,12 @@ mod tests {
     fn test_lenke_case4() -> Result<()> {
         setup();
         let json_filename = data_directory().join("case4/frontal.json");
-        let frontal_scol = load_scoliosis(&json_filename)?;
+        let frontal_scol = load_spine(&json_filename)?;
 
         let (curve_set, _apex_set, major_curve) = frontal_scol.identify_curves();
 
         let json_filename = data_directory().join("case4/lateral.json");
-        let lateral_scol = load_scoliosis(&json_filename)?;
+        let lateral_scol = load_spine(&json_filename)?;
 
         assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
 
@@ -1406,7 +1505,7 @@ mod tests {
             &RegionalCurveType::NonStructural(reason)
         );
 
-        let curve_type = chart.classify();
+        let curve_type = chart.classify().unwrap();
         assert_eq!(curve_type, CurveType::Type1);
         println!("{:?}: {:?}", curve_type, chart);
 
