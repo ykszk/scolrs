@@ -1,7 +1,8 @@
+use ndarray::Axis;
 use scolrs::{
-    BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
-    RegionalCurveType, Spine, StructuralReason, Study, VertebralIndex, KYOPHOSIS_CURVE_MT,
-    KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
+    BendReasonAngles, Curve, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
+    RegionalCurveType, SagittalModifier, Spine, StructuralReason, Study, VertebralIndex,
+    KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
 
 use anyhow::{Context, Result};
@@ -120,6 +121,35 @@ fn load_study(
     Ok(Study::new(coronal, left, right, sagittal))
 }
 
+/// Fascilitator for tests
+trait Wild<T> {
+    /// Short hand for `as_ref().unwrap().angle(curve).unwrap()`
+    fn angle_wild(&self, curve: T) -> f32;
+}
+
+impl Wild<&Option<(Curve, f32)>> for Option<Spine> {
+    fn angle_wild(&self, curve: &Option<(Curve, f32)>) -> f32 {
+        self.as_ref().unwrap().angle(&curve.ref_unwrap().0).unwrap()
+    }
+}
+
+impl Wild<&Curve> for Option<Spine> {
+    fn angle_wild(&self, curve: &Curve) -> f32 {
+        self.ref_unwrap().angle(curve).unwrap()
+    }
+}
+
+/// Fascilitator for tests
+trait RefUnwrap<T> {
+    fn ref_unwrap(&self) -> &T;
+}
+
+impl<T> RefUnwrap<T> for Option<T> {
+    fn ref_unwrap(&self) -> &T {
+        self.as_ref().unwrap()
+    }
+}
+
 #[test]
 fn test_lenke_case1() -> Result<()> {
     setup();
@@ -134,34 +164,22 @@ fn test_lenke_case1() -> Result<()> {
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
     assert_eq!(
-        chart.mt.as_ref().unwrap(),
+        chart.mt.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Major())
     );
-    let mut reason = MinorReason::with_coronal((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::T, curve_set.pt.ref_unwrap().1));
     reason.bend.left = Some((
         IsStructural::F,
         BendReasonAngles::new(
-            curve_set.pt.as_ref().unwrap().1,
-            study
-                .left_bend
-                .as_ref()
-                .unwrap()
-                .angle(&curve_set.pt.as_ref().unwrap().0)
-                .unwrap()
-                .abs(),
+            curve_set.pt.ref_unwrap().1,
+            study.left_bend.angle_wild(&curve_set.pt).abs(),
         ),
     ));
     reason.bend.right = Some((
         IsStructural::T,
         BendReasonAngles::new(
-            curve_set.pt.as_ref().unwrap().1,
-            study
-                .right_bend
-                .as_ref()
-                .unwrap()
-                .angle(&curve_set.pt.as_ref().unwrap().0)
-                .unwrap()
-                .abs(),
+            curve_set.pt.ref_unwrap().1,
+            study.right_bend.angle_wild(&curve_set.pt).abs(),
         ),
     ));
 
@@ -169,44 +187,28 @@ fn test_lenke_case1() -> Result<()> {
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_PT.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_PT)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_PT),
         ),
     ));
     assert_eq!(
-        chart.pt.as_ref().unwrap(),
+        chart.pt.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
-    let mut reason =
-        MinorReason::with_coronal((IsStructural::T, curve_set.tll.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::T, curve_set.tll.ref_unwrap().1));
 
     reason.bend.left = Some((
         IsStructural::T,
         BendReasonAngles::new(
-            curve_set.tll.as_ref().unwrap().1,
-            study
-                .left_bend
-                .unwrap()
-                .angle(&curve_set.tll.as_ref().unwrap().0)
-                .unwrap()
-                .abs(),
+            curve_set.tll.ref_unwrap().1,
+            study.left_bend.angle_wild(&curve_set.tll).abs(),
         ),
     ));
     reason.bend.right = Some((
         IsStructural::T,
         BendReasonAngles::new(
-            curve_set.tll.as_ref().unwrap().1,
-            study
-                .right_bend
-                .unwrap()
-                .angle(&curve_set.tll.as_ref().unwrap().0)
-                .unwrap()
-                .abs(),
+            curve_set.tll.ref_unwrap().1,
+            study.right_bend.angle_wild(&curve_set.tll).abs(),
         ),
     ));
 
@@ -214,17 +216,12 @@ fn test_lenke_case1() -> Result<()> {
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_TLL.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_TLL)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_TLL),
         ),
     ));
 
     assert_eq!(
-        chart.tll.as_ref().unwrap(),
+        chart.tll.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Minor(reason))
     );
 
@@ -235,6 +232,10 @@ fn test_lenke_case1() -> Result<()> {
     assert_eq!(
         study.coronal.lumbar_modifier(apex_set.tll.unwrap()),
         LumbarModifier::AorB
+    );
+    assert_eq!(
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::Normokyphosis
     );
     Ok(())
 }
@@ -247,47 +248,37 @@ fn test_lenke_case2() -> Result<()> {
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
-    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.mt.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.mt.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_MT,
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_MT)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_MT),
         ),
     ));
 
     assert_eq!(
-        chart.mt.as_ref().unwrap(),
+        chart.mt.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
-    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.pt.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_PT,
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_PT)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_PT),
         ),
     ));
 
     assert_eq!(
-        chart.pt.as_ref().unwrap(),
+        chart.pt.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
     assert_eq!(
-        chart.tll.as_ref().unwrap(),
+        chart.tll.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Major())
     );
 
@@ -298,6 +289,10 @@ fn test_lenke_case2() -> Result<()> {
     assert_eq!(
         study.coronal.lumbar_modifier(apex_set.tll.unwrap()),
         LumbarModifier::C
+    );
+    assert_eq!(
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::Hypokyphosis
     );
     Ok(())
 }
@@ -311,46 +306,35 @@ fn test_lenke_case3() -> Result<()> {
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
     assert_eq!(
-        chart.mt.as_ref().unwrap(),
+        chart.mt.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Major())
     );
-    let mut reason = MinorReason::with_coronal((IsStructural::T, curve_set.pt.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::T, curve_set.pt.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::T,
         (
             KYOPHOSIS_CURVE_PT.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_PT)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_PT),
         ),
     ));
     assert_eq!(
-        chart.pt.as_ref().unwrap(),
+        chart.pt.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Minor(reason))
     );
 
-    let mut reason =
-        MinorReason::with_coronal((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.tll.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_TLL.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_TLL)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_TLL),
         ),
     ));
 
     assert_eq!(
-        chart.tll.as_ref().unwrap(),
+        chart.tll.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
@@ -362,6 +346,10 @@ fn test_lenke_case3() -> Result<()> {
         study.coronal.lumbar_modifier(apex_set.tll.unwrap()),
         LumbarModifier::AorB
     );
+    assert_eq!(
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::Normokyphosis
+    );
     Ok(())
 }
 
@@ -369,52 +357,46 @@ fn test_lenke_case3() -> Result<()> {
 fn test_lenke_case4() -> Result<()> {
     setup();
     let study = load_study("case4/frontal.json", Some("case4/lateral.json"), None, None)?;
+
+    assert_eq!(study.coronal.clavicle.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(study.coronal.shoulder.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(study.coronal.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
+
     let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
     assert_eq!(
-        chart.mt.as_ref().unwrap(),
+        chart.mt.ref_unwrap(),
         &RegionalCurveType::Structural(StructuralReason::Major())
     );
 
-    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.pt.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.pt.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_PT.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_PT)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_PT),
         ),
     ));
     assert_eq!(
-        chart.pt.as_ref().unwrap(),
+        chart.pt.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
-    let mut reason =
-        MinorReason::with_coronal((IsStructural::F, curve_set.tll.as_ref().unwrap().1));
+    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.tll.ref_unwrap().1));
 
     reason.sagittal = Some((
         IsStructural::F,
         (
             KYOPHOSIS_CURVE_TLL.clone(),
-            study
-                .sagittal
-                .as_ref()
-                .unwrap()
-                .angle(&KYOPHOSIS_CURVE_TLL)
-                .unwrap(),
+            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_TLL),
         ),
     ));
 
     assert_eq!(
-        chart.tll.as_ref().unwrap(),
+        chart.tll.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
@@ -425,6 +407,10 @@ fn test_lenke_case4() -> Result<()> {
     assert_eq!(
         study.coronal.lumbar_modifier(apex_set.tll.unwrap()),
         LumbarModifier::AorB
+    );
+    assert_eq!(
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::Hypokyphosis
     );
     Ok(())
 }

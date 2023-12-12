@@ -3,7 +3,7 @@ use std::ops::{AddAssign, SubAssign};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDataWImage};
 use log::debug;
-use ndarray::{s, ArrayBase, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use scolrs::{
     ApexSet, Curve, CurveSet, DrawParam, LineColors, Spine, VertebralIndex, VERTEBRAL_LABELS,
@@ -18,6 +18,7 @@ struct Painter {
     pub size: (usize, usize),
 }
 
+/// Squared distance between vectors. i.e. `(p1 - p2)^2`
 fn squared_distance<S>(p1: ArrayBase<S, Ix1>, p2: ArrayBase<S, Ix1>) -> f32
 where
     S: ndarray::Data<Elem = f32>,
@@ -25,6 +26,7 @@ where
     (&p1 - &p2).mapv(|a| a * a).sum()
 }
 
+/// Return the pair of vectors that has maximum distance
 fn distanced_pair3<S>(
     p1: ArrayBase<S, Ix1>,
     p2: ArrayBase<S, Ix1>,
@@ -85,6 +87,24 @@ impl CobbAux {
     }
 }
 
+fn rotate_around<S, T>(
+    point: ArrayBase<S, Ix1>,
+    origin: ArrayBase<T, Ix1>,
+    rad_angle: f32,
+) -> ndarray::Array1<f32>
+where
+    S: ndarray::Data<Elem = f32>,
+    T: ndarray::Data<Elem = f32>,
+{
+    let point = &point - &origin;
+    let s = rad_angle.sin();
+    let c = rad_angle.cos();
+    let rot = ndarray::arr2(&[[c, -s], [s, c]]);
+    let mut rotated = point.dot(&rot);
+    rotated.add_assign(&origin);
+    rotated
+}
+
 impl Painter {
     fn new(param: DrawParam, size: (usize, usize)) -> Self {
         Self { param, size }
@@ -111,6 +131,22 @@ impl Painter {
             .set("y2", start_end[[1, 1]])
     }
 
+    fn horizontal_line(&self, y: f32) -> element::Line {
+        element::Line::new()
+            .set("x1", 0)
+            .set("y1", y)
+            .set("x2", self.size.0)
+            .set("y2", y)
+    }
+
+    fn vertical_line(&self, x: f32) -> element::Line {
+        element::Line::new()
+            .set("x1", x)
+            .set("y1", 0)
+            .set("x2", x)
+            .set("y2", self.size.1)
+    }
+
     fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
     where
         S: ndarray::Data<Elem = f32>,
@@ -125,6 +161,53 @@ impl Painter {
     {
         let s = points.join(" ");
         element::Polygon::new().set("points", s)
+    }
+
+    fn angle_between<S>(
+        &self,
+        mut group: element::Group,
+        line1: ArrayBase<S, Ix2>,
+        line2: ArrayBase<S, Ix2>,
+        cross: ArrayBase<S, Ix1>,
+        arc_radius: f32,
+        angle_rad: f32,
+    ) -> element::Group
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        group = group.add(self.line(line1.view()));
+        group = group.add(self.line(line2.view()));
+        let v1 = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
+        let v1_unit = &v1 / v1.l2norm();
+        let v2 = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
+        let v2_unit = &v2 / v2.l2norm();
+        let arc_start = &cross + arc_radius * &v1_unit;
+        let arc_end = &cross + arc_radius * &v2_unit;
+        let large_arc_flag = 0;
+        let sweep_flag = if angle_rad < 0.0 { 1 } else { 0 };
+        let data = element::path::Data::new()
+            .move_to((arc_start[0], arc_start[1]))
+            .elliptical_arc_to((
+                arc_radius,
+                arc_radius,
+                0,
+                large_arc_flag,
+                sweep_flag,
+                arc_end[0],
+                arc_end[1],
+            ));
+        let arc = element::Path::new().set('d', data).set("fill", "none");
+        group = group.add(arc);
+        let text = self
+            .text(
+                format!("{:.1}°", angle_rad.to_degrees()).as_str(),
+                rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
+            )
+            .set("stroke", self.param.text_stroke.as_str())
+            .set("stroke-width", self.param.text_stroke_width)
+            .set("fill", self.param.text_fill.as_str())
+            .set("dominant-baseline", "central");
+        group.add(text)
     }
 
     fn text<S>(&self, text: &str, coords: ArrayBase<S, Ix1>) -> element::Text
@@ -150,24 +233,6 @@ impl Painter {
         } else {
             1
         }
-    }
-
-    fn rotate_around<S, T>(
-        point: ArrayBase<S, Ix1>,
-        origin: ArrayBase<T, Ix1>,
-        rad_angle: f32,
-    ) -> ndarray::Array1<f32>
-    where
-        S: ndarray::Data<Elem = f32>,
-        T: ndarray::Data<Elem = f32>,
-    {
-        let point = &point - &origin;
-        let s = rad_angle.sin();
-        let c = rad_angle.cos();
-        let rot = ndarray::arr2(&[[c, -s], [s, c]]);
-        let mut rotated = point.dot(&rot);
-        rotated.add_assign(&origin);
-        rotated
     }
 
     fn cobb(
@@ -199,7 +264,7 @@ impl Painter {
             let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![plate_origin, ..])
                 + aux_param.plate_scale * base_length * &unit_dir;
             let aux_cross =
-                Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
+                rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
 
             let d_btw_aux2p = aux_cross
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
@@ -257,7 +322,8 @@ impl Painter {
                     .text(format!("{:.1}°", angle).as_str(), aux_cross)
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
-                    .set("fill", self.param.text_fill.as_str());
+                    .set("fill", self.param.text_fill.as_str())
+                    .set("dominant-baseline", "central");
                 group = group.add(text);
             }
         } else {
@@ -271,11 +337,10 @@ impl Painter {
                 group = group.add(line);
                 // arrow
                 let unit_d = &d / d.l2norm();
-                let len = self.param.line_width as f32 * 8.0;
+                let len = self.param.line_width * 8.0;
                 let p1 = plate.mean_axis(Axis(0)).unwrap();
-                let p2 = Self::rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f32.to_radians());
-                let p3 =
-                    Self::rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f32.to_radians());
+                let p2 = rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f32.to_radians());
+                let p3 = rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f32.to_radians());
                 let arrow = ndarray::stack![Axis(0), p1, p2, p3];
                 let arrow = self.polygon(arrow);
 
@@ -319,7 +384,7 @@ where
     lyon_geom::Line { point, vector }
 }
 
-/// Trait to provide common interface from HashMap and IndexMap
+/// Trait that provides a common interface for HashMap and IndexMap
 trait TryGet<K, V> {
     fn try_get<Q>(&self, key: &Q) -> Option<&V>
     where
@@ -385,22 +450,22 @@ where
 trait Component {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group;
+    ) -> Option<element::Group>;
 }
 
 struct VertebralLabels;
 impl Component for VertebralLabels {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
+    ) -> Option<element::Group> {
         let draw_param = &painter.param;
         let mut g_vert_labels = element::Group::new()
             .set("text-anchor", "middle")
@@ -408,14 +473,14 @@ impl Component for VertebralLabels {
             .set("stroke", draw_param.text_stroke.as_str())
             .set("stroke-width", draw_param.text_stroke_width)
             .set("fill", draw_param.text_fill.as_str());
-        let centroids = scol.tl_centroids();
+        let centroids = spine.tl_centroids();
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
         {
             let t = painter.text(label, coords);
             g_vert_labels = g_vert_labels.add(t);
         }
-        g_vert_labels
+        Some(g_vert_labels)
     }
 }
 
@@ -423,18 +488,19 @@ struct VertebralPoints;
 impl Component for VertebralPoints {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
+    ) -> Option<element::Group> {
         let mut g_corners = element::Group::new();
         for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
             let color = label_colors.get_or_new(label);
             let mut sub_group = element::Group::new()
                 .set("class", format!("{CLS_POINT} {label}"))
+                .set("stroke", color)
                 .set("fill", color);
-            let points = scol.c7tls.0.index_axis(Axis(1), i_label);
+            let points = spine.c7tls.0.index_axis(Axis(1), i_label);
             let n_points = if i_label < 2 {
                 points.len_of(Axis(0))
             } else {
@@ -446,28 +512,57 @@ impl Component for VertebralPoints {
             }
             g_corners = g_corners.add(sub_group);
         }
-        g_corners
+        Some(g_corners)
     }
 }
+
+static LBL_CENTROID: &str = "Centroids";
+static LBL_COB_ANGLES: &str = "CobbAngles";
+static LBL_CURVE_APEX: &str = "CurveApex";
+static LBL_SPINAL_LINE: &str = "SpinalLine";
+static LBL_CSVL: &str = "CSVL";
+static LBL_T1_TILT_ANGLE: &str = "T1TiltAngle";
+static LBL_CLAVICLE_ANGLE: &str = "ClavicleAngle";
+static LBL_SHOULDER_HEIGHT: &str = "ShoulderHeight";
+static LBL_PELVIC_OBLIQUITY: &str = "PelvicObliquity";
+static LBL_SACRAL_OBLIQUITY: &str = "SacralObliquity";
+static LBL_LEG_LENGTH_DISCREPANCY: &str = "LegLengthDiscrepancy";
+
+static CORONAL_COMPONENTS: [&str; 11] = [
+    LBL_CENTROID,
+    LBL_COB_ANGLES,
+    LBL_CURVE_APEX,
+    LBL_SPINAL_LINE,
+    LBL_CSVL,
+    LBL_T1_TILT_ANGLE,
+    LBL_CLAVICLE_ANGLE,
+    LBL_SHOULDER_HEIGHT,
+    LBL_PELVIC_OBLIQUITY,
+    LBL_SACRAL_OBLIQUITY,
+    LBL_LEG_LENGTH_DISCREPANCY,
+];
 
 struct Centroids;
 impl Component for Centroids {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         label_colors: &mut ColorPaletts<LabelColorsHex>,
         _line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
-        let label = "Centroid";
+    ) -> Option<element::Group> {
+        let label = LBL_CENTROID;
         let color = label_colors.get_or_new(label);
-        let mut g_centroids = element::Group::new().set("class", label).set("fill", color);
-        let centroids = scol.tl_centroids();
+        let mut g_centroids = element::Group::new()
+            .set("class", label)
+            .set("stroke", color)
+            .set("fill", color);
+        let centroids = spine.tl_centroids();
         for point in centroids.axis_iter(Axis(0)) {
             let p = painter.point(point);
             g_centroids = g_centroids.add(p);
         }
-        g_centroids
+        Some(g_centroids)
     }
 }
 
@@ -480,27 +575,27 @@ fn mean_plate_length(scol: &Spine) -> f32 {
     diff.map_axis(Axis(1), |a| a.l2norm()).mean().unwrap()
 }
 
-struct FrontalCobbAngles<'a>(&'a CurveSet);
-impl<'a> Component for FrontalCobbAngles<'a> {
+struct CobbAngles<'a>(&'a CurveSet);
+impl<'a> Component for CobbAngles<'a> {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
+    ) -> Option<element::Group> {
         let curve_set = self.0;
         debug!("Curve set:{:?}", curve_set);
         let mut g_angles = element::Group::new().set("class", "CobbAngles");
         let aux_param = CobbAux::default();
 
-        let mean_plate_length = mean_plate_length(scol);
+        let mean_plate_length = mean_plate_length(spine);
 
         if let Some((mt_curve, _angle)) = &curve_set.mt {
             let g_mt = element::Group::new()
                 .set("class", "MT")
                 .set("stroke", line_colors.get_or_new("MT"));
-            let group = painter.cobb(g_mt, scol, mt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_mt, spine, mt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         };
 
@@ -508,7 +603,7 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_pt = element::Group::new()
                 .set("class", "PT")
                 .set("stroke", line_colors.get_or_new("PT"));
-            let group = painter.cobb(g_pt, scol, pt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_pt, spine, pt_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
 
@@ -516,10 +611,10 @@ impl<'a> Component for FrontalCobbAngles<'a> {
             let g_tll = element::Group::new()
                 .set("class", "TLL")
                 .set("stroke", line_colors.get_or_new("TLL"));
-            let group = painter.cobb(g_tll, scol, tll_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(g_tll, spine, tll_curve, &aux_param, mean_plate_length);
             g_angles = g_angles.add(group);
         }
-        g_angles
+        Some(g_angles)
     }
 }
 
@@ -527,14 +622,14 @@ struct CurveApex<'a>(&'a ApexSet, &'a scolrs::Corners<ndarray::OwnedRepr<f32>>);
 impl<'a> Component for CurveApex<'a> {
     fn draw(
         &self,
-        _scol: &Spine,
+        _spine: &Spine,
         painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
+    ) -> Option<element::Group> {
         let apex_set = &self.0;
         let vert_discs = &self.1 .0;
-        let label = "CurveApex";
+        let label = LBL_CURVE_APEX;
         let mut g = element::Group::new().set("class", label);
 
         for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
@@ -550,7 +645,7 @@ impl<'a> Component for CurveApex<'a> {
                 .set("stroke", line_colors.get_or_new(label));
             g = g.add(polygon);
         }
-        g
+        Some(g)
     }
 }
 
@@ -558,14 +653,14 @@ struct SpinalLine;
 impl Component for SpinalLine {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
-        let label = "SpinalLine";
+    ) -> Option<element::Group> {
+        let label = LBL_SPINAL_LINE;
         let g = element::Group::new().set("class", label);
-        let centroids = scol.tl_centroids();
+        let centroids = spine.tl_centroids();
         let coefs =
             scolrs::polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6).unwrap();
         let ys = ndarray::Array::linspace(
@@ -578,7 +673,7 @@ impl Component for SpinalLine {
             .polyline(ndarray::stack![Axis(1), xs, ys])
             .set("stroke", line_colors.get_or_new(label));
 
-        g.add(spinal_line)
+        Some(g.add(spinal_line))
     }
 }
 
@@ -587,28 +682,239 @@ struct Csvl<'a>(&'a ApexSet);
 impl<'a> Component for Csvl<'a> {
     fn draw(
         &self,
-        scol: &Spine,
+        spine: &Spine,
         painter: &Painter,
         _label_colors: &mut ColorPaletts<LabelColorsHex>,
         line_colors: &mut ColorPaletts<LineColors>,
-    ) -> element::Group {
-        let label = "CSVL";
+    ) -> Option<element::Group> {
+        let label = LBL_CSVL;
         let line_color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("stroke", line_color);
-        let sup_plate = scol.sacral_sup_plate();
+        let sup_plate = spine.sacral_sup_plate();
         let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.0.tll {
             let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
             let mid = sup_plate.mean_axis(Axis(0)).unwrap();
             let mut vl = ndarray::stack![Axis(0), mid, mid];
-            let y = scol.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
+            let y = spine.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
             vl[[0, 1]] = y;
             g = g.add(painter.line(vl));
         }
-        g
+        Some(g)
+    }
+}
+
+/// center sacral vertical line (CSVL)
+struct T1TiltAngle;
+impl Component for T1TiltAngle {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        let label = LBL_T1_TILT_ANGLE;
+        let mut g = element::Group::new().set("class", label);
+        g = g
+            .set("stroke", line_colors.get_or_new(label))
+            .set("fill", "none");
+        let tl_sup_lines = spine.tl_sup_lines();
+        let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
+        let mid = t1sup.mean_axis(Axis(0)).unwrap();
+        let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
+        let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
+        let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
+        g = g.add(painter.line(sup_line.view()));
+        if l2r[0] == 0.0 {
+            // T1 is vertical, which is highly unlikely
+            debug!("T1 VERTICAL LINE!!!"); // TODO: implement
+        } else {
+            let angle_rad = l2r[1].atan2(l2r[0]);
+            let mut arc_start = mid.to_owned();
+            let arc_radius = mult_arc * l2r.l2norm();
+            arc_start[[0]] += arc_radius;
+
+            if l2r[1] != 0.0 {
+                // draw tilted T1 line
+                let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
+                hor_line[[0, 0]] -= mult_left * l2r.l2norm();
+                hor_line[[1, 0]] += mult_right * l2r.l2norm();
+                g = painter.angle_between(
+                    g,
+                    sup_line.view(),
+                    hor_line.view(),
+                    mid.view(),
+                    arc_radius,
+                    angle_rad,
+                );
+            }
+        };
+        Some(g)
+    }
+}
+
+struct ClavicleAngle;
+impl Component for ClavicleAngle {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        spine.clavicle.as_ref()?;
+        let label = LBL_CLAVICLE_ANGLE;
+        let color = line_colors.get_or_new(label);
+        let mut g = element::Group::new()
+            .set("class", label)
+            .set("fill", color)
+            .set("stroke", color);
+        let clavicle = spine.clavicle.as_ref().unwrap();
+        g = add_tilt_angle(g, painter, clavicle);
+        Some(g)
+    }
+}
+
+fn difference_in_y(
+    label: &str,
+    points: &Option<Array2<f32>>,
+    painter: &Painter,
+    line_colors: &mut ColorPaletts<LineColors>,
+) -> Option<element::Group> {
+    let points = points.as_ref()?;
+    let color = line_colors.get_or_new(label);
+    let mut g = element::Group::new()
+        .set("class", label)
+        .set("fill", color)
+        .set("stroke", color);
+    for c in points.axis_iter(Axis(0)) {
+        g = g.add(painter.point(c));
+    }
+    g = g.add(painter.horizontal_line(points[[0, 1]]));
+    g = g.add(painter.horizontal_line(points[[1, 1]]));
+    let mut vline = points.clone();
+    vline[[1, 0]] = vline[[0, 0]];
+    g = g.add(painter.line(vline.view()));
+    let text_pos = vline.mean_axis(Axis(0)).unwrap();
+    let text = format!("{:.1}", vline[[0, 1]] - vline[[1, 1]]);
+    g = g.add(
+        painter
+            .text(&text, text_pos)
+            .set("stroke", painter.param.text_stroke.as_str())
+            .set("stroke-width", painter.param.text_stroke_width)
+            .set("fill", painter.param.text_fill.as_str())
+            .set("dominant-baseline", "central"),
+    );
+    Some(g)
+}
+
+struct ShoulderHeight;
+impl Component for ShoulderHeight {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        difference_in_y(LBL_SHOULDER_HEIGHT, &spine.shoulder, painter, line_colors)
+    }
+}
+
+fn add_tilt_angle(
+    group: element::Group,
+    painter: &Painter,
+    points: &ndarray::Array2<f32>,
+) -> element::Group {
+    let mut g = group;
+    for p in points.axis_iter(Axis(0)) {
+        g = g.add(painter.point(p));
+    }
+    for c in points.axis_iter(Axis(0)) {
+        g = g.add(painter.point(c));
+        let l2r = &points.index_axis(Axis(0), 1) - &points.index_axis(Axis(0), 0);
+        let angle_rad = l2r[1].atan2(l2r[0]);
+        let mut hor_line = points.clone();
+        hor_line[[1, 1]] = points[[0, 1]];
+        let arc_radius = l2r.l2norm() * 0.8;
+        g = painter.angle_between(
+            g,
+            hor_line.view(),
+            points.view(),
+            points.index_axis(Axis(0), 0),
+            arc_radius,
+            angle_rad,
+        )
+    }
+    g
+}
+
+struct PelvicObliquity;
+impl Component for PelvicObliquity {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        spine.pelvis.as_ref()?;
+        let label = LBL_PELVIC_OBLIQUITY;
+        let color = line_colors.get_or_new(label);
+        let mut g = element::Group::new()
+            .set("class", label)
+            .set("fill", color)
+            .set("stroke", color);
+        let pelvis = spine.pelvis.as_ref().unwrap();
+        g = add_tilt_angle(g, painter, pelvis);
+        Some(g)
+    }
+}
+
+struct SacralObliquity;
+impl Component for SacralObliquity {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        spine.femoral_head.as_ref()?;
+        let label = LBL_SACRAL_OBLIQUITY;
+        let color = line_colors.get_or_new(label);
+        let mut g = element::Group::new()
+            .set("class", label)
+            .set("fill", color)
+            .set("stroke", color);
+        let femoral_head = spine.femoral_head.as_ref().unwrap();
+        for c in femoral_head.axis_iter(Axis(0)) {
+            g = g.add(painter.point(c));
+        }
+        // TODO: implement
+        Some(g)
+    }
+}
+
+struct LegLengthDiscrepancy;
+impl Component for LegLengthDiscrepancy {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts<LabelColorsHex>,
+        line_colors: &mut ColorPaletts<LineColors>,
+    ) -> Option<element::Group> {
+        difference_in_y(
+            LBL_LEG_LENGTH_DISCREPANCY,
+            &spine.femoral_head,
+            painter,
+            line_colors,
+        )
     }
 }
 
@@ -680,12 +986,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     // common components
     for component in ["VertebralLabels", "VertebralPoints"] {
         let group = match component {
-            "VertebralLabels" => {
-                VertebralLabels {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "VertebralPoints" => {
-                VertebralPoints {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
+            "VertebralLabels" => VertebralLabels {}
+                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .unwrap(),
+            "VertebralPoints" => VertebralPoints {}
+                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .unwrap(),
             _ => panic!("Unknown component"),
         };
         document = document.add(group);
@@ -701,12 +1007,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let (cs, apexes, _major_curve) = scol.identify_curves();
             (cs, apexes)
         };
-        for component in ["Centroids", "CobbAngles", "CurveApex", "SpinalLine", "CSVL"] {
+        for component in CORONAL_COMPONENTS {
             let group = match component {
                 "Centroids" => {
                     Centroids {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
-                "CobbAngles" => FrontalCobbAngles(&curve_set).draw(
+                "CobbAngles" => CobbAngles(&curve_set).draw(
                     &scol,
                     &painter,
                     &mut label_colors,
@@ -727,9 +1033,32 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 "CSVL" => {
                     Csvl(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors)
                 }
-                _ => panic!("Unknown component"),
+                "T1TiltAngle" => {
+                    T1TiltAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                }
+                "ClavicleAngle" => {
+                    ClavicleAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                }
+                "ShoulderHeight" => {
+                    ShoulderHeight {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                }
+                "PelvicObliquity" => {
+                    PelvicObliquity {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                }
+                "SacralObliquity" => {
+                    SacralObliquity {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                }
+                "LegLengthDiscrepancy" => LegLengthDiscrepancy {}.draw(
+                    &scol,
+                    &painter,
+                    &mut label_colors,
+                    &mut line_colors,
+                ),
+                c => panic!("Unknown component: {}", c),
             };
-            document = document.add(group);
+            if let Some(group) = group {
+                document = document.add(group);
+            }
         }
     } else {
         let aux_param = CobbAux::default();

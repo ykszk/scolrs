@@ -19,8 +19,8 @@ pub use defs::*;
 
 #[derive(Error, Debug)]
 pub enum ScolError {
-    #[error("Invalid number of points for label: {0}")]
-    InvalidPointCount(String),
+    #[error("No point found for label: {0}")]
+    NoPointFound(String),
     #[error("Invalid combination of the numbeer of points for {0} and {1}: {2} vs. {3}")]
     InvalidPointCombo(String, String, usize, usize),
 }
@@ -37,7 +37,7 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
             }
         })
         .collect();
-    let tuples = tuples.ok_or_else(|| ScolError::InvalidPointCount(label.to_string()))?;
+    let tuples = tuples.ok_or_else(|| ScolError::NoPointFound(label.to_string()))?;
     let mut vec = Vec::with_capacity(tuples.len() * 2);
     for t in tuples.iter() {
         vec.push(t.0);
@@ -45,6 +45,37 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     }
     let arr = Array2::from_shape_vec((tuples.len(), 2), vec).unwrap();
     Ok(arr)
+}
+
+trait CheckLength {
+    fn check_len_of(self, axis: Axis, len: usize) -> Option<Self>
+    where
+        Self: std::marker::Sized;
+}
+
+impl CheckLength for Array2<f32> {
+    fn check_len_of(self, axis: Axis, expected_len: usize) -> Option<Self> {
+        if self.len_of(axis) == expected_len {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+trait LeftFirst {
+    /// sort array by x
+    fn left_first(self) -> Self;
+}
+
+impl LeftFirst for Array2<f32> {
+    fn left_first(mut self) -> Self {
+        if self[[0, 0]] > self[[1, 0]] {
+            self.swap([0, 0], [1, 0]);
+            self.swap([0, 1], [1, 1]);
+        }
+        self
+    }
 }
 
 /// Polynomial fitting of `deg` degrees
@@ -106,6 +137,10 @@ pub struct Spine {
     /// The number of points/vertebrae can vary because some spine have 4 or 6 lumbar vertebrae
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
+    pub clavicle: Option<Array2<f32>>,
+    pub shoulder: Option<Array2<f32>>,
+    pub pelvis: Option<Array2<f32>>,
+    pub femoral_head: Option<Array2<f32>>,
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae
@@ -120,7 +155,7 @@ pub const T2T5_CURVE: Curve = Curve {
     inf: VertebralIndex::T5 as usize,
 };
 
-pub const T5T12: Curve = Curve {
+pub const T5T12_CURVE: Curve = Curve {
     sup: VertebralIndex::T5 as usize,
     inf: VertebralIndex::T12 as usize,
 };
@@ -130,8 +165,11 @@ pub const T10L2_CURVE: Curve = Curve {
     inf: VertebralIndex::L2 as usize,
 };
 
+/// Curve position for determining if PT is structural
 pub const KYOPHOSIS_CURVE_PT: Curve = T2T5_CURVE;
+/// Curve position for determining if MT is structural
 pub const KYOPHOSIS_CURVE_MT: Curve = T10L2_CURVE;
+/// Curve position for determining if TLL is structural
 pub const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
 impl Display for Curve {
@@ -510,13 +548,30 @@ impl TryFrom<&LabelMeData> for Spine {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let vertebrae = C7TLS::try_from(data)?;
+        let c7tls = C7TLS::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl = Corners(v_c7tl.0.view()).into();
-        Ok(Self {
-            c7tls: vertebrae,
+        let clavicle = extract_points(data, "Clavicle")?
+            .check_len_of(Axis(0), 2)
+            .map(|e| e.left_first());
+        let shoulder = extract_points(data, "Shoulder")?
+            .check_len_of(Axis(0), 2)
+            .map(|e| e.left_first());
+        let pelvis = extract_points(data, "Pelvis")?
+            .check_len_of(Axis(0), 2)
+            .map(|e| e.left_first());
+        let femoral_head = extract_points(data, "FemoralHead")?
+            .check_len_of(Axis(0), 2)
+            .map(|e| e.left_first());
+
+        Ok(Spine {
+            c7tls,
             v_c7tl,
             c_c7tl,
+            clavicle,
+            pelvis,
+            shoulder,
+            femoral_head,
         })
     }
 }
@@ -789,7 +844,7 @@ pub enum CurveType {
 }
 
 /// Modifier based on T5-T12 sagittal angle
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SagittalModifier {
     /// angle < 10
     Hypokyphosis,
@@ -801,9 +856,9 @@ pub enum SagittalModifier {
 
 impl From<f32> for SagittalModifier {
     fn from(angle: f32) -> Self {
-        if angle < 10.0 {
+        if angle.abs() < 10.0 {
             SagittalModifier::Hypokyphosis
-        } else if angle < 40.0 {
+        } else if angle.abs() < 40.0 {
             SagittalModifier::Normokyphosis
         } else {
             SagittalModifier::Hyperkyphosis

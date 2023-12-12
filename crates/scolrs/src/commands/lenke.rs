@@ -38,7 +38,7 @@ pub fn cmd(args: LenkeArgs) -> Result<()> {
         println!("Lumbar modifier:{:?}", study.coronal.lumbar_modifier(apex));
     }
     if let Some(sagittal) = study.sagittal {
-        let angle = sagittal.angle(&scolrs::T5T12).unwrap();
+        let angle = sagittal.angle(&scolrs::T5T12_CURVE).unwrap();
         let s_mod: SagittalModifier = angle.into();
         println!("Sagittal modifier:{}", s_mod);
     }
