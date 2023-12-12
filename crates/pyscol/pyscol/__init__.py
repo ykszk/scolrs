@@ -1,6 +1,6 @@
 import numpy as np
 
-from .pyscol import trimming_param_with_resample
+from .pyscol import trimming_box_with_resample
 
 
 def trimming_param(arr2d: np.ndarray):
@@ -11,4 +11,4 @@ def trimming_param(arr2d: np.ndarray):
     else:
         int16arr = arr2d.astype(np.int16)
     resample_step = shape.max() // 1000 + 1
-    return trimming_param_with_resample(int16arr, resample_step)
+    return trimming_box_with_resample(int16arr, resample_step)

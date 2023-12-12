@@ -2,7 +2,7 @@ use ndarray::{
     array, s, Array, Array1, ArrayView, ArrayView2, Axis, Dim, Dimension, Slice, SliceInfo,
     SliceInfoElem,
 };
-use ndarray_ndimage::{convolve, sobel, BorderMode};
+use ndarray_ndimage::{convolve, BorderMode};
 
 use log::debug;
 use ndarray_stats::QuantileExt;
@@ -69,14 +69,14 @@ fn cumsum(mut hist: Array1<usize>) -> Array1<usize> {
 pub type Index2d = [usize; 2];
 pub type BoundingBox = (Index2d, Index2d);
 
-pub fn create_slice<A>(
+pub fn create_slice(
     bb: &BoundingBox,
-    arr2d: ArrayView2<A>,
+    original_shape: &(usize, usize),
 ) -> SliceInfo<[SliceInfoElem; 2], Dim<[usize; 2]>, Dim<[usize; 2]>> {
     let (bmin, bmax) = bb;
     let sy = Slice {
         start: bmin[0] as isize,
-        end: if bmax[0] > arr2d.nrows() {
+        end: if bmax[0] > original_shape.0 {
             None
         } else {
             Some(bmax[0] as isize)
@@ -85,7 +85,7 @@ pub fn create_slice<A>(
     };
     let sx = Slice {
         start: bmin[1] as isize,
-        end: if bmax[1] > arr2d.ncols() {
+        end: if bmax[1] > original_shape.1 {
             None
         } else {
             Some(bmax[1] as isize)
@@ -94,6 +94,7 @@ pub fn create_slice<A>(
     };
     s![sy, sx]
 }
+
 pub trait ElementWise {
     fn add(&self, other: &Self) -> Self;
     fn maximum(&self, other: &Self) -> Self;
@@ -117,6 +118,8 @@ impl ElementWise for Index2d {
     }
 }
 
+/// Calculate bounding box of `predicate(pixel)==true`.
+/// Return None when predicate is never true
 pub fn bounding_box<F>(img: ArrayView2<u8>, predicate: F) -> Option<BoundingBox>
 where
     F: Fn(u8) -> bool,
@@ -139,33 +142,35 @@ where
     }
 }
 
-pub fn trimming_param(img: ArrayView2<i16>) -> BoundingBox {
+/// Calculate trimming parameter (bounding box)
+pub fn trimming_box(img: ArrayView2<i16>) -> BoundingBox {
     let border_mode = BorderMode::Nearest;
     let weights = array![[0, 1, 0], [1, -4, 1], [0, 1, 0]];
     let lap = convolve(&img.view(), &weights.view(), border_mode, 0);
-    let percent = 0.1;
+    let thresh_quantile = 0.1;
+    let original_shape = (img.nrows(), img.ncols());
 
     let filtered = [
-        // img.to_owned(),
-        sobel(&img, Axis(0), border_mode),
-        sobel(&img, Axis(1), border_mode),
+        img.to_owned(),
+        // sobel(&img, Axis(0), border_mode),
+        // sobel(&img, Axis(1), border_mode),
         lap,
     ]
-    .map(|filtered| {
-        let abs = filtered.mapv(|e| e.unsigned_abs());
-        abs.minmax_normalize().unwrap()
-    });
+    .map(|arr| arr.minmax_normalize().unwrap());
 
     let mut bmin = [0usize, 0usize];
-    let mut bmax = [img.nrows() + 1, img.ncols() + 1];
+    let mut bmax = [original_shape.0 + 1, original_shape.1 + 1];
     let max_iter = 10;
     for i_iter in 0..max_iter {
         let prev = (bmin, bmax);
         for (_i_filter, u8arr) in filtered.iter().enumerate() {
             // manually create slices because ndarray::slice doesn't accept 0..len
-            let bboxed = u8arr.slice(create_slice(&(bmin, bmax), img));
+            let bboxed = u8arr.slice(create_slice(&(bmin, bmax), &original_shape));
             let cdf = CDF::from(bboxed);
-            let (t_min, t_max) = (cdf.quantile(percent), cdf.quantile(1.0 - percent));
+            let (t_min, t_max) = (
+                cdf.quantile(thresh_quantile),
+                cdf.quantile(1.0 - thresh_quantile),
+            );
             let predicate = |p| t_min < p && p < t_max;
             let bbox = bounding_box(bboxed, predicate);
             if let Some((local_bmin, local_bmax)) = bbox {
@@ -183,9 +188,10 @@ pub fn trimming_param(img: ArrayView2<i16>) -> BoundingBox {
     (bmin, bmax)
 }
 
-pub fn trimming_param_with_resample(img: ArrayView2<i16>, resample_step: usize) -> BoundingBox {
+/// Call `trimming_box` with resampled input for faster calculation
+pub fn trimming_box_with_resample(img: ArrayView2<i16>, resample_step: usize) -> BoundingBox {
     let img = img.slice(s![..; resample_step, ..; resample_step]);
-    let (bmin, bmax) = trimming_param(img);
+    let (bmin, bmax) = trimming_box(img);
     (
         bmin.multiply(&[resample_step, resample_step]),
         bmax.multiply(&[resample_step, resample_step]),

@@ -871,9 +871,9 @@ impl Display for Chart {
         write!(
             f,
             "PT: {}\nMT: {}\nTLL: {}",
-            self.pt.as_ref().map_or("NA".into(), |e| format!("{}", e)),
-            self.mt.as_ref().map_or("NA".into(), |e| format!("{}", e)),
-            self.tll.as_ref().map_or("NA".into(), |e| format!("{}", e)),
+            self.pt.as_ref().map_or("N/A".into(), |e| format!("{}", e)),
+            self.mt.as_ref().map_or("N/A".into(), |e| format!("{}", e)),
+            self.tll.as_ref().map_or("N/A".into(), |e| format!("{}", e)),
         )
     }
 }

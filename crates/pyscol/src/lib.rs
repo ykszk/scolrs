@@ -1,4 +1,4 @@
-use devscol::{trimming_param_with_resample, BoundingBox};
+use devscol::{trimming_box_with_resample, BoundingBox};
 use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 
@@ -9,7 +9,7 @@ fn py_trimming_param_with_resample(
     resample_step: usize,
 ) -> PyResult<BoundingBox> {
     let arr2d = arr2d.as_array();
-    Ok(trimming_param_with_resample(arr2d, resample_step))
+    Ok(trimming_box_with_resample(arr2d, resample_step))
 }
 
 #[pymodule]

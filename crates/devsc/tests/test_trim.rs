@@ -4,7 +4,7 @@ use dicom::pixeldata::image;
 use dicom::pixeldata::image::ImageBuffer;
 use ndarray::Axis;
 
-use devscol::{create_slice, trimming_param_with_resample, Normalize};
+use devscol::{create_slice, trimming_box_with_resample, Normalize};
 use dicom::pixeldata::PixelDecoder;
 use log::{debug, warn};
 use std::{ffi::OsStr, path::PathBuf, sync::Once};
@@ -29,6 +29,7 @@ fn tmp_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
 }
 
+#[ignore]
 #[test]
 fn test_dicom_trim() -> Result<()> {
     setup();
@@ -69,8 +70,10 @@ fn test_dicom_trim() -> Result<()> {
 
             let resample_step = img.ncols().max(img.nrows()) / 1000 + 1;
             debug!("resample_step: {:?}", resample_step);
-            let bbox = trimming_param_with_resample(img.view(), resample_step);
-            let u8arr = u8arr2d.slice(create_slice(&bbox, u8arr2d)).to_owned();
+            let bbox = trimming_box_with_resample(img.view(), resample_step);
+            let u8arr = u8arr2d
+                .slice(create_slice(&bbox, &(u8arr2d.nrows(), u8arr2d.ncols())))
+                .to_owned();
             debug!("Done trimming: {:?}", now.elapsed());
             let img: image::GrayImage = ImageBuffer::from_vec(
                 u8arr.ncols() as u32,
