@@ -192,17 +192,22 @@ impl Painter {
             let angle = scol.angle(curve).unwrap(); // lines can't be parallel if there is an intersection point
 
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-            let i = Self::plate_end(sup_plate, arr_int.view());
-            let d = &sup_plate.slice(s![1 - i, ..]) - &sup_plate.slice(s![i, ..]);
-            let unit_d = &d / d.l2norm();
-            let aux_on_sup: ndarray::Array1<_> =
-                &sup_plate.slice(s![i, ..]) + aux_param.plate_scale * base_length * &unit_d;
+            let plate_origin = Self::plate_end(sup_plate, arr_int.view());
+            let dir_plate =
+                &sup_plate.slice(s![1 - plate_origin, ..]) - &sup_plate.slice(s![plate_origin, ..]);
+            let unit_dir = &dir_plate / dir_plate.l2norm();
+            let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![plate_origin, ..])
+                + aux_param.plate_scale * base_length * &unit_dir;
             let aux_cross =
                 Self::rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
 
-            let d_btw_aux2p = aux_cross.l2_dist(&sup_plate.slice(s![i, ..])).unwrap();
+            let d_btw_aux2p = aux_cross
+                .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
+                .unwrap();
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-            let d_btw_int2p = arr_int.l2_dist(&sup_plate.slice(s![i, ..])).unwrap();
+            let d_btw_int2p = arr_int
+                .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
+                .unwrap();
             if is_inside && d_btw_aux2p > d_btw_int2p {
                 // draw intersection point
                 for plate in [sup_plate, inf_plate] {
@@ -227,11 +232,12 @@ impl Painter {
                 // draw aux lines and its intersection
 
                 for plate in [sup_plate, inf_plate] {
-                    let i = Self::plate_end(sup_plate, arr_int.view());
-                    let d = &plate.slice(s![1 - i, ..]) - &plate.slice(s![i, ..]);
-                    let d_aux = &aux_cross - &plate.slice(s![i, ..]);
-                    let t = d_aux.dot(&d) / d.mapv(|a| a * a).sum();
-                    let projed_aux = &plate.slice(s![i, ..]) + t * &d;
+                    let plate_origin = Self::plate_end(plate, arr_int.view());
+                    let dir_plate =
+                        &plate.slice(s![1 - plate_origin, ..]) - &plate.slice(s![plate_origin, ..]);
+                    let d_aux = &aux_cross - &plate.slice(s![plate_origin, ..]);
+                    let t = d_aux.dot(&dir_plate) / dir_plate.mapv(|a| a * a).sum();
+                    let projed_aux = &plate.slice(s![plate_origin, ..]) + t * &dir_plate;
                     let (p1, p2) = distanced_pair3(
                         plate.slice(s![0, ..]),
                         plate.slice(s![1, ..]),
@@ -618,7 +624,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     debug!("Loading {:?}", args.input);
     let s = std::fs::read_to_string(&args.input)
         .with_context(|| format!("reading file {:?}", &args.input))?;
-    let data: LabelMeData = s.as_str().try_into()?;
+    let data: LabelMeData = s.try_into()?;
     let orig_wd = std::env::current_dir()?;
     if let Some(parent) = args.input.parent() {
         std::env::set_current_dir(parent)?;

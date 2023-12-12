@@ -143,20 +143,21 @@ where
 }
 
 /// Calculate trimming parameter (bounding box)
-pub fn trimming_box(img: ArrayView2<i16>) -> BoundingBox {
+pub fn trimming_box(
+    img: ArrayView2<i16>,
+) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let border_mode = BorderMode::Nearest;
     let weights = array![[0, 1, 0], [1, -4, 1], [0, 1, 0]];
-    let lap = convolve(&img.view(), &weights.view(), border_mode, 0);
+    let laplacian = convolve(&img.view(), &weights.view(), border_mode, 0);
     let thresh_quantile = 0.1;
     let original_shape = (img.nrows(), img.ncols());
 
     let filtered = [
-        img.to_owned(),
+        img.to_owned().minmax_normalize()?,
         // sobel(&img, Axis(0), border_mode),
         // sobel(&img, Axis(1), border_mode),
-        lap,
-    ]
-    .map(|arr| arr.minmax_normalize().unwrap());
+        laplacian.minmax_normalize()?,
+    ];
 
     let mut bmin = [0usize, 0usize];
     let mut bmax = [original_shape.0 + 1, original_shape.1 + 1];
@@ -185,15 +186,18 @@ pub fn trimming_box(img: ArrayView2<i16>) -> BoundingBox {
             debug!("Updated bounding box: {:?} vs. {:?}", prev, (bmin, bmax));
         }
     }
-    (bmin, bmax)
+    Ok((bmin, bmax))
 }
 
 /// Call `trimming_box` with resampled input for faster calculation
-pub fn trimming_box_with_resample(img: ArrayView2<i16>, resample_step: usize) -> BoundingBox {
+pub fn trimming_box_with_resample(
+    img: ArrayView2<i16>,
+    resample_step: usize,
+) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let img = img.slice(s![..; resample_step, ..; resample_step]);
-    let (bmin, bmax) = trimming_box(img);
-    (
+    let (bmin, bmax) = trimming_box(img)?;
+    Ok((
         bmin.multiply(&[resample_step, resample_step]),
         bmax.multiply(&[resample_step, resample_step]),
-    )
+    ))
 }

@@ -101,7 +101,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
     } else {
         // single json IO
         let s = std::fs::read_to_string(args.input)?;
-        let data: LabelMeData = s.as_str().try_into()?;
+        let data: LabelMeData = s.try_into()?;
         if args.all {
             let info: CurveInfoAll = (&data).try_into()?;
             println!("{}", serde_json::to_string(&info)?);

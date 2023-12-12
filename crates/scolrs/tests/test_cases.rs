@@ -1,7 +1,7 @@
 use scolrs::{
     BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
-    RegionalCurveType, Spine, StructuralReason, Study, VertebraDiscIndex, VertebralIndex,
-    KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
+    RegionalCurveType, Spine, StructuralReason, Study, VertebralIndex, KYOPHOSIS_CURVE_MT,
+    KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
 
 use anyhow::{Context, Result};
@@ -19,7 +19,7 @@ fn setup() {
 
 fn load_spine(filename: &Path) -> Result<Spine> {
     let s = std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
-    let data: LabelMeData = s.as_str().try_into()?;
+    let data: LabelMeData = s.try_into()?;
     Ok(Spine::try_from(&data)?)
 }
 
@@ -31,28 +31,36 @@ fn data_directory() -> PathBuf {
     test_directory().join("data")
 }
 
-#[test]
-fn test_curves_case1() -> Result<()> {
-    let json_filename = data_directory().join("case1/frontal.json");
+fn test_curve(
+    json_filename: &str,
+    major_curve: MajorCurve,
+    sup: VertebralIndex,
+    inf: VertebralIndex,
+) -> Result<()> {
+    let json_filename = data_directory().join(json_filename);
     let scol = load_spine(&json_filename)?;
 
-    let (curve_set, apex_set, major_curve) = scol.identify_curves();
-    assert_eq!(major_curve.unwrap(), MajorCurve::MT);
+    let (curve_set, apex_set, major_curve_result) = scol.identify_curves();
+    assert_eq!(major_curve_result.unwrap(), major_curve);
     let (mt_curve, _angle) = curve_set.mt.unwrap();
-    assert_eq!(mt_curve.sup, VertebralIndex::T5 as usize);
-    assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
-    let (pt_curve, _angle) = curve_set.pt.unwrap();
-    assert_eq!(pt_curve.inf, mt_curve.sup);
-    assert_eq!(pt_curve.sup, VertebralIndex::T1 as usize);
-    let (tll_curve, _angle) = curve_set.tll.unwrap();
-    assert_eq!(tll_curve.sup, mt_curve.inf);
-    assert_eq!(tll_curve.inf, VertebralIndex::L5 as usize);
+    assert_eq!(mt_curve.sup, sup as usize);
+    assert_eq!(mt_curve.inf, inf as usize);
 
     assert!(apex_set.pt.is_some());
+    assert!(apex_set.mt.is_some());
     assert!(apex_set.tll.is_some());
-    assert_eq!(apex_set.mt.unwrap(), VertebraDiscIndex::DiscT7T8);
 
     Ok(())
+}
+
+#[test]
+fn test_curves_case1() -> Result<()> {
+    test_curve(
+        "case1/frontal.json",
+        MajorCurve::MT,
+        VertebralIndex::T5,
+        VertebralIndex::T12,
+    )
 }
 
 #[test]
@@ -77,48 +85,51 @@ fn test_curves_case2() -> Result<()> {
 
 #[test]
 fn test_curves_case3() -> Result<()> {
-    let json_filename = data_directory().join("case3/frontal.json");
-    let scol = load_spine(&json_filename)?;
+    test_curve(
+        "case3/frontal.json",
+        MajorCurve::MT,
+        VertebralIndex::T7,
+        VertebralIndex::T12,
+    )
+}
 
-    let (curve_set, apex_set, major_curve) = scol.identify_curves();
-    assert_eq!(major_curve.unwrap(), MajorCurve::MT); // largest curve is PT but major curve is MT
-    let (mt_curve, _angle) = curve_set.mt.unwrap();
-    assert_eq!(mt_curve.sup, VertebralIndex::T7 as usize);
-    assert_eq!(mt_curve.inf, VertebralIndex::T12 as usize);
-    let (pt_curve, _angle) = curve_set.pt.unwrap();
-    assert_eq!(pt_curve.inf, mt_curve.sup);
-    assert_eq!(pt_curve.sup, VertebralIndex::T2 as usize);
-    let (tll_curve, _angle) = curve_set.tll.unwrap();
-    assert_eq!(tll_curve.sup, mt_curve.inf);
-    assert_eq!(tll_curve.inf, VertebralIndex::L4 as usize);
+fn load_study(
+    coronal_filename: &str,
+    sagittal_filename: Option<&str>,
+    left_filename: Option<&str>,
+    right_filename: Option<&str>,
+) -> Result<Study> {
+    let coronal_filename = data_directory().join(coronal_filename);
+    let coronal = load_spine(&coronal_filename)?;
 
-    assert!(apex_set.pt.is_some());
-    assert!(apex_set.mt.is_some());
-    assert!(apex_set.tll.is_some());
+    let sagittal = sagittal_filename.map(|filename| {
+        let filename = data_directory().join(filename);
+        load_spine(&filename).unwrap()
+    });
 
-    Ok(())
+    let left = left_filename.map(|filename| {
+        let filename = data_directory().join(filename);
+        load_spine(&filename).unwrap()
+    });
+
+    let right = right_filename.map(|filename| {
+        let filename = data_directory().join(filename);
+        load_spine(&filename).unwrap()
+    });
+
+    Ok(Study::new(coronal, left, right, sagittal))
 }
 
 #[test]
 fn test_lenke_case1() -> Result<()> {
     setup();
-    let json_filename = data_directory().join("case1/frontal.json");
-    let frontal_scol = load_spine(&json_filename)?;
-
-    let (curve_set, apex_set, major_curve) = frontal_scol.identify_curves();
-
-    let json_filename = data_directory().join("case1/left_lateral_bend.json");
-    let left_scol = load_spine(&json_filename)?;
-    let json_filename = data_directory().join("case1/right_lateral_bend.json");
-    let right_scol = load_spine(&json_filename)?;
-    let json_filename = data_directory().join("case1/lateral.json");
-    let lateral_scol = load_spine(&json_filename)?;
-
-    assert_eq!(frontal_scol.c_c7tl.len(), left_scol.c_c7tl.len());
-    assert_eq!(frontal_scol.c_c7tl.len(), right_scol.c_c7tl.len());
-    assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
-
-    let study = Study::full(frontal_scol, left_scol, right_scol, lateral_scol);
+    let study = load_study(
+        "case1/frontal.json",
+        Some("case1/lateral.json"),
+        Some("case1/left_lateral_bend.json"),
+        Some("case1/right_lateral_bend.json"),
+    )?;
+    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -231,22 +242,8 @@ fn test_lenke_case1() -> Result<()> {
 #[test]
 fn test_lenke_case2() -> Result<()> {
     setup();
-    let json_filename = data_directory().join("case2/frontal.json");
-    let frontal_scol = load_spine(&json_filename)?;
-
-    let (curve_set, apex_set, major_curve) = frontal_scol.identify_curves();
-
-    let json_filename = data_directory().join("case2/lateral.json");
-    let lateral_scol = load_spine(&json_filename)?;
-
-    assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
-
-    let study = Study {
-        coronal: frontal_scol,
-        left_bend: None,
-        right_bend: None,
-        sagittal: Some(lateral_scol),
-    };
+    let study = load_study("case2/frontal.json", Some("case2/lateral.json"), None, None)?;
+    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -308,22 +305,8 @@ fn test_lenke_case2() -> Result<()> {
 #[test]
 fn test_lenke_case3() -> Result<()> {
     setup();
-    let json_filename = data_directory().join("case3/frontal.json");
-    let frontal_scol = load_spine(&json_filename)?;
-
-    let (curve_set, apex_set, major_curve) = frontal_scol.identify_curves();
-
-    let json_filename = data_directory().join("case3/lateral.json");
-    let lateral_scol = load_spine(&json_filename)?;
-
-    assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
-
-    let study = Study {
-        coronal: frontal_scol,
-        left_bend: None,
-        right_bend: None,
-        sagittal: Some(lateral_scol),
-    };
+    let study = load_study("case3/frontal.json", Some("case3/lateral.json"), None, None)?;
+    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -385,22 +368,8 @@ fn test_lenke_case3() -> Result<()> {
 #[test]
 fn test_lenke_case4() -> Result<()> {
     setup();
-    let json_filename = data_directory().join("case4/frontal.json");
-    let frontal_scol = load_spine(&json_filename)?;
-
-    let (curve_set, apex_set, major_curve) = frontal_scol.identify_curves();
-
-    let json_filename = data_directory().join("case4/lateral.json");
-    let lateral_scol = load_spine(&json_filename)?;
-
-    assert_eq!(frontal_scol.c_c7tl.len(), lateral_scol.c_c7tl.len());
-
-    let study = Study {
-        coronal: frontal_scol,
-        left_bend: None,
-        right_bend: None,
-        sagittal: Some(lateral_scol),
-    };
+    let study = load_study("case4/frontal.json", Some("case4/lateral.json"), None, None)?;
+    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 

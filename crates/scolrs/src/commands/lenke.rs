@@ -5,9 +5,10 @@ use std::path::Path;
 
 use crate::cli::LenkeArgs;
 
-fn load_spine(filename: &Path) -> Result<Spine> {
-    let s = std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
-    let data: LabelMeData = s.as_str().try_into()?;
+fn load_spine<P: AsRef<Path>>(filename: P) -> Result<Spine> {
+    let s = std::fs::read_to_string(filename.as_ref())
+        .with_context(|| format!("Opening {:?}", filename.as_ref()))?;
+    let data: LabelMeData = s.try_into()?;
     Ok(Spine::try_from(&data)?)
 }
 
@@ -15,18 +16,9 @@ pub fn cmd(args: LenkeArgs) -> Result<()> {
     let coronal = load_spine(&args.coronal)?;
 
     let (curve_set, apex_set, major_curve) = coronal.identify_curves();
-    let left = args
-        .left
-        .map(|filename| load_spine(filename.as_path()))
-        .transpose()?;
-    let right = args
-        .right
-        .map(|filename| load_spine(filename.as_path()))
-        .transpose()?;
-    let sagittal = args
-        .sagittal
-        .map(|filename| load_spine(filename.as_path()))
-        .transpose()?;
+    let left = args.left.map(load_spine).transpose()?;
+    let right = args.right.map(load_spine).transpose()?;
+    let sagittal = args.sagittal.map(load_spine).transpose()?;
 
     let study = Study::new(coronal, left, right, sagittal);
 
