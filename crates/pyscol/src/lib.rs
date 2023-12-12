@@ -3,8 +3,8 @@ use numpy::PyReadonlyArray2;
 use pyo3::prelude::*;
 
 #[pyfunction]
-#[pyo3(name = "trimming_param_with_resample")]
-fn py_trimming_param_with_resample(
+#[pyo3(name = "trimming_box_with_resample")]
+fn py_trimming_box_with_resample(
     arr2d: PyReadonlyArray2<'_, i16>,
     resample_step: usize,
 ) -> PyResult<BoundingBox> {
@@ -14,6 +14,6 @@ fn py_trimming_param_with_resample(
 
 #[pymodule]
 fn pyscol(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(py_trimming_param_with_resample, m)?)?;
+    m.add_function(wrap_pyfunction!(py_trimming_box_with_resample, m)?)?;
     Ok(())
 }
