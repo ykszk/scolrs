@@ -16,6 +16,8 @@ use std::result::Result;
 use thiserror::Error;
 mod defs;
 pub use defs::*;
+mod draw;
+pub use draw::*;
 
 #[derive(Error, Debug)]
 pub enum ScolError {
@@ -1226,7 +1228,7 @@ impl Display for StructuralReason {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::Corners;
     use anyhow::Result;
     use ndarray::{arr3, Array3};

@@ -9,7 +9,6 @@ fn test_data_directory() -> PathBuf {
 fn tmp_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
 }
-
 #[ignore]
 #[test]
 fn test_svg() -> Result<()> {

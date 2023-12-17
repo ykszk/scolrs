@@ -831,10 +831,9 @@ dependencies = [
 
 [[package]]
 name = "labelme-rs"
-version = "0.8.3"
-source = "git+https://github.com/ykszk/labelme-rs.git#58c02af09f51163805bf0340c6e38ebe408433d3"
+version = "0.8.4"
+source = "git+https://github.com/ykszk/labelme-rs.git#4298278fcc888f6427ea1a2c0414388d876999b2"
 dependencies = [
- "anyhow",
  "base64",
  "image",
  "indexmap 2.1.0",
