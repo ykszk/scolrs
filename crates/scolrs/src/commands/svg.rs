@@ -3,7 +3,7 @@ use std::ops::{AddAssign, SubAssign};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelColorsHex, LabelMeData, LabelMeDataWImage};
 use log::debug;
-use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use scolrs::{
     ApexSet, Curve, CurveSet, DrawParam, LineColors, Spine, VertebralIndex, VERTEBRAL_LABELS,
@@ -24,6 +24,16 @@ where
     S: ndarray::Data<Elem = f32>,
 {
     (&p1 - &p2).mapv(|a| a * a).sum()
+}
+
+/// Signed angle from line1 to line2
+fn angle_between<S>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<S, Ix2>) -> f32
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    let v = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
+    let w = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
+    (w[1] * v[0] - w[0] * v[1]).atan2(w[0] * v[0] + w[1] * v[1])
 }
 
 /// Return the pair of vectors that has maximum distance
@@ -110,7 +120,7 @@ impl Painter {
         Self { param, size }
     }
 
-    fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
+    pub fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -120,7 +130,7 @@ impl Painter {
             .set("r", self.param.radius)
     }
 
-    fn line<S>(&self, start_end: ArrayBase<S, Ix2>) -> element::Line
+    pub fn line<S>(&self, start_end: ArrayBase<S, Ix2>) -> element::Line
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -131,7 +141,7 @@ impl Painter {
             .set("y2", start_end[[1, 1]])
     }
 
-    fn horizontal_line(&self, y: f32) -> element::Line {
+    pub fn horizontal_line(&self, y: f32) -> element::Line {
         element::Line::new()
             .set("x1", 0)
             .set("y1", y)
@@ -139,7 +149,8 @@ impl Painter {
             .set("y2", y)
     }
 
-    fn vertical_line(&self, x: f32) -> element::Line {
+    #[allow(dead_code)]
+    pub fn vertical_line(&self, x: f32) -> element::Line {
         element::Line::new()
             .set("x1", x)
             .set("y1", 0)
@@ -147,7 +158,7 @@ impl Painter {
             .set("y2", self.size.1)
     }
 
-    fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
+    pub fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -155,7 +166,7 @@ impl Painter {
         element::Polyline::new().set("points", s)
     }
 
-    fn polygon<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polygon
+    pub fn polygon<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polygon
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -163,14 +174,13 @@ impl Painter {
         element::Polygon::new().set("points", s)
     }
 
-    fn angle_between<S>(
+    pub fn angle_between<S>(
         &self,
         mut group: element::Group,
         line1: ArrayBase<S, Ix2>,
         line2: ArrayBase<S, Ix2>,
         cross: ArrayBase<S, Ix1>,
         arc_radius: f32,
-        angle_rad: f32,
     ) -> element::Group
     where
         S: ndarray::Data<Elem = f32>,
@@ -184,6 +194,7 @@ impl Painter {
         let arc_start = &cross + arc_radius * &v1_unit;
         let arc_end = &cross + arc_radius * &v2_unit;
         let large_arc_flag = 0;
+        let angle_rad = angle_between(line1, line2);
         let sweep_flag = if angle_rad < 0.0 { 1 } else { 0 };
         let data = element::path::Data::new()
             .move_to((arc_start[0], arc_start[1]))
@@ -210,7 +221,7 @@ impl Painter {
         group.add(text)
     }
 
-    fn text<S>(&self, text: &str, coords: ArrayBase<S, Ix1>) -> element::Text
+    pub fn text<S>(&self, text: &str, coords: ArrayBase<S, Ix1>) -> element::Text
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -220,7 +231,7 @@ impl Painter {
             .add(svg::node::Text::new(text))
     }
 
-    fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
+    pub fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
     where
         S: ndarray::Data<Elem = f32>,
         T: ndarray::Data<Elem = f32>,
@@ -235,7 +246,7 @@ impl Painter {
         }
     }
 
-    fn cobb(
+    pub fn cobb(
         &self,
         mut group: element::Group,
         scol: &Spine,
@@ -245,8 +256,8 @@ impl Painter {
     ) -> element::Group {
         let sup_plate = scol.tl_sup_plate(curve.sup);
         let inf_plate = scol.tl_inf_plate(curve.inf);
-        let sup_line = plate2line(sup_plate);
-        let inf_line = plate2line(inf_plate);
+        let sup_line = points2line(sup_plate);
+        let inf_line = points2line(inf_plate);
 
         let linter = sup_line.intersection(&inf_line);
         if let Some(intersection) = linter {
@@ -372,9 +383,7 @@ impl Painter {
     }
 }
 
-const CLS_POINT: &str = "Points";
-
-fn plate2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
+fn points2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -497,7 +506,7 @@ impl Component for VertebralPoints {
         for (i_label, &label) in scolrs::CORNER_LABELS.iter().enumerate() {
             let color = label_colors.get_or_new(label);
             let mut sub_group = element::Group::new()
-                .set("class", format!("{CLS_POINT} {label}"))
+                .set("class", format!("{LBL_POINTS} {label}"))
                 .set("stroke", color)
                 .set("fill", color);
             let points = spine.c7tls.0.index_axis(Axis(1), i_label);
@@ -515,6 +524,8 @@ impl Component for VertebralPoints {
         Some(g_corners)
     }
 }
+
+static LBL_POINTS: &str = "Points";
 
 static LBL_CENTROID: &str = "Centroids";
 static LBL_COB_ANGLES: &str = "CobbAngles";
@@ -733,7 +744,6 @@ impl Component for T1TiltAngle {
             // T1 is vertical, which is highly unlikely
             debug!("T1 VERTICAL LINE!!!"); // TODO: implement
         } else {
-            let angle_rad = l2r[1].atan2(l2r[0]);
             let mut arc_start = mid.to_owned();
             let arc_radius = mult_arc * l2r.l2norm();
             arc_start[[0]] += arc_radius;
@@ -749,7 +759,6 @@ impl Component for T1TiltAngle {
                     hor_line.view(),
                     mid.view(),
                     arc_radius,
-                    angle_rad,
                 );
             }
         };
@@ -800,7 +809,11 @@ fn difference_in_y(
     vline[[1, 0]] = vline[[0, 0]];
     g = g.add(painter.line(vline.view()));
     let text_pos = vline.mean_axis(Axis(0)).unwrap();
-    let text = format!("{:.1}", vline[[0, 1]] - vline[[1, 1]]);
+    let text = format!(
+        "{:.1} {}",
+        vline[[0, 1]] - vline[[1, 1]],
+        painter.param.len_unit
+    );
     g = g.add(
         painter
             .text(&text, text_pos)
@@ -837,7 +850,6 @@ fn add_tilt_angle(
     for c in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(c));
         let l2r = &points.index_axis(Axis(0), 1) - &points.index_axis(Axis(0), 0);
-        let angle_rad = l2r[1].atan2(l2r[0]);
         let mut hor_line = points.clone();
         hor_line[[1, 1]] = points[[0, 1]];
         let arc_radius = l2r.l2norm() * 0.8;
@@ -847,7 +859,6 @@ fn add_tilt_angle(
             points.view(),
             points.index_axis(Axis(0), 0),
             arc_radius,
-            angle_rad,
         )
     }
     g
@@ -895,7 +906,26 @@ impl Component for SacralObliquity {
         for c in femoral_head.axis_iter(Axis(0)) {
             g = g.add(painter.point(c));
         }
-        // TODO: implement
+        g = g.add(painter.line(femoral_head.view()));
+        let sac_line = points2line(spine.sacral_sup_plate());
+        let line_eqn = sac_line.equation();
+        let mut sac_seg = femoral_head.clone();
+        sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
+        sac_seg[[1, 1]] = line_eqn.solve_y_for_x(femoral_head[[1, 0]]).unwrap();
+        g = g.add(painter.line(sac_seg.view()));
+        let mut hor_line = sac_seg.clone();
+        hor_line[[1, 1]] = hor_line[[0, 1]];
+
+        g = painter.angle_between(
+            g,
+            hor_line.view(),
+            sac_seg.view(),
+            hor_line.index_axis(Axis(0), 0),
+            0.8 * sac_seg
+                .index_axis(Axis(0), 0)
+                .l2_dist(&sac_seg.index_axis(Axis(0), 1))
+                .unwrap() as f32,
+        );
         Some(g)
     }
 }

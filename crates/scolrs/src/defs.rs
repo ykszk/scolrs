@@ -115,6 +115,10 @@ fn default_text_fill() -> String {
     "white".into()
 }
 
+fn default_len_unit() -> String {
+    "px".into()
+}
+
 /// Drawing parameters
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DrawParam {
@@ -134,6 +138,9 @@ pub struct DrawParam {
     /// `fill` for texts
     #[serde(default = "default_text_fill")]
     pub text_fill: String,
+    /// unit
+    #[serde(default = "default_len_unit")]
+    pub len_unit: String,
 }
 
 impl Default for DrawParam {
@@ -144,6 +151,7 @@ impl Default for DrawParam {
             text_stroke: default_text_stroke(),
             text_stroke_width: default_text_stroke_width(),
             text_fill: default_text_fill(),
+            len_unit: default_len_unit(),
         }
     }
 }
