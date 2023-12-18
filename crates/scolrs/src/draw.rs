@@ -179,6 +179,7 @@ impl Painter {
         line2: ArrayBase<S, Ix2>,
         cross: ArrayBase<S, Ix1>,
         arc_radius: f32,
+        title: Option<&str>,
     ) -> element::Group
     where
         S: ndarray::Data<Elem = f32>,
@@ -211,6 +212,7 @@ impl Painter {
             .text(
                 format!("{:.1}°", angle_rad.to_degrees()).as_str(),
                 rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
+                title,
             )
             .set("stroke", self.param.text_stroke.as_str())
             .set("stroke-width", self.param.text_stroke_width)
@@ -219,14 +221,24 @@ impl Painter {
         group.add(text)
     }
 
-    pub fn text<S>(&self, text: &str, coords: ArrayBase<S, Ix1>) -> element::Text
+    pub fn text<S>(
+        &self,
+        text: &str,
+        coords: ArrayBase<S, Ix1>,
+        title: Option<&str>,
+    ) -> element::Text
     where
         S: ndarray::Data<Elem = f32>,
     {
-        element::Text::new()
+        let t = element::Text::new()
             .set("x", coords[0])
             .set("y", coords[1])
-            .add(svg::node::Text::new(text))
+            .add(svg::node::Text::new(text));
+        if let Some(title) = title {
+            t.add(element::Title::new().add(svg::node::Text::new(title)))
+        } else {
+            t
+        }
     }
 
     pub fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
@@ -251,6 +263,7 @@ impl Painter {
         curve: &Curve,
         aux_param: &CobbAux,
         base_length: f32,
+        title: Option<&str>,
     ) -> element::Group {
         let sup_plate = scol.tl_sup_plate(curve.sup);
         let inf_plate = scol.tl_inf_plate(curve.inf);
@@ -296,6 +309,7 @@ impl Painter {
                     .text(
                         format!("{:.1}°", angle).as_str(),
                         ndarray::arr1(&[intersection.x, intersection.y]),
+                        title,
                     )
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
@@ -328,7 +342,7 @@ impl Painter {
                     group = group.add(line);
                 }
                 let text = self
-                    .text(format!("{:.1}°", angle).as_str(), aux_cross)
+                    .text(format!("{:.1}°", angle).as_str(), aux_cross, title)
                     .set("stroke", self.param.text_stroke.as_str())
                     .set("stroke-width", self.param.text_stroke_width)
                     .set("fill", self.param.text_fill.as_str())
@@ -469,7 +483,7 @@ impl Component for VertebralLabels {
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
         {
-            let t = painter.text(label, coords);
+            let t = painter.text(label, coords, None);
             g_vert_labels = g_vert_labels.add(t);
         }
         Some(g_vert_labels)
@@ -589,7 +603,14 @@ impl<'a> Component for CobbAngles<'a> {
             let g_mt = element::Group::new()
                 .set("class", "MT")
                 .set("stroke", line_colors.get_or_new("MT"));
-            let group = painter.cobb(g_mt, spine, mt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(
+                g_mt,
+                spine,
+                mt_curve,
+                &aux_param,
+                mean_plate_length,
+                Some("MT"),
+            );
             g_angles = g_angles.add(group);
         };
 
@@ -597,7 +618,14 @@ impl<'a> Component for CobbAngles<'a> {
             let g_pt = element::Group::new()
                 .set("class", "PT")
                 .set("stroke", line_colors.get_or_new("PT"));
-            let group = painter.cobb(g_pt, spine, pt_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(
+                g_pt,
+                spine,
+                pt_curve,
+                &aux_param,
+                mean_plate_length,
+                Some("PT"),
+            );
             g_angles = g_angles.add(group);
         }
 
@@ -605,7 +633,14 @@ impl<'a> Component for CobbAngles<'a> {
             let g_tll = element::Group::new()
                 .set("class", "TLL")
                 .set("stroke", line_colors.get_or_new("TLL"));
-            let group = painter.cobb(g_tll, spine, tll_curve, &aux_param, mean_plate_length);
+            let group = painter.cobb(
+                g_tll,
+                spine,
+                tll_curve,
+                &aux_param,
+                mean_plate_length,
+                Some("TLL"),
+            );
             g_angles = g_angles.add(group);
         }
         Some(g_angles)
@@ -742,6 +777,7 @@ impl Component for T1TiltAngle {
                     hor_line.view(),
                     mid.view(),
                     arc_radius,
+                    Some(label),
                 );
             }
         };
@@ -766,7 +802,7 @@ impl Component for ClavicleAngle {
             .set("fill", color)
             .set("stroke", color);
         let clavicle = spine.clavicle.as_ref().unwrap();
-        g = add_tilt_angle(g, painter, clavicle);
+        g = add_tilt_angle(g, painter, clavicle, Some(label));
         Some(g)
     }
 }
@@ -799,7 +835,7 @@ fn difference_in_y(
     );
     g = g.add(
         painter
-            .text(&text, text_pos)
+            .text(&text, text_pos, Some(label))
             .set("stroke", painter.param.text_stroke.as_str())
             .set("stroke-width", painter.param.text_stroke_width)
             .set("fill", painter.param.text_fill.as_str())
@@ -825,6 +861,7 @@ fn add_tilt_angle(
     group: element::Group,
     painter: &Painter,
     points: &ndarray::Array2<f32>,
+    title: Option<&str>,
 ) -> element::Group {
     let mut g = group;
     for p in points.axis_iter(Axis(0)) {
@@ -842,6 +879,7 @@ fn add_tilt_angle(
             points.view(),
             points.index_axis(Axis(0), 0),
             arc_radius,
+            title,
         )
     }
     g
@@ -864,7 +902,7 @@ impl Component for PelvicObliquity {
             .set("fill", color)
             .set("stroke", color);
         let pelvis = spine.pelvis.as_ref().unwrap();
-        g = add_tilt_angle(g, painter, pelvis);
+        g = add_tilt_angle(g, painter, pelvis, Some(label));
         Some(g)
     }
 }
@@ -908,6 +946,7 @@ impl Component for SacralObliquity {
                 .index_axis(Axis(0), 0)
                 .l2_dist(&sac_seg.index_axis(Axis(0), 1))
                 .unwrap() as f32,
+            Some(label),
         );
         Some(g)
     }
@@ -981,6 +1020,7 @@ pub fn draw_sagittal(
             &Curve { sup, inf },
             &opposite_param,
             mean_plate_length,
+            Some(label),
         ));
     }
     {
@@ -996,6 +1036,7 @@ pub fn draw_sagittal(
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
+            Some(label),
         ));
     }
     {
@@ -1011,6 +1052,7 @@ pub fn draw_sagittal(
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
+            Some(label),
         ));
     }
     {
@@ -1027,6 +1069,7 @@ pub fn draw_sagittal(
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
+            Some(label),
         ));
     }
     document
