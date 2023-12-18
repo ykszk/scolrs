@@ -183,7 +183,7 @@ impl Display for Curve {
 }
 
 /// Set of PT, MT, and TLL curves
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CurveSet {
     pub pt: Option<(Curve, f32)>,
@@ -214,7 +214,7 @@ impl CurveSet {
 }
 
 /// Set of PT, MT, and TLL apices
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ApexSet {
     pub pt: Option<VertebraDiscIndex>,
@@ -252,8 +252,8 @@ impl TryFrom<&LabelMeData> for ScolDesc {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let scol = Spine::try_from(data)?;
-        let (curves, apex_set, major_curve) = scol.identify_curves();
+        let spine = Spine::try_from(data)?;
+        let (curves, apex_set, major_curve) = spine.identify_curves();
         Ok(ScolDesc::new(curves, apex_set, major_curve))
     }
 }
