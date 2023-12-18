@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::ops::{AddAssign, SubAssign};
 
-use crate::L2Norm;
+use crate::{angle_from_lines, L2Norm};
 use crate::{
     ApexSet, Corners, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS,
 };
 use labelme_rs::LabelMeDataWImage;
 use log::debug;
-use ndarray::{s, stack, Array2, ArrayBase, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
 
@@ -24,7 +24,7 @@ where
     (&p1 - &p2).mapv(|a| a * a).sum()
 }
 
-/// Signed angle from line1 to line2
+/// Signed angle from line1 to line2 in radians
 fn angle_between<S>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<S, Ix2>) -> f32
 where
     S: ndarray::Data<Elem = f32>,
@@ -256,19 +256,17 @@ impl Painter {
         }
     }
 
-    pub fn cobb(
+    pub fn cobb_from_plates(
         &self,
         mut group: element::Group,
-        scol: &Spine,
-        curve: &Curve,
+        sup_plate: Array2<f32>,
+        inf_plate: Array2<f32>,
         aux_param: &CobbAux,
         base_length: f32,
         title: Option<&str>,
     ) -> element::Group {
-        let sup_plate = scol.tl_sup_plate(curve.sup);
-        let inf_plate = scol.tl_inf_plate(curve.inf);
-        let sup_line = points2line(sup_plate);
-        let inf_line = points2line(inf_plate);
+        let sup_line = points2line(sup_plate.view());
+        let inf_line = points2line(inf_plate.view());
 
         let linter = sup_line.intersection(&inf_line);
         if let Some(intersection) = linter {
@@ -276,10 +274,10 @@ impl Painter {
                 && intersection.x < self.size.0 as f32
                 && intersection.y > 0.0
                 && intersection.y < self.size.1 as f32;
-            let angle = scol.angle(curve).unwrap(); // lines can't be parallel if there is an intersection point
+            let angle = angle_from_lines(sup_plate.view(), inf_plate.view()).unwrap(); // lines can't be parallel if there is an intersection point
 
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
-            let plate_origin = Self::plate_end(sup_plate, arr_int.view());
+            let plate_origin = Self::plate_end(sup_plate.view(), arr_int.view());
             let dir_plate =
                 &sup_plate.slice(s![1 - plate_origin, ..]) - &sup_plate.slice(s![plate_origin, ..]);
             let unit_dir = &dir_plate / dir_plate.l2norm();
@@ -297,7 +295,7 @@ impl Painter {
                 .unwrap();
             if is_inside && d_btw_aux2p > d_btw_int2p {
                 // draw intersection point
-                for plate in [sup_plate, inf_plate] {
+                for plate in [sup_plate.view(), inf_plate.view()] {
                     let i = Self::plate_end(plate, arr_int.view());
                     let line = self.line(ndarray::arr2(&[
                         [plate[[i, 0]], plate[[i, 1]]],
@@ -319,7 +317,7 @@ impl Painter {
             } else {
                 // draw aux lines and its intersection
 
-                for plate in [sup_plate, inf_plate] {
+                for plate in [sup_plate.view(), inf_plate.view()] {
                     let plate_origin = Self::plate_end(plate, arr_int.view());
                     let dir_plate =
                         &plate.slice(s![1 - plate_origin, ..]) - &plate.slice(s![plate_origin, ..]);
@@ -371,6 +369,27 @@ impl Painter {
             }
         }
         group
+    }
+
+    pub fn cobb(
+        &self,
+        group: element::Group,
+        spine: &Spine,
+        curve: &Curve,
+        aux_param: &CobbAux,
+        base_length: f32,
+        title: Option<&str>,
+    ) -> element::Group {
+        let sup_plate = spine.sup_plate(curve.sup);
+        let inf_plate = spine.inf_plate(curve.inf);
+        self.cobb_from_plates(
+            group,
+            sup_plate.to_owned(),
+            inf_plate.to_owned(),
+            aux_param,
+            base_length,
+            title,
+        )
     }
 
     fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
@@ -530,19 +549,21 @@ static LBL_CURVE_APEX: &str = "CurveApex";
 static LBL_SPINAL_LINE: &str = "SpinalLine";
 static LBL_CSVL: &str = "CSVL";
 static LBL_T1_TILT_ANGLE: &str = "T1TiltAngle";
+static LBL_CORONAL_BALANCE: &str = "CoronalBalance";
 static LBL_CLAVICLE_ANGLE: &str = "ClavicleAngle";
 static LBL_SHOULDER_HEIGHT: &str = "ShoulderHeight";
 static LBL_PELVIC_OBLIQUITY: &str = "PelvicObliquity";
 static LBL_SACRAL_OBLIQUITY: &str = "SacralObliquity";
 static LBL_LEG_LENGTH_DISCREPANCY: &str = "LegLengthDiscrepancy";
 
-static CORONAL_COMPONENTS: [&str; 11] = [
+static CORONAL_COMPONENTS: [&str; 12] = [
     LBL_CENTROID,
     LBL_COB_ANGLES,
     LBL_CURVE_APEX,
     LBL_SPINAL_LINE,
     LBL_CSVL,
     LBL_T1_TILT_ANGLE,
+    LBL_CORONAL_BALANCE,
     LBL_CLAVICLE_ANGLE,
     LBL_SHOULDER_HEIGHT,
     LBL_PELVIC_OBLIQUITY,
@@ -785,6 +806,25 @@ impl Component for T1TiltAngle {
     }
 }
 
+struct CoronalBalance;
+impl Component for CoronalBalance {
+    fn draw(
+        &self,
+        spine: &Spine,
+        painter: &Painter,
+        _label_colors: &mut ColorPaletts,
+        line_colors: &mut ColorPaletts,
+    ) -> Option<element::Group> {
+        let label = LBL_CORONAL_BALANCE;
+        let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
+        let sac_sup = spine.sacral_sup_plate();
+        let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
+        let points = stack![Axis(0), c_c7, mid_sac];
+        let g = difference_in_x(label, points.view(), painter, line_colors);
+        Some(g)
+    }
+}
+
 struct ClavicleAngle;
 impl Component for ClavicleAngle {
     fn draw(
@@ -805,6 +845,56 @@ impl Component for ClavicleAngle {
         g = add_tilt_angle(g, painter, clavicle, Some(label));
         Some(g)
     }
+}
+
+fn difference_in_x(
+    label: &str,
+    points: ArrayView2<f32>,
+    painter: &Painter,
+    line_colors: &mut ColorPaletts,
+) -> element::Group {
+    let color = line_colors.get_or_new(label);
+    let mut g = element::Group::new()
+        .set("class", label)
+        .set("fill", color)
+        .set("stroke", color);
+    for c in points.axis_iter(Axis(0)) {
+        g = g.add(painter.point(c));
+    }
+    let p1 = points.index_axis(Axis(0), 0);
+    let p2 = points.index_axis(Axis(0), 1);
+    let len = 0.4 * (p2[1] - p1[1]);
+
+    let mut v_line = points.to_owned();
+    v_line[[1, 0]] = v_line[[0, 0]];
+    v_line[[1, 1]] -= len;
+    g = g.add(painter.line(v_line.view()));
+
+    let mut v_line = points.to_owned();
+    v_line[[0, 0]] = v_line[[1, 0]];
+    v_line[[0, 1]] += len;
+    g = g.add(painter.line(v_line.view()));
+
+    let mut h_line = points.to_owned();
+    h_line[[0, 1]] = (p1[1] + p2[1]) / 2.0;
+    h_line[[1, 1]] = h_line[[0, 1]];
+    g = g.add(painter.line(h_line.view()));
+    let dx = p1[0] - p2[0];
+
+    g = g.add(
+        painter
+            .text(
+                &format!("{:.1} {}", dx, painter.param.len_unit),
+                h_line.index_axis(Axis(0), 1),
+                Some(label),
+            )
+            .set("text-anchor", "middle")
+            .set("dominant-baseline", "central")
+            .set("stroke", painter.param.text_stroke.as_str())
+            .set("stroke-width", painter.param.text_stroke_width)
+            .set("fill", painter.param.text_fill.as_str()),
+    );
+    g
 }
 
 fn difference_in_y(
@@ -970,6 +1060,53 @@ impl Component for LegLengthDiscrepancy {
     }
 }
 
+fn incidence_angle(
+    label: &str,
+    femoral_heads: Array2<f32>,
+    plate: Array2<f32>,
+    painter: &Painter,
+    line_colors: &mut ColorPaletts,
+) -> element::Group {
+    let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
+    let color = line_colors.get_or_new(label);
+    let mut g = element::Group::new()
+        .set("class", label)
+        .set("fill", color)
+        .set("stroke", color);
+    for p in femoral_heads.axis_iter(Axis(0)) {
+        g = g.add(painter.point(p));
+    }
+    if femoral_heads.len_of(Axis(0)) == 2 {
+        g = g.add(painter.point(mid_femoral_heads.view()));
+        g = g.add(painter.line(femoral_heads.view()));
+    }
+    g = g.add(painter.line(plate.view()));
+    let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
+    g = g.add(painter.point(sac_sup_mid.view()));
+    let line_sac2fem = stack![Axis(0), sac_sup_mid, mid_femoral_heads];
+    g = g.add(painter.line(line_sac2fem.view()));
+
+    let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
+    let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
+    perp_sac /= perp_sac.l2norm();
+    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
+    perp_sac += &sac_sup_mid;
+    let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
+    g = g.add(painter.line(perp_line.view()));
+    let angle = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
+    let text = format!("{:.1}°", angle);
+    g = g.add(
+        painter
+            .text(&text, sac_sup_mid, Some(label))
+            .set("text-anchor", "middle")
+            .set("dominant-baseline", "central")
+            .set("stroke", painter.param.text_stroke.as_str())
+            .set("stroke-width", painter.param.text_stroke_width)
+            .set("fill", painter.param.text_fill.as_str()),
+    );
+    g
+}
+
 pub fn draw_sagittal(
     data: LabelMeDataWImage,
     scol: Spine,
@@ -1072,6 +1209,109 @@ pub fn draw_sagittal(
             Some(label),
         ));
     }
+    {
+        let label = "LumbarLordosis";
+        let group = element::Group::new()
+            .set("class", label)
+            .set("stroke", line_colors.get_or_new(label));
+        let sup = VertebralIndex::T12 as usize;
+        let inf = scol.v_c7tl.0.len_of(Axis(0)) - 1;
+        document = document.add(painter.cobb(
+            group,
+            &scol,
+            &Curve { sup, inf },
+            &aux_param,
+            mean_plate_length,
+            Some(label),
+        ));
+    }
+    {
+        let label = "SagittalBalance";
+        let c_c7 = scol.c_c7tl.index_axis(Axis(0), 0);
+        let sac_sup = scol.sacral_sup_plate();
+        let pos_sac = sac_sup.index_axis(Axis(0), 1);
+        let points = stack![Axis(0), c_c7, pos_sac];
+        document = document.add(difference_in_x(
+            label,
+            points.view(),
+            &painter,
+            &mut line_colors,
+        ));
+    }
+    {
+        let label = "LumbosacralAngle";
+        let group = element::Group::new()
+            .set("class", label)
+            .set("stroke", line_colors.get_or_new(label));
+        let sup = scol.inf_plate(scol.v_c7tl.0.len_of(Axis(0)) - 2).to_owned();
+        let inf = scol.inf_plate(scol.v_c7tl.0.len_of(Axis(0)) - 1).to_owned();
+        document = document.add(painter.cobb_from_plates(
+            group,
+            sup,
+            inf,
+            &aux_param,
+            mean_plate_length,
+            Some(label),
+        ));
+    }
+    if let Some(femoral_heads) = scol.femoral_head.as_ref() {
+        let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
+        let sac_sup = scol.sacral_sup_plate();
+        {
+            let label = "PelvicIncidence";
+            document = document.add(incidence_angle(
+                label,
+                femoral_heads.to_owned(),
+                sac_sup.to_owned(),
+                &painter,
+                &mut line_colors,
+            ));
+        }
+        {
+            let label = "L5IncidenceAngle";
+            // Choose the vertebra one level above the sacrum, which is L5 in most cases
+            let l5_sup = scol.sup_plate(scol.v_c7tl.0.len_of(Axis(0)) - 2).to_owned();
+            document = document.add(incidence_angle(
+                label,
+                femoral_heads.to_owned(),
+                l5_sup.to_owned(),
+                &painter,
+                &mut line_colors,
+            ));
+        }
+        {
+            let label = "PelvicRadiusAngle";
+            let color = line_colors.get_or_new(label);
+            let mut g = element::Group::new()
+                .set("class", label)
+                .set("fill", color)
+                .set("stroke", color);
+            for p in femoral_heads.axis_iter(Axis(0)) {
+                g = g.add(painter.point(p));
+            }
+            if femoral_heads.len_of(Axis(0)) == 2 {
+                g = g.add(painter.point(mid_femoral_heads.view()));
+                g = g.add(painter.line(femoral_heads.view()));
+            }
+            g = g.add(painter.line(sac_sup.view()));
+            let post_sac = sac_sup.index_axis(Axis(0), 1);
+            let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
+            g = g.add(painter.line(line_fem2post_sac.view()));
+            let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
+            let text = format!("{:.1}°", angle);
+            g = g.add(
+                painter
+                    .text(&text, post_sac, Some(label))
+                    .set("text-anchor", "middle")
+                    .set("dominant-baseline", "central")
+                    .set("stroke", painter.param.text_stroke.as_str())
+                    .set("stroke-width", painter.param.text_stroke_width)
+                    .set("fill", painter.param.text_fill.as_str()),
+            );
+            document = document.add(g);
+        }
+    }
+
     document
 }
 pub fn draw_coronal(
@@ -1133,6 +1373,9 @@ pub fn draw_coronal(
             "CSVL" => Csvl(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors),
             "T1TiltAngle" => {
                 T1TiltAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+            }
+            "CoronalBalance" => {
+                CoronalBalance {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
             }
             "ClavicleAngle" => {
                 ClavicleAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
