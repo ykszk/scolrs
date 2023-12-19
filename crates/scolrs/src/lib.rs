@@ -299,6 +299,37 @@ where
     }
 }
 
+pub trait Monotonic<T> {
+    // Check if the array is not-strictly increasing or decreasing
+    fn is_monotonic(&self) -> bool;
+}
+
+impl<S> Monotonic<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    fn is_monotonic(&self) -> bool {
+        if self.len() < 2 {
+            return true;
+        }
+
+        let mut signs = Vec::new();
+        for i in 1..self.len() {
+            let diff = self[i] - self[i - 1];
+            signs.push(if diff > 0.0 {
+                1
+            } else if diff < 0.0 {
+                -1
+            } else {
+                0
+            });
+        }
+
+        let first_sign = signs[0];
+        signs.iter().all(|&sign| sign == first_sign)
+    }
+}
+
 /// Different from [`angle_between`]?
 pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Option<f32> {
     let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
@@ -450,29 +481,9 @@ impl Spine {
         let centroids = self.tl_centroids();
         let xs = centroids.slice(s![sup..inf, 0]);
 
-        // check if the second derivatives have the same sign
-        let dx2s = -&xs.slice(s![..xs.len() - 2]) + 2.0 * &xs.slice(s![1..xs.len() - 1])
-            - xs.slice(s![2..]);
-        // implement num.sign to get signs as integers
-        let signs = dx2s.mapv(|e| {
-            if e > 0.0 {
-                1
-            } else if e < 0.0 {
-                -1
-            } else {
-                0
-            }
-        });
-        let sign = signs[0_usize];
-        let mut sing_changes = false;
-        for i in 1..signs.len() {
-            let diff = sign - signs[i];
-            if diff != 0 {
-                sing_changes = true;
-                break;
-            }
-        }
-        !sing_changes
+        // check if the first derivative is monotonic
+        let dxs = -&xs.slice(s![..xs.len() - 1]) + xs.slice(s![1..]);
+        dxs.is_monotonic()
     }
 
     fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f32)> {
@@ -495,15 +506,21 @@ impl Spine {
         );
         Some((angles[i_max].0.clone(), angles[i_max].1))
     }
+
+    /// Identify the apex of the curve
     pub fn id_apex(&self, curve: &Curve, coefs: ArrayView1<f32>) -> VertebraDiscIndex {
         let vert_disc_corners = self.tl_vert_disc_corners();
         let vd_centroids: Centroids = vert_disc_corners.into();
         let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
         let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
         let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), coefs);
-        let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
-        let i_max = ts.argmax().unwrap();
-        VertebraDiscIndex::from((i_max + sup) as u8)
+        if xs.is_monotonic() {
+            VertebraDiscIndex::from((sup + inf) as u8 / 2)
+        } else {
+            let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
+            let i_max = ts.argmax().unwrap();
+            VertebraDiscIndex::from((i_max + sup) as u8)
+        }
     }
 
     fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f32)> {
@@ -1287,9 +1304,9 @@ impl Display for StructuralReason {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::Corners;
+    use super::{Corners, Monotonic};
     use anyhow::Result;
-    use ndarray::{arr3, Array3};
+    use ndarray::{arr3, array, Array3};
     #[test]
     fn test_corners() -> Result<()> {
         let arr: Array3<f32> = arr3(&[
@@ -1303,5 +1320,29 @@ pub(crate) mod tests {
             ndarray::arr3(&[[[1.0, 2.0], [2.0, 2.0], [1.0, 3.0], [2.0, 3.0]]]);
         assert_eq!(bet, expected);
         Ok(())
+    }
+
+    #[test]
+    fn test_is_monotonic_increasing() {
+        let arr = array![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(arr.is_monotonic());
+    }
+
+    #[test]
+    fn test_is_monotonic_decreasing() {
+        let arr = array![5.0, 4.0, 3.0, 2.0, 1.0];
+        assert!(arr.is_monotonic());
+    }
+
+    #[test]
+    fn test_is_monotonic_constant() {
+        let arr = array![2.0, 2.0, 2.0, 2.0, 2.0];
+        assert!(arr.is_monotonic());
+    }
+
+    #[test]
+    fn test_is_not_monotonic() {
+        let arr = array![1.0, 2.0, 3.0, 2.0, 1.0];
+        assert!(!arr.is_monotonic());
     }
 }

@@ -555,13 +555,13 @@ impl CommonComponent for VertebralPoints {
 }
 
 const ID_POINTS: &str = "Points";
-const ID_CENTROID: &str = "Centroids";
+const ID_CENTROID: &str = "Centroid";
 const ID_COB_ANGLES: &str = "CobbAngles";
 const ID_CURVE_APEX: &str = "CurveApex";
 const ID_SPINAL_LINE: &str = "SpinalLine";
 
 const ID_CSVL: &str = "CSVL";
-const ID_T1_TILT_ANGLE: &str = "T1TiltAngle";
+const ID_T1_TILT_ANGLE: &str = "T1Tilt";
 const ID_CORONAL_BALANCE: &str = "CoronalBalance";
 const ID_CLAVICLE_ANGLE: &str = "ClavicleAngle";
 const ID_SHOULDER_HEIGHT: &str = "ShoulderHeight";
@@ -1348,7 +1348,8 @@ pub fn draw_coronal(
         (cs, apexes)
     });
 
-    for component in CORONAL_COMPONENTS {
+    // reverse order to draw important components above others
+    for component in CORONAL_COMPONENTS.into_iter().rev() {
         let group = match component {
             ID_CENTROID => Centroids {}.draw(spine, &painter, &mut label_colors, &mut line_colors),
             ID_COB_ANGLES => CobbAngles(&curve_set).draw(
