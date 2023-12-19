@@ -2,7 +2,7 @@ use crate::cli::{Direction, SvgArgs};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
-use scolrs::{draw_coronal, draw_sagittal, ColorPaletts, DrawParam, ScolDesc};
+use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, ScolDesc};
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
     let draw_param = if let Some(filename) = args.config {
@@ -35,19 +35,19 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
     let label_colors = if let Some(filename) = args.label_colors {
-        ColorPaletts::new(
+        ColorPalette::new(
             labelme_rs::load_label_colors(&filename)
-                .with_context(|| format!("Loabe label color {:?}", filename))?,
+                .with_context(|| format!("Load label color {:?}", filename))?,
         )
     } else {
-        ColorPaletts::new(labelme_rs::LabelColorsHex::default())
+        ColorPalette::new(labelme_rs::LabelColorsHex::default())
     };
     let line_colors = if let Some(filename) = args.line_colors {
         let reader = std::fs::File::open(&filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
-        ColorPaletts::new(scolrs::load_line_colors(reader)?)
+        ColorPalette::new(scolrs::load_line_colors(reader)?)
     } else {
-        ColorPaletts::new(scolrs::LineColors::default())
+        ColorPalette::new(scolrs::LineColors::default())
     };
 
     let document = match args.direction {

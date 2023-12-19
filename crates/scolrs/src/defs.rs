@@ -105,6 +105,9 @@ fn default_radius() -> f32 {
 fn default_line_width() -> f32 {
     1.0
 }
+fn default_font_size() -> String {
+    "24px".into()
+}
 fn default_text_stroke() -> String {
     "black".into()
 }
@@ -130,6 +133,9 @@ pub struct DrawParam {
     pub line_width: f32,
 
     /// `stroke` for texts
+    #[serde(default = "default_font_size")]
+    pub font_size: String,
+    /// `stroke` for texts
     #[serde(default = "default_text_stroke")]
     pub text_stroke: String,
     /// `stroke-width` for texts
@@ -148,10 +154,32 @@ impl Default for DrawParam {
         Self {
             radius: default_radius(),
             line_width: default_line_width(),
+            font_size: default_font_size(),
             text_stroke: default_text_stroke(),
             text_stroke_width: default_text_stroke_width(),
             text_fill: default_text_fill(),
             len_unit: default_len_unit(),
         }
+    }
+}
+
+impl DrawParam {
+    pub fn text_style(&self) -> String {
+        format!(
+            "text {{font-size: {}; font-family:sans-serif; stroke: {}; stroke-width: {}; fill: {}; text-anchor: middle; dominant-baseline: central}}",
+            self.font_size,
+            self.text_stroke,
+            self.text_stroke_width,
+            self.text_fill
+        )
+    }
+    pub fn line_style(&self) -> String {
+        format!(
+            "line, polyline, polygon, path {{stroke-width: {}; fill: none}}",
+            self.line_width
+        )
+    }
+    pub fn style(&self) -> String {
+        format!("{}\n{}", self.text_style(), self.line_style())
     }
 }

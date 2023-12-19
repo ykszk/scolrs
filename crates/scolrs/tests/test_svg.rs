@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use scolrs::{
-    draw_coronal, draw_sagittal, ApexSet, ColorPaletts, CoronalPoints, CurveSet, DrawParam,
+    draw_coronal, draw_sagittal, ApexSet, ColorPalette, CoronalPoints, CurveSet, DrawParam,
     SagittalPoints, Spine,
 };
 use std::path::{Path, PathBuf};
@@ -38,11 +38,11 @@ fn _test_svg(
     let size_param = svg_size_param.size(data.image.width(), data.image.height());
     let svg_size = (size_param.0 as usize, size_param.1 as usize);
 
-    let label_colors = ColorPaletts::new(
+    let label_colors = ColorPalette::new(
         labelme_rs::load_label_colors(&label_colors)
             .with_context(|| format!("Load label color file {:?}", label_colors))?,
     );
-    let line_colors = ColorPaletts::new(scolrs::load_line_colors(
+    let line_colors = ColorPalette::new(scolrs::load_line_colors(
         std::fs::File::open(&line_colors)
             .with_context(|| format!("Load line color file {:?}", line_colors))?,
     )?);

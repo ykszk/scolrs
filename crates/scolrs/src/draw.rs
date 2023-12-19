@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
 
 use crate::{angle_from_lines, CoronalPoints, L2Norm, SagittalPoints};
@@ -10,6 +11,24 @@ use log::debug;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
+
+pub type LineColors = HashMap<String, String>;
+
+#[derive(Debug, serde::Deserialize)]
+struct LineColor {
+    label: String,
+    color: String,
+}
+
+pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
+    let mut rdr = csv::Reader::from_reader(reader);
+    let mut colors = LineColors::new();
+    for result in rdr.deserialize() {
+        let lc: LineColor = result?;
+        colors.insert(lc.label, lc.color);
+    }
+    Ok(colors)
+}
 
 struct Painter {
     pub param: DrawParam,
@@ -118,6 +137,30 @@ impl Painter {
         Self { param, size }
     }
 
+    pub fn text<S>(
+        &self,
+        text: &str,
+        coords: ArrayBase<S, Ix1>,
+        title: Option<&str>,
+    ) -> element::Text
+    where
+        S: ndarray::Data<Elem = f32>,
+    {
+        let t = element::Text::new()
+            .set("x", coords[0])
+            .set("y", coords[1])
+            .add(svg::node::Text::new(text));
+        if let Some(title) = title {
+            t.add(self.title(title))
+        } else {
+            t
+        }
+    }
+
+    pub fn title(&self, text: &str) -> element::Title {
+        element::Title::new().add(svg::node::Text::new(text))
+    }
+
     pub fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
     where
         S: ndarray::Data<Elem = f32>,
@@ -208,37 +251,12 @@ impl Painter {
             ));
         let arc = element::Path::new().set('d', data).set("fill", "none");
         group = group.add(arc);
-        let text = self
-            .text(
-                format!("{:.1}°", angle_rad.to_degrees()).as_str(),
-                rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
-                title,
-            )
-            .set("stroke", self.param.text_stroke.as_str())
-            .set("stroke-width", self.param.text_stroke_width)
-            .set("fill", self.param.text_fill.as_str())
-            .set("dominant-baseline", "central");
+        let text = self.text(
+            format!("{:.1}°", angle_rad.to_degrees()).as_str(),
+            rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
+            title,
+        );
         group.add(text)
-    }
-
-    pub fn text<S>(
-        &self,
-        text: &str,
-        coords: ArrayBase<S, Ix1>,
-        title: Option<&str>,
-    ) -> element::Text
-    where
-        S: ndarray::Data<Elem = f32>,
-    {
-        let t = element::Text::new()
-            .set("x", coords[0])
-            .set("y", coords[1])
-            .add(svg::node::Text::new(text));
-        if let Some(title) = title {
-            t.add(element::Title::new().add(svg::node::Text::new(title)))
-        } else {
-            t
-        }
     }
 
     pub fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
@@ -303,15 +321,11 @@ impl Painter {
                     ]));
                     group = group.add(line);
                 }
-                let text = self
-                    .text(
-                        format!("{:.1}°", angle).as_str(),
-                        ndarray::arr1(&[intersection.x, intersection.y]),
-                        title,
-                    )
-                    .set("stroke", self.param.text_stroke.as_str())
-                    .set("stroke-width", self.param.text_stroke_width)
-                    .set("fill", self.param.text_fill.as_str());
+                let text = self.text(
+                    format!("{:.1}°", angle).as_str(),
+                    ndarray::arr1(&[intersection.x, intersection.y]),
+                    title,
+                );
 
                 group = group.add(text);
             } else {
@@ -339,12 +353,7 @@ impl Painter {
                     ]);
                     group = group.add(line);
                 }
-                let text = self
-                    .text(format!("{:.1}°", angle).as_str(), aux_cross, title)
-                    .set("stroke", self.param.text_stroke.as_str())
-                    .set("stroke-width", self.param.text_stroke_width)
-                    .set("fill", self.param.text_fill.as_str())
-                    .set("dominant-baseline", "central");
+                let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title);
                 group = group.add(text);
             }
         } else {
@@ -443,13 +452,13 @@ impl TryGet<String, String> for HashMap<std::string::String, std::string::String
 }
 type ColorMap = HashMap<String, String>;
 
-pub struct ColorPaletts {
+pub struct ColorPalette {
     color_map: HashMap<String, String>,
     color_cycler: labelme_rs::ColorCycler,
 }
 
-impl ColorPaletts {
-    pub fn new(color_map: ColorMap) -> ColorPaletts {
+impl ColorPalette {
+    pub fn new(color_map: ColorMap) -> ColorPalette {
         let color_cycler = labelme_rs::ColorCycler::default();
         Self {
             color_map,
@@ -477,8 +486,8 @@ trait CommonComponent {
         &self,
         spine: &Spine,
         painter: &Painter,
-        label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group>;
 }
 
@@ -487,8 +496,8 @@ trait CoronalComponent {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group>;
 }
 
@@ -498,16 +507,10 @@ impl CommonComponent for VertebralLabels {
         &self,
         spine: &Spine,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        _line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
-        let draw_param = &painter.param;
-        let mut g_vert_labels = element::Group::new()
-            .set("text-anchor", "middle")
-            .set("dominant-baseline", "central")
-            .set("stroke", draw_param.text_stroke.as_str())
-            .set("stroke-width", draw_param.text_stroke_width)
-            .set("fill", draw_param.text_fill.as_str());
+        let mut g_vert_labels = element::Group::new().set("class", "VertebralLabels");
         let centroids = spine.tl_centroids();
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
@@ -525,14 +528,14 @@ impl CommonComponent for VertebralPoints {
         &self,
         spine: &Spine,
         painter: &Painter,
-        label_colors: &mut ColorPaletts,
-        _line_colors: &mut ColorPaletts,
+        label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let mut g_corners = element::Group::new();
         for (i_label, &label) in crate::CORNER_LABELS.iter().enumerate() {
             let color = label_colors.get_or_new(label);
             let mut sub_group = element::Group::new()
-                .set("class", format!("{LBL_POINTS} {label}"))
+                .set("class", format!("{ID_POINTS} {label}"))
                 .set("stroke", color)
                 .set("fill", color);
             let points = spine.c7tls.0.index_axis(Axis(1), i_label);
@@ -551,34 +554,34 @@ impl CommonComponent for VertebralPoints {
     }
 }
 
-static LBL_POINTS: &str = "Points";
+const ID_POINTS: &str = "Points";
+const ID_CENTROID: &str = "Centroids";
+const ID_COB_ANGLES: &str = "CobbAngles";
+const ID_CURVE_APEX: &str = "CurveApex";
+const ID_SPINAL_LINE: &str = "SpinalLine";
 
-static LBL_CENTROID: &str = "Centroids";
-static LBL_COB_ANGLES: &str = "CobbAngles";
-static LBL_CURVE_APEX: &str = "CurveApex";
-static LBL_SPINAL_LINE: &str = "SpinalLine";
-static LBL_CSVL: &str = "CSVL";
-static LBL_T1_TILT_ANGLE: &str = "T1TiltAngle";
-static LBL_CORONAL_BALANCE: &str = "CoronalBalance";
-static LBL_CLAVICLE_ANGLE: &str = "ClavicleAngle";
-static LBL_SHOULDER_HEIGHT: &str = "ShoulderHeight";
-static LBL_PELVIC_OBLIQUITY: &str = "PelvicObliquity";
-static LBL_SACRAL_OBLIQUITY: &str = "SacralObliquity";
-static LBL_LEG_LENGTH_DISCREPANCY: &str = "LegLengthDiscrepancy";
+const ID_CSVL: &str = "CSVL";
+const ID_T1_TILT_ANGLE: &str = "T1TiltAngle";
+const ID_CORONAL_BALANCE: &str = "CoronalBalance";
+const ID_CLAVICLE_ANGLE: &str = "ClavicleAngle";
+const ID_SHOULDER_HEIGHT: &str = "ShoulderHeight";
+const ID_PELVIC_OBLIQUITY: &str = "PelvicObliquity";
+const ID_SACRAL_OBLIQUITY: &str = "SacralObliquity";
+const ID_LEG_LEN_DISCREPANCY: &str = "LegLengthDiscrepancy";
 
 static CORONAL_COMPONENTS: [&str; 12] = [
-    LBL_CENTROID,
-    LBL_COB_ANGLES,
-    LBL_CURVE_APEX,
-    LBL_SPINAL_LINE,
-    LBL_CSVL,
-    LBL_T1_TILT_ANGLE,
-    LBL_CORONAL_BALANCE,
-    LBL_CLAVICLE_ANGLE,
-    LBL_SHOULDER_HEIGHT,
-    LBL_PELVIC_OBLIQUITY,
-    LBL_SACRAL_OBLIQUITY,
-    LBL_LEG_LENGTH_DISCREPANCY,
+    ID_CENTROID,
+    ID_COB_ANGLES,
+    ID_CURVE_APEX,
+    ID_SPINAL_LINE,
+    ID_CSVL,
+    ID_T1_TILT_ANGLE,
+    ID_CORONAL_BALANCE,
+    ID_CLAVICLE_ANGLE,
+    ID_SHOULDER_HEIGHT,
+    ID_PELVIC_OBLIQUITY,
+    ID_SACRAL_OBLIQUITY,
+    ID_LEG_LEN_DISCREPANCY,
 ];
 
 struct Centroids;
@@ -587,10 +590,10 @@ impl CommonComponent for Centroids {
         &self,
         spine: &Spine,
         painter: &Painter,
-        label_colors: &mut ColorPaletts,
-        _line_colors: &mut ColorPaletts,
+        label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
-        let label = LBL_CENTROID;
+        let label = ID_CENTROID;
         let color = label_colors.get_or_new(label);
         let mut g_centroids = element::Group::new()
             .set("class", label)
@@ -620,8 +623,8 @@ impl<'a> CoronalComponent for CobbAngles<'a> {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let spine = &coronal_points.spine;
         let curve_set = self.0;
@@ -685,12 +688,12 @@ impl<'a> CoronalComponent for CurveApex<'a> {
         &self,
         _coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let apex_set = &self.0;
         let vert_discs = &self.1 .0;
-        let label = LBL_CURVE_APEX;
+        let label = ID_CURVE_APEX;
         let mut g = element::Group::new().set("class", label);
 
         for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
@@ -698,7 +701,7 @@ impl<'a> CoronalComponent for CurveApex<'a> {
             .flatten()
         {
             let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
-            // from (tl, tr, bl, br) order to (tl, tr, br, bl)
+            // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
             corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
             corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
             let polygon = painter
@@ -716,10 +719,10 @@ impl CommonComponent for SpinalLine {
         &self,
         spine: &Spine,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
-        let label = LBL_SPINAL_LINE;
+        let label = ID_SPINAL_LINE;
         let g = element::Group::new().set("class", label);
         let centroids = spine.tl_centroids();
         let coefs =
@@ -745,11 +748,11 @@ impl<'a> CoronalComponent for Csvl<'a> {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let spine = &coronal_points.spine;
-        let label = LBL_CSVL;
+        let label = ID_CSVL;
         let line_color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
@@ -776,11 +779,11 @@ impl CoronalComponent for T1TiltAngle {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let spine = &coronal_points.spine;
-        let label = LBL_T1_TILT_ANGLE;
+        let label = ID_T1_TILT_ANGLE;
         let mut g = element::Group::new().set("class", label);
         g = g
             .set("stroke", line_colors.get_or_new(label))
@@ -825,11 +828,11 @@ impl CoronalComponent for CoronalBalance {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         let spine = &coronal_points.spine;
-        let label = LBL_CORONAL_BALANCE;
+        let label = ID_CORONAL_BALANCE;
         let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
@@ -845,11 +848,11 @@ impl CoronalComponent for ClavicleAngle {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         coronal_points.clavicle.as_ref()?;
-        let label = LBL_CLAVICLE_ANGLE;
+        let label = ID_CLAVICLE_ANGLE;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
@@ -865,7 +868,7 @@ fn difference_in_x(
     label: &str,
     points: ArrayView2<f32>,
     painter: &Painter,
-    line_colors: &mut ColorPaletts,
+    line_colors: &mut ColorPalette,
 ) -> element::Group {
     let color = line_colors.get_or_new(label);
     let mut g = element::Group::new()
@@ -894,20 +897,13 @@ fn difference_in_x(
     h_line[[1, 1]] = h_line[[0, 1]];
     g = g.add(painter.line(h_line.view()));
     let dx = p1[0] - p2[0];
-
-    g = g.add(
-        painter
-            .text(
-                &format!("{:.1} {}", dx, painter.param.len_unit),
-                h_line.index_axis(Axis(0), 1),
-                Some(label),
-            )
-            .set("text-anchor", "middle")
-            .set("dominant-baseline", "central")
-            .set("stroke", painter.param.text_stroke.as_str())
-            .set("stroke-width", painter.param.text_stroke_width)
-            .set("fill", painter.param.text_fill.as_str()),
+    let text = painter.text(
+        &format!("{:.1} {}", dx, painter.param.len_unit),
+        h_line.index_axis(Axis(0), 1),
+        Some(label),
     );
+
+    g = g.add(text);
     g
 }
 
@@ -915,7 +911,7 @@ fn difference_in_y(
     label: &str,
     points: &Option<Array2<f32>>,
     painter: &Painter,
-    line_colors: &mut ColorPaletts,
+    line_colors: &mut ColorPalette,
 ) -> Option<element::Group> {
     let points = points.as_ref()?;
     let color = line_colors.get_or_new(label);
@@ -937,14 +933,9 @@ fn difference_in_y(
         vline[[0, 1]] - vline[[1, 1]],
         painter.param.len_unit
     );
-    g = g.add(
-        painter
-            .text(&text, text_pos, Some(label))
-            .set("stroke", painter.param.text_stroke.as_str())
-            .set("stroke-width", painter.param.text_stroke_width)
-            .set("fill", painter.param.text_fill.as_str())
-            .set("dominant-baseline", "central"),
-    );
+    let text = painter.text(&text, text_pos, Some(label));
+
+    g = g.add(text);
     Some(g)
 }
 
@@ -954,11 +945,11 @@ impl CoronalComponent for ShoulderHeight {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         difference_in_y(
-            LBL_SHOULDER_HEIGHT,
+            ID_SHOULDER_HEIGHT,
             &coronal_points.shoulder,
             painter,
             line_colors,
@@ -1000,11 +991,11 @@ impl CoronalComponent for PelvicObliquity {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         coronal_points.pelvis.as_ref()?;
-        let label = LBL_PELVIC_OBLIQUITY;
+        let label = ID_PELVIC_OBLIQUITY;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
@@ -1022,11 +1013,11 @@ impl CoronalComponent for SacralObliquity {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         coronal_points.femoral_head.as_ref()?;
-        let label = LBL_SACRAL_OBLIQUITY;
+        let label = ID_SACRAL_OBLIQUITY;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
@@ -1067,11 +1058,11 @@ impl CoronalComponent for LegLengthDiscrepancy {
         &self,
         coronal_points: &CoronalPoints,
         painter: &Painter,
-        _label_colors: &mut ColorPaletts,
-        line_colors: &mut ColorPaletts,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
     ) -> Option<element::Group> {
         difference_in_y(
-            LBL_LEG_LENGTH_DISCREPANCY,
+            ID_LEG_LEN_DISCREPANCY,
             &coronal_points.femoral_head,
             painter,
             line_colors,
@@ -1084,7 +1075,7 @@ fn incidence_angle(
     femoral_heads: Array2<f32>,
     plate: Array2<f32>,
     painter: &Painter,
-    line_colors: &mut ColorPaletts,
+    line_colors: &mut ColorPalette,
 ) -> element::Group {
     let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
     let color = line_colors.get_or_new(label);
@@ -1114,15 +1105,9 @@ fn incidence_angle(
     g = g.add(painter.line(perp_line.view()));
     let angle = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
     let text = format!("{:.1}°", angle);
-    g = g.add(
-        painter
-            .text(&text, sac_sup_mid, Some(label))
-            .set("text-anchor", "middle")
-            .set("dominant-baseline", "central")
-            .set("stroke", painter.param.text_stroke.as_str())
-            .set("stroke-width", painter.param.text_stroke_width)
-            .set("fill", painter.param.text_fill.as_str()),
-    );
+    let text = painter.text(&text, sac_sup_mid, Some(label));
+
+    g = g.add(text);
     g
 }
 
@@ -1131,18 +1116,13 @@ pub fn draw_sagittal(
     sagittal_points: SagittalPoints,
     draw_param: DrawParam,
     svg_size: (usize, usize),
-    mut label_colors: ColorPaletts,
-    mut line_colors: ColorPaletts,
+    mut label_colors: ColorPalette,
+    mut line_colors: ColorPalette,
 ) -> element::SVG {
     let spine = sagittal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);
-    let text_style = "text {font-size: 24px; font-family:sans-serif;}";
-    let line_style = format!(
-        "line, polyline, polygon {{stroke-width: {}; fill: none}}",
-        draw_param.line_width
-    );
-    let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
+    let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
     // common components
@@ -1325,15 +1305,8 @@ pub fn draw_sagittal(
             g = g.add(painter.line(line_fem2post_sac.view()));
             let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
             let text = format!("{:.1}°", angle);
-            g = g.add(
-                painter
-                    .text(&text, post_sac, Some(label))
-                    .set("text-anchor", "middle")
-                    .set("dominant-baseline", "central")
-                    .set("stroke", painter.param.text_stroke.as_str())
-                    .set("stroke-width", painter.param.text_stroke_width)
-                    .set("fill", painter.param.text_fill.as_str()),
-            );
+            let text = painter.text(&text, post_sac, Some(label));
+            g = g.add(text);
             document = document.add(g);
         }
     }
@@ -1345,19 +1318,15 @@ pub fn draw_coronal(
     coronal_points: CoronalPoints,
     draw_param: DrawParam,
     svg_size: (usize, usize),
-    mut label_colors: ColorPaletts,
-    mut line_colors: ColorPaletts,
+    mut label_colors: ColorPalette,
+    mut line_colors: ColorPalette,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
 ) -> element::SVG {
     let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);
-    let text_style = "text {font-size: 24px; font-family:sans-serif;}";
-    let line_style = format!(
-        "line, polyline, polygon {{stroke-width: {}; fill: none}}",
-        draw_param.line_width
-    );
-    let style = element::Style::new([text_style, line_style.as_str()].join("\n"));
+    let style = element::Style::new(draw_param.style());
+
     document = document.add(style);
 
     // common components
@@ -1381,14 +1350,14 @@ pub fn draw_coronal(
 
     for component in CORONAL_COMPONENTS {
         let group = match component {
-            "Centroids" => Centroids {}.draw(spine, &painter, &mut label_colors, &mut line_colors),
-            "CobbAngles" => CobbAngles(&curve_set).draw(
+            ID_CENTROID => Centroids {}.draw(spine, &painter, &mut label_colors, &mut line_colors),
+            ID_COB_ANGLES => CobbAngles(&curve_set).draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "CurveApex" => {
+            ID_CURVE_APEX => {
                 let vert_discs = spine.tl_vert_disc_corners();
                 CurveApex(&apex_set, &vert_discs).draw(
                     &coronal_points,
@@ -1397,52 +1366,52 @@ pub fn draw_coronal(
                     &mut line_colors,
                 )
             }
-            "SpinalLine" => {
+            ID_SPINAL_LINE => {
                 SpinalLine {}.draw(spine, &painter, &mut label_colors, &mut line_colors)
             }
-            "CSVL" => Csvl(&apex_set).draw(
+            ID_CSVL => Csvl(&apex_set).draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "T1TiltAngle" => T1TiltAngle {}.draw(
+            ID_T1_TILT_ANGLE => T1TiltAngle {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "CoronalBalance" => CoronalBalance {}.draw(
+            ID_CORONAL_BALANCE => CoronalBalance {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "ClavicleAngle" => ClavicleAngle {}.draw(
+            ID_CLAVICLE_ANGLE => ClavicleAngle {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "ShoulderHeight" => ShoulderHeight {}.draw(
+            ID_SHOULDER_HEIGHT => ShoulderHeight {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "PelvicObliquity" => PelvicObliquity {}.draw(
+            ID_PELVIC_OBLIQUITY => PelvicObliquity {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "SacralObliquity" => SacralObliquity {}.draw(
+            ID_SACRAL_OBLIQUITY => SacralObliquity {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,
                 &mut line_colors,
             ),
-            "LegLengthDiscrepancy" => LegLengthDiscrepancy {}.draw(
+            ID_LEG_LEN_DISCREPANCY => LegLengthDiscrepancy {}.draw(
                 &coronal_points,
                 &painter,
                 &mut label_colors,

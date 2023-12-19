@@ -7,9 +7,7 @@ use ndarray::{
 
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt::Display;
-use std::io::Read;
 use std::iter::zip;
 use std::ops::AddAssign;
 use std::result::Result;
@@ -885,24 +883,6 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
             .to_owned();
         Ok(VertebraeC7TL(verts_c7_t_l))
     }
-}
-
-pub type LineColors = HashMap<String, String>;
-
-#[derive(Debug, serde::Deserialize)]
-struct LineColor {
-    label: String,
-    color: String,
-}
-
-pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
-    let mut rdr = csv::Reader::from_reader(reader);
-    let mut colors = LineColors::new();
-    for result in rdr.deserialize() {
-        let lc: LineColor = result?;
-        colors.insert(lc.label, lc.color);
-    }
-    Ok(colors)
 }
 
 /// Curve types in Lenke classification
