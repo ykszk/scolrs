@@ -358,9 +358,22 @@ fn test_lenke_case4() -> Result<()> {
     setup();
     let study = load_study("case4/frontal.json", Some("case4/lateral.json"), None, None)?;
 
-    assert_eq!(study.coronal.clavicle.ref_unwrap().len_of(Axis(0)), 2);
-    assert_eq!(study.coronal.shoulder.ref_unwrap().len_of(Axis(0)), 2);
-    assert_eq!(study.coronal.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
+    let data: LabelMeData = data_directory()
+        .join("case4/frontal.json")
+        .as_path()
+        .try_into()?;
+    let coronal_points = scolrs::CoronalPoints::try_from(&data)?;
+
+    assert_eq!(coronal_points.clavicle.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(coronal_points.shoulder.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(coronal_points.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
+
+    let data: LabelMeData = data_directory()
+        .join("case4/lateral.json")
+        .as_path()
+        .try_into()?;
+    let sagittal_points = scolrs::SagittalPoints::try_from(&data)?;
+    assert_eq!(sagittal_points.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
 
     let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 

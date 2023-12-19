@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
-use scolrs::{draw_coronal, draw_sagittal, ApexSet, ColorPaletts, CurveSet, DrawParam, Spine};
+use scolrs::{
+    draw_coronal, draw_sagittal, ApexSet, ColorPaletts, CoronalPoints, CurveSet, DrawParam,
+    SagittalPoints, Spine,
+};
 use std::path::{Path, PathBuf};
 use svg::Document;
 
@@ -35,8 +38,6 @@ fn _test_svg(
     let size_param = svg_size_param.size(data.image.width(), data.image.height());
     let svg_size = (size_param.0 as usize, size_param.1 as usize);
 
-    let spine = Spine::try_from(&data.data)?;
-
     let label_colors = ColorPaletts::new(
         labelme_rs::load_label_colors(&label_colors)
             .with_context(|| format!("Load label color file {:?}", label_colors))?,
@@ -46,9 +47,10 @@ fn _test_svg(
             .with_context(|| format!("Load line color file {:?}", line_colors))?,
     )?);
     let document = if coronal {
+        let coronal_points = CoronalPoints::try_from(&data.data)?;
         draw_coronal(
             data,
-            spine,
+            coronal_points,
             draw_param,
             svg_size,
             label_colors,
@@ -56,7 +58,15 @@ fn _test_svg(
             curve_apex_set,
         )
     } else {
-        draw_sagittal(data, spine, draw_param, svg_size, label_colors, line_colors)
+        let sagittal_points = SagittalPoints::try_from(&data.data)?;
+        draw_sagittal(
+            data,
+            sagittal_points,
+            draw_param,
+            svg_size,
+            label_colors,
+            line_colors,
+        )
     };
 
     Ok(document)

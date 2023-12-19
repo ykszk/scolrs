@@ -157,10 +157,6 @@ pub struct Spine {
     /// The number of points/vertebrae can vary because some spine have 4 or 6 lumbar vertebrae
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
-    pub clavicle: Option<Array2<f32>>,
-    pub shoulder: Option<Array2<f32>>,
-    pub pelvis: Option<Array2<f32>>,
-    pub femoral_head: Option<Array2<f32>>,
 }
 
 #[derive(Debug, Clone)]
@@ -608,28 +604,11 @@ impl TryFrom<&LabelMeData> for Spine {
         let c7tls = C7TLS::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl = Corners(v_c7tl.0.view()).into();
-        let clavicle = extract_points(data, "Clavicle")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        let shoulder = extract_points(data, "Shoulder")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        let pelvis = extract_points(data, "Pelvis")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        // TODO: It is ok for femoral_heads.len() to be one in sagittal view
-        let femoral_head = extract_points(data, "FemoralHead")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
 
         Ok(Spine {
             c7tls,
             v_c7tl,
             c_c7tl,
-            clavicle,
-            pelvis,
-            shoulder,
-            femoral_head,
         })
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::{AddAssign, SubAssign};
 
-use crate::{angle_from_lines, L2Norm};
+use crate::{angle_from_lines, CoronalPoints, L2Norm, SagittalPoints};
 use crate::{
     ApexSet, Corners, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS,
 };
@@ -472,7 +472,7 @@ impl ColorPaletts {
     }
 }
 
-trait Component {
+trait CommonComponent {
     fn draw(
         &self,
         spine: &Spine,
@@ -482,8 +482,18 @@ trait Component {
     ) -> Option<element::Group>;
 }
 
+trait CoronalComponent {
+    fn draw(
+        &self,
+        coronal_points: &CoronalPoints,
+        painter: &Painter,
+        label_colors: &mut ColorPaletts,
+        line_colors: &mut ColorPaletts,
+    ) -> Option<element::Group>;
+}
+
 struct VertebralLabels;
-impl Component for VertebralLabels {
+impl CommonComponent for VertebralLabels {
     fn draw(
         &self,
         spine: &Spine,
@@ -510,7 +520,7 @@ impl Component for VertebralLabels {
 }
 
 struct VertebralPoints;
-impl Component for VertebralPoints {
+impl CommonComponent for VertebralPoints {
     fn draw(
         &self,
         spine: &Spine,
@@ -572,7 +582,7 @@ static CORONAL_COMPONENTS: [&str; 12] = [
 ];
 
 struct Centroids;
-impl Component for Centroids {
+impl CommonComponent for Centroids {
     fn draw(
         &self,
         spine: &Spine,
@@ -605,14 +615,15 @@ fn mean_plate_length(scol: &Spine) -> f32 {
 }
 
 struct CobbAngles<'a>(&'a CurveSet);
-impl<'a> Component for CobbAngles<'a> {
+impl<'a> CoronalComponent for CobbAngles<'a> {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
+        let spine = &coronal_points.spine;
         let curve_set = self.0;
         debug!("Curve set:{:?}", curve_set);
         let mut g_angles = element::Group::new().set("class", "CobbAngles");
@@ -669,10 +680,10 @@ impl<'a> Component for CobbAngles<'a> {
 }
 
 struct CurveApex<'a>(&'a ApexSet, &'a Corners<ndarray::OwnedRepr<f32>>);
-impl<'a> Component for CurveApex<'a> {
+impl<'a> CoronalComponent for CurveApex<'a> {
     fn draw(
         &self,
-        _spine: &Spine,
+        _coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
@@ -700,7 +711,7 @@ impl<'a> Component for CurveApex<'a> {
 }
 
 struct SpinalLine;
-impl Component for SpinalLine {
+impl CommonComponent for SpinalLine {
     fn draw(
         &self,
         spine: &Spine,
@@ -729,14 +740,15 @@ impl Component for SpinalLine {
 
 /// center sacral vertical line (CSVL)
 struct Csvl<'a>(&'a ApexSet);
-impl<'a> Component for Csvl<'a> {
+impl<'a> CoronalComponent for Csvl<'a> {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
+        let spine = &coronal_points.spine;
         let label = LBL_CSVL;
         let line_color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
@@ -759,14 +771,15 @@ impl<'a> Component for Csvl<'a> {
 
 /// center sacral vertical line (CSVL)
 struct T1TiltAngle;
-impl Component for T1TiltAngle {
+impl CoronalComponent for T1TiltAngle {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
+        let spine = &coronal_points.spine;
         let label = LBL_T1_TILT_ANGLE;
         let mut g = element::Group::new().set("class", label);
         g = g
@@ -807,14 +820,15 @@ impl Component for T1TiltAngle {
 }
 
 struct CoronalBalance;
-impl Component for CoronalBalance {
+impl CoronalComponent for CoronalBalance {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
+        let spine = &coronal_points.spine;
         let label = LBL_CORONAL_BALANCE;
         let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = spine.sacral_sup_plate();
@@ -826,22 +840,22 @@ impl Component for CoronalBalance {
 }
 
 struct ClavicleAngle;
-impl Component for ClavicleAngle {
+impl CoronalComponent for ClavicleAngle {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
-        spine.clavicle.as_ref()?;
+        coronal_points.clavicle.as_ref()?;
         let label = LBL_CLAVICLE_ANGLE;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let clavicle = spine.clavicle.as_ref().unwrap();
+        let clavicle = coronal_points.clavicle.as_ref().unwrap();
         g = add_tilt_angle(g, painter, clavicle, Some(label));
         Some(g)
     }
@@ -935,15 +949,20 @@ fn difference_in_y(
 }
 
 struct ShoulderHeight;
-impl Component for ShoulderHeight {
+impl CoronalComponent for ShoulderHeight {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
-        difference_in_y(LBL_SHOULDER_HEIGHT, &spine.shoulder, painter, line_colors)
+        difference_in_y(
+            LBL_SHOULDER_HEIGHT,
+            &coronal_points.shoulder,
+            painter,
+            line_colors,
+        )
     }
 }
 
@@ -976,49 +995,49 @@ fn add_tilt_angle(
 }
 
 struct PelvicObliquity;
-impl Component for PelvicObliquity {
+impl CoronalComponent for PelvicObliquity {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
-        spine.pelvis.as_ref()?;
+        coronal_points.pelvis.as_ref()?;
         let label = LBL_PELVIC_OBLIQUITY;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let pelvis = spine.pelvis.as_ref().unwrap();
+        let pelvis = coronal_points.pelvis.as_ref().unwrap();
         g = add_tilt_angle(g, painter, pelvis, Some(label));
         Some(g)
     }
 }
 
 struct SacralObliquity;
-impl Component for SacralObliquity {
+impl CoronalComponent for SacralObliquity {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
-        spine.femoral_head.as_ref()?;
+        coronal_points.femoral_head.as_ref()?;
         let label = LBL_SACRAL_OBLIQUITY;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let femoral_head = spine.femoral_head.as_ref().unwrap();
+        let femoral_head = coronal_points.femoral_head.as_ref().unwrap();
         for c in femoral_head.axis_iter(Axis(0)) {
             g = g.add(painter.point(c));
         }
         g = g.add(painter.line(femoral_head.view()));
-        let sac_line = points2line(spine.sacral_sup_plate());
+        let sac_line = points2line(coronal_points.spine.sacral_sup_plate());
         let line_eqn = sac_line.equation();
         let mut sac_seg = femoral_head.clone();
         sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
@@ -1043,17 +1062,17 @@ impl Component for SacralObliquity {
 }
 
 struct LegLengthDiscrepancy;
-impl Component for LegLengthDiscrepancy {
+impl CoronalComponent for LegLengthDiscrepancy {
     fn draw(
         &self,
-        spine: &Spine,
+        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPaletts,
         line_colors: &mut ColorPaletts,
     ) -> Option<element::Group> {
         difference_in_y(
             LBL_LEG_LENGTH_DISCREPANCY,
-            &spine.femoral_head,
+            &coronal_points.femoral_head,
             painter,
             line_colors,
         )
@@ -1109,12 +1128,13 @@ fn incidence_angle(
 
 pub fn draw_sagittal(
     data: LabelMeDataWImage,
-    scol: Spine,
+    sagittal_points: SagittalPoints,
     draw_param: DrawParam,
     svg_size: (usize, usize),
     mut label_colors: ColorPaletts,
     mut line_colors: ColorPaletts,
 ) -> element::SVG {
+    let spine = sagittal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);
     let text_style = "text {font-size: 24px; font-family:sans-serif;}";
@@ -1129,10 +1149,10 @@ pub fn draw_sagittal(
     for component in ["VertebralLabels", "VertebralPoints"] {
         let group = match component {
             "VertebralLabels" => VertebralLabels {}
-                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .draw(&spine, &painter, &mut label_colors, &mut line_colors)
                 .unwrap(),
             "VertebralPoints" => VertebralPoints {}
-                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .draw(&spine, &painter, &mut label_colors, &mut line_colors)
                 .unwrap(),
             _ => panic!("Unknown component"),
         };
@@ -1141,7 +1161,7 @@ pub fn draw_sagittal(
 
     // let (curve_set, apex_set, _major_curve) = scol.identify_curves();
     let aux_param = CobbAux::default();
-    let mean_plate_length = mean_plate_length(&scol);
+    let mean_plate_length = mean_plate_length(&spine);
     {
         let mut opposite_param = CobbAux::opposite_default();
         opposite_param.plate_scale = -3.0;
@@ -1153,7 +1173,7 @@ pub fn draw_sagittal(
         let inf = VertebralIndex::T12 as usize;
         document = document.add(painter.cobb(
             group,
-            &scol,
+            &spine,
             &Curve { sup, inf },
             &opposite_param,
             mean_plate_length,
@@ -1169,7 +1189,7 @@ pub fn draw_sagittal(
         let inf = VertebralIndex::T12 as usize;
         document = document.add(painter.cobb(
             group,
-            &scol,
+            &spine,
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
@@ -1185,7 +1205,7 @@ pub fn draw_sagittal(
         let inf = VertebralIndex::T5 as usize;
         document = document.add(painter.cobb(
             group,
-            &scol,
+            &spine,
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
@@ -1202,7 +1222,7 @@ pub fn draw_sagittal(
         let inf = VertebralIndex::L2 as usize;
         document = document.add(painter.cobb(
             group,
-            &scol,
+            &spine,
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
@@ -1215,10 +1235,10 @@ pub fn draw_sagittal(
             .set("class", label)
             .set("stroke", line_colors.get_or_new(label));
         let sup = VertebralIndex::T12 as usize;
-        let inf = scol.v_c7tl.0.len_of(Axis(0)) - 1;
+        let inf = spine.v_c7tl.0.len_of(Axis(0)) - 1;
         document = document.add(painter.cobb(
             group,
-            &scol,
+            &spine,
             &Curve { sup, inf },
             &aux_param,
             mean_plate_length,
@@ -1227,8 +1247,8 @@ pub fn draw_sagittal(
     }
     {
         let label = "SagittalBalance";
-        let c_c7 = scol.c_c7tl.index_axis(Axis(0), 0);
-        let sac_sup = scol.sacral_sup_plate();
+        let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
+        let sac_sup = spine.sacral_sup_plate();
         let pos_sac = sac_sup.index_axis(Axis(0), 1);
         let points = stack![Axis(0), c_c7, pos_sac];
         document = document.add(difference_in_x(
@@ -1243,8 +1263,12 @@ pub fn draw_sagittal(
         let group = element::Group::new()
             .set("class", label)
             .set("stroke", line_colors.get_or_new(label));
-        let sup = scol.inf_plate(scol.v_c7tl.0.len_of(Axis(0)) - 2).to_owned();
-        let inf = scol.inf_plate(scol.v_c7tl.0.len_of(Axis(0)) - 1).to_owned();
+        let sup = spine
+            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
+            .to_owned();
+        let inf = spine
+            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 1)
+            .to_owned();
         document = document.add(painter.cobb_from_plates(
             group,
             sup,
@@ -1254,9 +1278,9 @@ pub fn draw_sagittal(
             Some(label),
         ));
     }
-    if let Some(femoral_heads) = scol.femoral_head.as_ref() {
+    if let Some(femoral_heads) = sagittal_points.femoral_head.as_ref() {
         let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
-        let sac_sup = scol.sacral_sup_plate();
+        let sac_sup = spine.sacral_sup_plate();
         {
             let label = "PelvicIncidence";
             document = document.add(incidence_angle(
@@ -1270,7 +1294,9 @@ pub fn draw_sagittal(
         {
             let label = "L5IncidenceAngle";
             // Choose the vertebra one level above the sacrum, which is L5 in most cases
-            let l5_sup = scol.sup_plate(scol.v_c7tl.0.len_of(Axis(0)) - 2).to_owned();
+            let l5_sup = spine
+                .sup_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
+                .to_owned();
             document = document.add(incidence_angle(
                 label,
                 femoral_heads.to_owned(),
@@ -1316,13 +1342,14 @@ pub fn draw_sagittal(
 }
 pub fn draw_coronal(
     data: LabelMeDataWImage,
-    scol: Spine,
+    coronal_points: CoronalPoints,
     draw_param: DrawParam,
     svg_size: (usize, usize),
     mut label_colors: ColorPaletts,
     mut line_colors: ColorPaletts,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
 ) -> element::SVG {
+    let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);
     let text_style = "text {font-size: 24px; font-family:sans-serif;}";
@@ -1337,10 +1364,10 @@ pub fn draw_coronal(
     for component in ["VertebralLabels", "VertebralPoints"] {
         let group = match component {
             "VertebralLabels" => VertebralLabels {}
-                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .draw(spine, &painter, &mut label_colors, &mut line_colors)
                 .unwrap(),
             "VertebralPoints" => VertebralPoints {}
-                .draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                .draw(spine, &painter, &mut label_colors, &mut line_colors)
                 .unwrap(),
             _ => panic!("Unknown component"),
         };
@@ -1348,50 +1375,79 @@ pub fn draw_coronal(
     }
 
     let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
-        let (cs, apexes, _major_curve) = scol.identify_curves();
+        let (cs, apexes, _major_curve) = spine.identify_curves();
         (cs, apexes)
     });
 
     for component in CORONAL_COMPONENTS {
         let group = match component {
-            "Centroids" => Centroids {}.draw(&scol, &painter, &mut label_colors, &mut line_colors),
-            "CobbAngles" => {
-                CobbAngles(&curve_set).draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
+            "Centroids" => Centroids {}.draw(spine, &painter, &mut label_colors, &mut line_colors),
+            "CobbAngles" => CobbAngles(&curve_set).draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
             "CurveApex" => {
-                let vert_discs = scol.tl_vert_disc_corners();
+                let vert_discs = spine.tl_vert_disc_corners();
                 CurveApex(&apex_set, &vert_discs).draw(
-                    &scol,
+                    &coronal_points,
                     &painter,
                     &mut label_colors,
                     &mut line_colors,
                 )
             }
             "SpinalLine" => {
-                SpinalLine {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
+                SpinalLine {}.draw(spine, &painter, &mut label_colors, &mut line_colors)
             }
-            "CSVL" => Csvl(&apex_set).draw(&scol, &painter, &mut label_colors, &mut line_colors),
-            "T1TiltAngle" => {
-                T1TiltAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "CoronalBalance" => {
-                CoronalBalance {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "ClavicleAngle" => {
-                ClavicleAngle {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "ShoulderHeight" => {
-                ShoulderHeight {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "PelvicObliquity" => {
-                PelvicObliquity {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "SacralObliquity" => {
-                SacralObliquity {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
-            "LegLengthDiscrepancy" => {
-                LegLengthDiscrepancy {}.draw(&scol, &painter, &mut label_colors, &mut line_colors)
-            }
+            "CSVL" => Csvl(&apex_set).draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "T1TiltAngle" => T1TiltAngle {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "CoronalBalance" => CoronalBalance {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "ClavicleAngle" => ClavicleAngle {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "ShoulderHeight" => ShoulderHeight {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "PelvicObliquity" => PelvicObliquity {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "SacralObliquity" => SacralObliquity {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
+            "LegLengthDiscrepancy" => LegLengthDiscrepancy {}.draw(
+                &coronal_points,
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            ),
             c => panic!("Unknown component: {}", c),
         };
         if let Some(group) = group {

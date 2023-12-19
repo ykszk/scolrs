@@ -2,7 +2,7 @@ use crate::cli::{Direction, SvgArgs};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
-use scolrs::{draw_coronal, draw_sagittal, ColorPaletts, DrawParam, ScolDesc, Spine};
+use scolrs::{draw_coronal, draw_sagittal, ColorPaletts, DrawParam, ScolDesc};
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
     let draw_param = if let Some(filename) = args.config {
@@ -34,8 +34,6 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let spine = Spine::try_from(&data.data)?;
-
     let label_colors = if let Some(filename) = args.label_colors {
         ColorPaletts::new(
             labelme_rs::load_label_colors(&filename)
@@ -54,6 +52,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     let document = match args.direction {
         Direction::Frontal => {
+            let coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
             let curve_apex_set = if let Some(filename) = args.curve_set {
                 let reader = std::fs::File::open(&filename)
                     .with_context(|| format!("Load curve set {:?}", filename))?;
@@ -64,7 +63,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             };
             draw_coronal(
                 data,
-                spine,
+                coronal_points,
                 draw_param,
                 svg_size,
                 label_colors,
@@ -73,7 +72,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             )
         }
         Direction::Lateral => {
-            draw_sagittal(data, spine, draw_param, svg_size, label_colors, line_colors)
+            let sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
+            draw_sagittal(
+                data,
+                sagittal_points,
+                draw_param,
+                svg_size,
+                label_colors,
+                line_colors,
+            )
         }
     };
 
