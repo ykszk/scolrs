@@ -49,15 +49,33 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     Ok(arr)
 }
 
-trait CheckLength {
-    fn check_len_of(self, axis: Axis, len: usize) -> Option<Self>
+trait ArrayLengthValidation {
+    /// Validate the length of the array
+    /// Return `Some(self)` if the length is equal to `len`
+    /// Return `None` otherwise
+    fn validate_exact_length(self, axis: Axis, len: usize) -> Option<Self>
+    where
+        Self: std::marker::Sized;
+
+    /// Validate the length of the array
+    /// Return `Some(self)` if `min <= len <= max`
+    /// Return `None` otherwise
+    fn validate_length_between(self, axis: Axis, min: usize, max: usize) -> Option<Self>
     where
         Self: std::marker::Sized;
 }
 
-impl CheckLength for Array2<f32> {
-    fn check_len_of(self, axis: Axis, expected_len: usize) -> Option<Self> {
+impl ArrayLengthValidation for Array2<f32> {
+    fn validate_exact_length(self, axis: Axis, expected_len: usize) -> Option<Self> {
         if self.len_of(axis) == expected_len {
+            Some(self)
+        } else {
+            None
+        }
+    }
+    fn validate_length_between(self, axis: Axis, min: usize, max: usize) -> Option<Self> {
+        let len = self.len_of(axis);
+        if min <= len && len <= max {
             Some(self)
         } else {
             None
@@ -142,6 +160,21 @@ pub struct Spine {
     pub clavicle: Option<Array2<f32>>,
     pub shoulder: Option<Array2<f32>>,
     pub pelvis: Option<Array2<f32>>,
+    pub femoral_head: Option<Array2<f32>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoronalPoints {
+    pub spine: Spine,
+    pub clavicle: Option<Array2<f32>>,
+    pub shoulder: Option<Array2<f32>>,
+    pub pelvis: Option<Array2<f32>>,
+    pub femoral_head: Option<Array2<f32>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SagittalPoints {
+    pub spine: Spine,
     pub femoral_head: Option<Array2<f32>>,
 }
 
@@ -576,17 +609,17 @@ impl TryFrom<&LabelMeData> for Spine {
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl = Corners(v_c7tl.0.view()).into();
         let clavicle = extract_points(data, "Clavicle")?
-            .check_len_of(Axis(0), 2)
+            .validate_exact_length(Axis(0), 2)
             .map(|e| e.left_first());
         let shoulder = extract_points(data, "Shoulder")?
-            .check_len_of(Axis(0), 2)
+            .validate_exact_length(Axis(0), 2)
             .map(|e| e.left_first());
         let pelvis = extract_points(data, "Pelvis")?
-            .check_len_of(Axis(0), 2)
+            .validate_exact_length(Axis(0), 2)
             .map(|e| e.left_first());
         // TODO: It is ok for femoral_heads.len() to be one in sagittal view
         let femoral_head = extract_points(data, "FemoralHead")?
-            .check_len_of(Axis(0), 2)
+            .validate_exact_length(Axis(0), 2)
             .map(|e| e.left_first());
 
         Ok(Spine {
@@ -601,6 +634,49 @@ impl TryFrom<&LabelMeData> for Spine {
     }
 }
 
+impl TryFrom<&LabelMeData> for CoronalPoints {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let spine = Spine::try_from(data)?;
+        let clavicle = extract_points(data, "Clavicle")?
+            .validate_exact_length(Axis(0), 2)
+            .map(|e| e.left_first());
+        let shoulder = extract_points(data, "Shoulder")?
+            .validate_exact_length(Axis(0), 2)
+            .map(|e| e.left_first());
+        let pelvis = extract_points(data, "Pelvis")?
+            .validate_exact_length(Axis(0), 2)
+            .map(|e| e.left_first());
+        let femoral_head = extract_points(data, "FemoralHead")?
+            .validate_exact_length(Axis(0), 2)
+            .map(|e| e.left_first());
+
+        Ok(CoronalPoints {
+            spine,
+            clavicle,
+            pelvis,
+            shoulder,
+            femoral_head,
+        })
+    }
+}
+
+impl TryFrom<&LabelMeData> for SagittalPoints {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let spine = Spine::try_from(data)?;
+        let femoral_head = extract_points(data, "FemoralHead")?
+            .validate_length_between(Axis(0), 1, 2)
+            .map(|e| e.left_first());
+
+        Ok(SagittalPoints {
+            spine,
+            femoral_head,
+        })
+    }
+}
 /// Corner points of all C7, thoracic, and lumbar vertebrae and sacrum top plate.
 /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
 #[derive(Debug, Clone)]
