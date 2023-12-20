@@ -1235,6 +1235,7 @@ name = "pyscol"
 version = "0.1.0"
 dependencies = [
  "devsc",
+ "env_logger",
  "numpy",
  "pyo3",
  "walkdir",

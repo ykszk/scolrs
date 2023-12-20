@@ -14,4 +14,4 @@ class TestTrim(unittest.TestCase):
             dcm = pydicom.dcmread(fn)
             arr = dcm.pixel_array
             logger.info("calc")
-            print(pyscol.trimming_param(arr))
+            print(pyscol.trimming_param(arr, 0.3))

@@ -299,8 +299,9 @@ where
     }
 }
 
+/// Check monotonicity of arrays
 pub trait Monotonic<T> {
-    // Check if the array is not-strictly increasing or decreasing
+    /// Check if the array is not-strictly increasing or decreasing
     fn is_monotonic(&self) -> bool;
 }
 
@@ -330,7 +331,7 @@ where
     }
 }
 
-/// Different from [`angle_between`]?
+/// TODO: Check the difference from [`angle_between`]?
 pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Option<f32> {
     let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
     let v_inf = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);

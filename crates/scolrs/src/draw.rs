@@ -44,7 +44,7 @@ where
 }
 
 /// Signed angle from line1 to line2 in radians
-fn angle_between<S>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<S, Ix2>) -> f32
+pub fn angle_between<S>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<S, Ix2>) -> f32
 where
     S: ndarray::Data<Elem = f32>,
 {

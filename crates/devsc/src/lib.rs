@@ -143,13 +143,17 @@ where
 }
 
 /// Calculate trimming parameter (bounding box)
+///
+/// # Arguments
+///
+/// - `thresh_quantile` - Pixels below this value will be considered as noises
 pub fn trimming_box(
     img: ArrayView2<i16>,
+    thresh_quantile: f64,
 ) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let border_mode = BorderMode::Nearest;
     let weights = array![[0, 1, 0], [1, -4, 1], [0, 1, 0]];
     let laplacian = convolve(&img.view(), &weights.view(), border_mode, 0);
-    let thresh_quantile = 0.1;
     let original_shape = (img.nrows(), img.ncols());
 
     let filtered = [
@@ -192,10 +196,11 @@ pub fn trimming_box(
 /// Call `trimming_box` with resampled input for faster calculation
 pub fn trimming_box_with_resample(
     img: ArrayView2<i16>,
+    thresh_quantile: f64,
     resample_step: usize,
 ) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let img = img.slice(s![..; resample_step, ..; resample_step]);
-    let (bmin, bmax) = trimming_box(img)?;
+    let (bmin, bmax) = trimming_box(img, thresh_quantile)?;
     Ok((
         bmin.multiply(&[resample_step, resample_step]),
         bmax.multiply(&[resample_step, resample_step]),
