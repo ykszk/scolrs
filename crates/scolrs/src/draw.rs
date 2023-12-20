@@ -433,23 +433,6 @@ where
     lyon_geom::Line { point, vector }
 }
 
-/// Trait that provides a common interface for HashMap and IndexMap
-pub trait TryGet<K, V> {
-    fn try_get<Q>(&self, key: &Q) -> Option<&V>
-    where
-        String: std::borrow::Borrow<Q>,
-        Q: ?Sized + core::hash::Hash + std::cmp::Eq;
-}
-
-impl TryGet<String, String> for HashMap<std::string::String, std::string::String> {
-    fn try_get<Q>(&self, key: &Q) -> Option<&String>
-    where
-        String: std::borrow::Borrow<Q>,
-        Q: ?Sized + core::hash::Hash + std::cmp::Eq,
-    {
-        self.get(key)
-    }
-}
 type ColorMap = HashMap<String, String>;
 
 pub struct ColorPalette {
@@ -471,7 +454,7 @@ impl ColorPalette {
         String: std::borrow::Borrow<Q>,
         Q: ?Sized + core::hash::Hash + std::cmp::Eq + std::fmt::Display,
     {
-        self.color_map.try_get(key).map_or_else(
+        self.color_map.get(key).map_or_else(
             || {
                 debug!("New color generated for {}", key);
                 self.color_cycler.cycle()
