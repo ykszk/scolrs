@@ -18,6 +18,7 @@ pyo3 = "0.20.0"
 devsc = { path = "../devsc" }
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
 # getrandom = { features = ["js"] } # for ndarray-stats
+clahe = { path = "clahe"}
 
 [dev-dependencies]
 walkdir = "2.4.0"
