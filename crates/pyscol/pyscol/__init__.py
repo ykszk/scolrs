@@ -1,6 +1,6 @@
 import numpy as np
 
-from .pyscol import clahe_u8_u8, clahe_u16_u8, trimming_box_with_resample
+from .pyscol import clahe_u8_u8, clahe_u16_u16, trimming_box_with_resample
 
 
 def trimming_param(arr2d: np.ndarray, thresh_quantile: float):
@@ -31,8 +31,34 @@ def clahe(arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, t
         raise ValueError(f"Unsupported shape: {arr.shape}")
     arr = np.ascontiguousarray(arr)
     if arr.dtype == np.uint16:
-        return clahe_u16_u8(arr, tile_width, tile_height, clip_limit, tile_sample)
+        return clahe_u16_u16(arr, tile_width, tile_height, clip_limit, tile_sample)
     elif arr.dtype == np.uint8:
         return clahe_u8_u8(arr, tile_width, tile_height, clip_limit, tile_sample)
+    else:
+        raise ValueError(f"Unsupported dtype: {arr.dtype}")
+
+
+def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: float) -> np.ndarray:
+    '''
+    Adaptive minmax normalization
+
+    Input is a gray scale image with dtype uint8 or uint16.
+    '''
+    from .pyscol import ada_minmax_u8_u8, ada_minmax_u16_u16
+
+    if arr.ndim == 2:
+        pass
+    elif arr.ndim == 3:
+        if arr.shape[2] == 1:
+            arr = arr[:, :, 0]
+        else:
+            raise ValueError(f"Unsupported shape: {arr.shape}")
+    else:
+        raise ValueError(f"Unsupported shape: {arr.shape}")
+    arr = np.ascontiguousarray(arr)
+    if arr.dtype == np.uint16:
+        return ada_minmax_u16_u16(arr, tile_width, tile_height, tile_sample)
+    elif arr.dtype == np.uint8:
+        return ada_minmax_u8_u8(arr, tile_width, tile_height, tile_sample)
     else:
         raise ValueError(f"Unsupported dtype: {arr.dtype}")

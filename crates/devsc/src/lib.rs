@@ -57,7 +57,7 @@ where
     D: Dimension,
 {
     let mut hist = Array1::zeros(256);
-    arr.mapv(|e| hist[e as usize] += 1);
+    arr.for_each(|e| hist[*e as usize] += 1);
     hist
 }
 
