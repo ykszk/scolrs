@@ -14,50 +14,37 @@ fn py_trimming_box_with_resample(
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Error in trimming: {}", e)))
 }
 
-#[pyfunction]
-fn clahe_u8_u8<'py>(
-    py: Python<'py>,
-    arr2d: PyReadonlyArray2<'py, u8>,
-    grid_width: u32,
-    grid_height: u32,
-    clip_limit: u32,
-    tile_sample: f64,
-) -> PyResult<&'py PyArray2<u8>> {
-    let arr2d = arr2d.as_array();
-    clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
-        .map(|a| a.into_pyarray(py))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
+macro_rules! clahe_impl {
+    ($fn_name:ident, $input_type:ty, $output_type:ty) => {
+        #[pyfunction]
+        fn $fn_name<'py>(
+            py: Python<'py>,
+            arr2d: PyReadonlyArray2<'py, $input_type>,
+            grid_width: u32,
+            grid_height: u32,
+            clip_limit: u32,
+            tile_sample: f64,
+        ) -> PyResult<&'py PyArray2<$output_type>> {
+            let arr2d = arr2d.as_array();
+            if tile_sample == 0.0 {
+                clahe::clahe_wo_interpolation(
+                    arr2d,
+                    arr2d.ncols() as u32 / grid_width,
+                    arr2d.nrows() as u32 / grid_height,
+                    clip_limit,
+                )
+            } else {
+                clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
+            }
+            .map(|a| a.into_pyarray(py))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
+        }
+    };
 }
 
-#[pyfunction]
-fn clahe_u16_u8<'py>(
-    py: Python<'py>,
-    arr2d: PyReadonlyArray2<'py, u16>,
-    grid_width: u32,
-    grid_height: u32,
-    clip_limit: u32,
-    tile_sample: f64,
-) -> PyResult<&'py PyArray2<u8>> {
-    let arr2d = arr2d.as_array();
-    clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
-        .map(|a| a.into_pyarray(py))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
-}
-
-#[pyfunction]
-fn clahe_u16_u16<'py>(
-    py: Python<'py>,
-    arr2d: PyReadonlyArray2<'py, u16>,
-    grid_width: u32,
-    grid_height: u32,
-    clip_limit: u32,
-    tile_sample: f64,
-) -> PyResult<&'py PyArray2<u16>> {
-    let arr2d = arr2d.as_array();
-    clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
-        .map(|a| a.into_pyarray(py))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
-}
+clahe_impl!(clahe_u8_u8, u8, u8);
+clahe_impl!(clahe_u16_u8, u16, u8);
+clahe_impl!(clahe_u16_u16, u16, u16);
 
 // #[pyfunction]
 // fn ada_minmax_u16_u16<'py>(

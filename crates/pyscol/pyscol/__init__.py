@@ -1,6 +1,6 @@
 import numpy as np
 
-from .pyscol import clahe_u8_u8, clahe_u16_u16, trimming_box_with_resample
+from .pyscol import clahe_u8_u8, clahe_u16_u16, clahe_u16_u8, trimming_box_with_resample
 
 
 def trimming_param(arr2d: np.ndarray, thresh_quantile: float):
@@ -14,7 +14,7 @@ def trimming_param(arr2d: np.ndarray, thresh_quantile: float):
     return trimming_box_with_resample(int16arr, thresh_quantile, resample_step)
 
 
-def clahe(arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, tile_sample: float) -> np.ndarray:
+def clahe(arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, tile_sample: float, u8_out: bool) -> np.ndarray:
     '''
     Contrast Limited Adaptive Histogram Equalization
 
@@ -31,7 +31,10 @@ def clahe(arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, t
         raise ValueError(f"Unsupported shape: {arr.shape}")
     arr = np.ascontiguousarray(arr)
     if arr.dtype == np.uint16:
-        return clahe_u16_u16(arr, tile_width, tile_height, clip_limit, tile_sample)
+        if u8_out:
+            return clahe_u16_u8(arr, tile_width, tile_height, clip_limit, tile_sample)
+        else:
+            return clahe_u16_u16(arr, tile_width, tile_height, clip_limit, tile_sample)
     elif arr.dtype == np.uint8:
         return clahe_u8_u8(arr, tile_width, tile_height, clip_limit, tile_sample)
     else:
