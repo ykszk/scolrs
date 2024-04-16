@@ -11,10 +11,10 @@ def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--u8", action="store_true", help="Output as uint8")
     # parser.add_argument("--minmax", action="store_true", help="Apply adaptive minmax-normalization instead of clahe")
 
-    parser.add_argument("--tile_width", type=int, default=8, help="Tile width")
-    parser.add_argument("--tile_height", type=int, default=8, help="Tile height")
-    parser.add_argument("--clip_limit", type=int, default=40, help="Clip limit")
-    parser.add_argument("--tile_sample", type=float, default=1, help="Tile sample")
+    parser.add_argument("--tile_width", type=int, default=8, help="Tile width. default: %(default)s")
+    parser.add_argument("--tile_height", type=int, default=8, help="Tile height. default: %(default)s")
+    parser.add_argument("--clip_limit", type=int, default=40, help="Clip limit. default: %(default)s")
+    parser.add_argument("--tile_sample", type=float, default=1, help="Tile sample. default: %(default)s")
 
 
 def main(args: argparse.Namespace):

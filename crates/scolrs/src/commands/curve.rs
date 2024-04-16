@@ -53,7 +53,7 @@ impl TryFrom<&LabelMeDataLine> for CurveInfoLine {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
-        let info: ScolDesc = (&data.data).try_into()?;
+        let info: ScolDesc = (&data.content).try_into()?;
         Ok(CurveInfoLine {
             info,
             filename: data.filename.clone(),
@@ -65,7 +65,7 @@ impl TryFrom<&LabelMeDataLine> for CurveInfoAllLine {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
-        let info: CurveInfoAll = (&data.data).try_into()?;
+        let info: CurveInfoAll = (&data.content).try_into()?;
         Ok(CurveInfoAllLine {
             info: info.info,
             all_curves: info.all_curves,

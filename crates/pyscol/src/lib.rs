@@ -24,7 +24,7 @@ macro_rules! clahe_impl {
             grid_height: u32,
             clip_limit: u32,
             tile_sample: f64,
-        ) -> PyResult<&'py PyArray2<$output_type>> {
+        ) -> PyResult<Bound<'py, PyArray2<$output_type>>> {
             let arr2d = arr2d.as_array();
             if tile_sample == 0.0 {
                 clahe::clahe_wo_interpolation(
@@ -36,7 +36,7 @@ macro_rules! clahe_impl {
             } else {
                 clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
             }
-            .map(|a| a.into_pyarray(py))
+            .map(|a| a.into_pyarray_bound(py))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
         }
     };
@@ -75,7 +75,7 @@ clahe_impl!(clahe_u16_u16, u16, u16);
 // }
 
 #[pymodule]
-fn pyscol(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     env_logger::init();
     m.add_function(wrap_pyfunction!(py_trimming_box_with_resample, m)?)?;
     m.add_function(wrap_pyfunction!(clahe_u8_u8, m)?)?;
