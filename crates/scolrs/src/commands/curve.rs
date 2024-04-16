@@ -37,11 +37,10 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
         let (curves, apex_set, major_curve) = scol.identify_curves();
         let info = ScolDesc::new(curves, apex_set, major_curve);
         let all_curves = scol.find_all_curves();
-        let coefs = scol.spinal_poly()?;
         let all_curves: Vec<_> = all_curves
             .into_iter()
             .map(|(curve, angle)| {
-                let apex = scol.id_apex(&curve, coefs.view());
+                let apex = scol.id_apex(&curve);
                 (curve, angle, apex)
             })
             .collect();

@@ -1,8 +1,7 @@
 use labelme_rs::LabelMeData;
-use log::error;
+use log::{debug, error};
 use ndarray::{
-    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
-    Axis, Data,
+    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView2, ArrayView3, Axis, Data,
 };
 
 use ndarray_stats::QuantileExt;
@@ -23,6 +22,8 @@ pub enum ScolError {
     NoPointFound(String),
     #[error("Invalid combination of the numbeer of points for {0} and {1}: {2} vs. {3}")]
     InvalidPointCombo(String, String, usize, usize),
+    #[error("Linalg error")]
+    Linalg(#[from] rulinalg::error::Error),
 }
 
 fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolError> {
@@ -155,6 +156,8 @@ pub struct Spine {
     /// The number of points/vertebrae can vary because some spine have 4 or 6 lumbar vertebrae
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
+    /// Coefficients of the polynomial curve of the spine
+    pub c_coefs: Array1<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -219,20 +222,20 @@ pub struct CurveSet {
 }
 
 impl CurveSet {
-    fn apices(&self, scol: &Spine, coefs: ArrayView1<f32>) -> ApexSet {
+    fn apices(&self, scol: &Spine) -> ApexSet {
         ApexSet {
             pt: if let Some((c, _)) = self.pt.as_ref() {
-                Some(scol.id_apex(c, coefs))
+                Some(scol.id_apex(c))
             } else {
                 None
             },
             mt: if let Some((c, _)) = self.mt.as_ref() {
-                Some(scol.id_apex(c, coefs))
+                Some(scol.id_apex(c))
             } else {
                 None
             },
             tll: if let Some((c, _)) = self.tll.as_ref() {
-                Some(scol.id_apex(c, coefs))
+                Some(scol.id_apex(c))
             } else {
                 None
             },
@@ -480,10 +483,15 @@ impl Spine {
             return true;
         }
         let centroids = self.tl_centroids();
-        let xs = centroids.slice(s![sup..inf, 0]);
+        let ys = centroids.slice(s![sup..inf, 1]);
+        let xs = polynomial(ys, self.c_coefs.view());
 
         // check if the first derivative is monotonic
         let dxs = -&xs.slice(s![..xs.len() - 1]) + xs.slice(s![1..]);
+        debug!("sup: {}, inf: {}", sup, inf);
+        debug!("xs: {:?}", xs);
+        debug!("dxs: {:?}", dxs);
+        debug!("is_monotonic: {}", dxs.is_monotonic());
         dxs.is_monotonic()
     }
 
@@ -509,12 +517,12 @@ impl Spine {
     }
 
     /// Identify the apex of the curve
-    pub fn id_apex(&self, curve: &Curve, coefs: ArrayView1<f32>) -> VertebraDiscIndex {
+    pub fn id_apex(&self, curve: &Curve) -> VertebraDiscIndex {
         let vert_disc_corners = self.tl_vert_disc_corners();
         let vd_centroids: Centroids = vert_disc_corners.into();
         let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
         let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
-        let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), coefs);
+        let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), self.c_coefs.view());
         if xs.is_monotonic() {
             VertebraDiscIndex::from((sup + inf) as u8 / 2)
         } else {
@@ -557,9 +565,8 @@ impl Spine {
     pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
-        let coefs = self.spinal_poly().unwrap();
         if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.id_apex(&largest_curve.0, coefs.view());
+            let major_apex = self.id_apex(&largest_curve.0);
             major_curve = if major_apex <= VertebraDiscIndex::T5 {
                 // largest curve is PT
                 if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
@@ -584,7 +591,7 @@ impl Spine {
                 Some(MajorCurve::TLL)
             };
         }
-        let apices = curves.apices(self, coefs.view());
+        let apices = curves.apices(self);
         (curves, apices, major_curve)
     }
 
@@ -619,12 +626,14 @@ impl TryFrom<&LabelMeData> for Spine {
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let c7tls = C7TLS::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
-        let c_c7tl = Corners(v_c7tl.0.view()).into();
+        let c_c7tl: Centroids = Corners(v_c7tl.0.view()).into();
+        let c_coefs = polyfit(c_c7tl.slice(s![1.., 1]), c_c7tl.slice(s![1.., 0]), 6)?;
 
         Ok(Spine {
             c7tls,
             v_c7tl,
             c_c7tl,
+            c_coefs,
         })
     }
 }

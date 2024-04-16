@@ -1,6 +1,6 @@
 use crate::cli::{Direction, SvgArgs};
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
+use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use log::debug;
 use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, ScolDesc};
 
@@ -85,6 +85,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             )
         }
     };
+
+    debug!("Save to {:?}", args.output);
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())

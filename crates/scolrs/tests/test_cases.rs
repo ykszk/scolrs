@@ -71,13 +71,13 @@ fn test_curves_case2() -> Result<()> {
 
     let (curve_set, apex_set, major_curve) = scol.identify_curves();
     // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
-    assert!(curve_set.pt.is_some());
+    assert!(curve_set.pt.is_none());
     assert!(curve_set.mt.is_some());
     assert!(curve_set.tll.is_some());
 
     // largest curve is tll though.
     assert_eq!(major_curve.unwrap(), MajorCurve::TLL);
-    assert!(apex_set.pt.is_some());
+    assert!(apex_set.pt.is_none());
     assert!(apex_set.mt.is_some());
     assert!(apex_set.tll.is_some());
 
@@ -260,20 +260,6 @@ fn test_lenke_case2() -> Result<()> {
 
     assert_eq!(
         chart.mt.ref_unwrap(),
-        &RegionalCurveType::NonStructural(reason)
-    );
-    let mut reason = MinorReason::with_coronal((IsStructural::F, curve_set.pt.ref_unwrap().1));
-
-    reason.sagittal = Some((
-        IsStructural::F,
-        (
-            KYOPHOSIS_CURVE_PT,
-            study.sagittal.angle_wild(&KYOPHOSIS_CURVE_PT),
-        ),
-    ));
-
-    assert_eq!(
-        chart.pt.ref_unwrap(),
         &RegionalCurveType::NonStructural(reason)
     );
 
