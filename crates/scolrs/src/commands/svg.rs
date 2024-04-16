@@ -15,11 +15,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     debug!("Loading {:?}", args.input);
 
-    let mut data: LabelMeDataWImage = args
+    let data: LabelMeData = args
         .input
         .as_path()
         .try_into()
-        .with_context(|| format!("Load LabelMeDataWImage from {:?}", &args.input))?;
+        .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
+
+    let mut data: LabelMeDataWImage = data.try_into()?;
     if let Some(resize) = args.resize {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
