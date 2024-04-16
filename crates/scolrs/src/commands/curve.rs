@@ -10,8 +10,7 @@ use crate::cli::CurveArgs;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoLine {
-    #[serde(flatten)]
-    pub info: ScolDesc,
+    pub content: ScolDesc,
     pub filename: String,
 }
 
@@ -23,9 +22,7 @@ pub struct CurveInfoAll {
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoAllLine {
-    #[serde(flatten)]
-    pub info: ScolDesc,
-    pub all_curves: Vec<(Curve, f32, VertebraDiscIndex)>,
+    pub content: CurveInfoAll,
     pub filename: String,
 }
 
@@ -52,9 +49,9 @@ impl TryFrom<&LabelMeDataLine> for CurveInfoLine {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
-        let info: ScolDesc = (&data.content).try_into()?;
+        let content: ScolDesc = (&data.content).try_into()?;
         Ok(CurveInfoLine {
-            info,
+            content,
             filename: data.filename.clone(),
         })
     }
@@ -64,10 +61,9 @@ impl TryFrom<&LabelMeDataLine> for CurveInfoAllLine {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
-        let info: CurveInfoAll = (&data.content).try_into()?;
+        let content: CurveInfoAll = (&data.content).try_into()?;
         Ok(CurveInfoAllLine {
-            info: info.info,
-            all_curves: info.all_curves,
+            content,
             filename: data.filename.clone(),
         })
     }
