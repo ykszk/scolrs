@@ -1,7 +1,8 @@
 use labelme_rs::LabelMeData;
 use log::{debug, error};
 use ndarray::{
-    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView2, ArrayView3, Axis, Data,
+    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
+    Axis, Data,
 };
 
 use ndarray_stats::QuantileExt;
@@ -424,10 +425,8 @@ impl Spine {
         }
     }
 
-    pub fn spinal_poly(&self) -> Result<ndarray::Array1<f32>, rulinalg::error::Error> {
-        let centroids = self.tl_centroids();
-        let coefs = polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6);
-        coefs
+    pub fn spinal_poly(&self, xs: ArrayView1<f32>) -> Array1<f32> {
+        polynomial(xs, self.c_coefs.view())
     }
 
     fn find_largest_curve(&self) -> Option<(Curve, f32)> {

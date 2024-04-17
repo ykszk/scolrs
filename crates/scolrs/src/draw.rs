@@ -223,7 +223,7 @@ impl Painter {
         cross: ArrayBase<S, Ix1>,
         arc_radius: f32,
         title: Option<&str>,
-    ) -> element::Group
+    ) -> (element::Group, f32)
     where
         S: ndarray::Data<Elem = f32>,
     {
@@ -238,6 +238,7 @@ impl Painter {
         let large_arc_flag = 0;
         let angle_rad = angle_between(line1, line2);
         let sweep_flag = if angle_rad < 0.0 { 1 } else { 0 };
+        let angle_deg = angle_rad.to_degrees();
         let data = element::path::Data::new()
             .move_to((arc_start[0], arc_start[1]))
             .elliptical_arc_to((
@@ -252,11 +253,11 @@ impl Painter {
         let arc = element::Path::new().set('d', data).set("fill", "none");
         group = group.add(arc);
         let text = self.text(
-            format!("{:.1}°", angle_rad.to_degrees()).as_str(),
+            format!("{:.1}°", angle_deg).as_str(),
             rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
             title,
         );
-        group.add(text)
+        (group.add(text), angle_deg)
     }
 
     pub fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
@@ -791,14 +792,16 @@ impl CoronalComponent for T1TiltAngle {
                 let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
                 hor_line[[0, 0]] -= mult_left * l2r.l2norm();
                 hor_line[[1, 0]] += mult_right * l2r.l2norm();
-                g = painter.angle_between(
-                    g,
-                    sup_line.view(),
-                    hor_line.view(),
-                    mid.view(),
-                    arc_radius,
-                    Some(label),
-                );
+                g = painter
+                    .angle_between(
+                        g,
+                        sup_line.view(),
+                        hor_line.view(),
+                        mid.view(),
+                        arc_radius,
+                        Some(label),
+                    )
+                    .0;
             }
         };
         Some(g)
@@ -956,14 +959,16 @@ fn add_tilt_angle(
         let mut hor_line = points.clone();
         hor_line[[1, 1]] = points[[0, 1]];
         let arc_radius = l2r.l2norm() * 0.8;
-        g = painter.angle_between(
-            g,
-            hor_line.view(),
-            points.view(),
-            points.index_axis(Axis(0), 0),
-            arc_radius,
-            title,
-        )
+        g = painter
+            .angle_between(
+                g,
+                hor_line.view(),
+                points.view(),
+                points.index_axis(Axis(0), 0),
+                arc_radius,
+                title,
+            )
+            .0
     }
     g
 }
@@ -1020,17 +1025,19 @@ impl CoronalComponent for SacralObliquity {
         let mut hor_line = sac_seg.clone();
         hor_line[[1, 1]] = hor_line[[0, 1]];
 
-        g = painter.angle_between(
-            g,
-            hor_line.view(),
-            sac_seg.view(),
-            hor_line.index_axis(Axis(0), 0),
-            0.8 * sac_seg
-                .index_axis(Axis(0), 0)
-                .l2_dist(&sac_seg.index_axis(Axis(0), 1))
-                .unwrap() as f32,
-            Some(label),
-        );
+        g = painter
+            .angle_between(
+                g,
+                hor_line.view(),
+                sac_seg.view(),
+                hor_line.index_axis(Axis(0), 0),
+                0.8 * sac_seg
+                    .index_axis(Axis(0), 0)
+                    .l2_dist(&sac_seg.index_axis(Axis(0), 1))
+                    .unwrap() as f32,
+                Some(label),
+            )
+            .0;
         Some(g)
     }
 }
