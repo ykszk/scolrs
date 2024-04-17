@@ -19,8 +19,10 @@ pub use draw::*;
 
 #[derive(Error, Debug)]
 pub enum ScolError {
-    #[error("No point found for label: {0}")]
-    NoPointFound(String),
+    #[error("Invalid point count for shape {0}: {1} != {2}")]
+    InvalidShape(String, usize, usize),
+    #[error("Invalid point count for {0}: {1}")]
+    InvalidPointCount(String, usize),
     #[error("Invalid combination of the numbeer of points for {0} and {1}: {2} vs. {3}")]
     InvalidPointCombo(String, String, usize, usize),
     #[error("Linalg error")]
@@ -28,18 +30,24 @@ pub enum ScolError {
 }
 
 fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolError> {
-    let tuples: Option<Vec<_>> = data
+    let tuples: Result<Vec<_>, _> = data
         .shapes
         .iter()
         .filter_map(|shape| {
             if shape.shape_type == "point" && shape.label == label {
-                Some(shape.points.first())
+                Some(&shape.points)
             } else {
                 None
             }
         })
+        .map(|points| {
+            if points.len() != 1 {
+                return Err(ScolError::InvalidShape(label.to_string(), 1, points.len()));
+            }
+            Ok(points[0])
+        })
         .collect();
-    let tuples = tuples.ok_or_else(|| ScolError::NoPointFound(label.to_string()))?;
+    let tuples = tuples?;
     let mut vec = Vec::with_capacity(tuples.len() * 2);
     for t in tuples.iter() {
         vec.push(t.0);
@@ -48,6 +56,9 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
     let arr = Array2::from_shape_vec((tuples.len(), 2), vec).unwrap();
     Ok(arr)
 }
+
+#[derive(Debug, Clone)]
+pub struct AtMost2<T>(pub T);
 
 trait ArrayLengthValidation {
     /// Validate the length of the array
@@ -90,9 +101,12 @@ trait LeftFirst {
 
 impl LeftFirst for Array2<f32> {
     fn left_first(mut self) -> Self {
-        if self[[0, 0]] > self[[1, 0]] {
+        if self.len_of(Axis(0)) == 2 && self[[0, 0]] > self[[1, 0]] {
             self.swap([0, 0], [1, 0]);
             self.swap([0, 1], [1, 1]);
+        }
+        if self.len_of(Axis(0)) > 2 {
+            error!("Array length is greater than 2");
         }
         self
     }
@@ -173,7 +187,7 @@ pub struct CoronalPoints {
 #[derive(Debug, Clone)]
 pub struct SagittalPoints {
     pub spine: Spine,
-    pub femoral_head: Option<Array2<f32>>,
+    pub femoral_head: AtMost2<Array2<f32>>,
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae
@@ -642,6 +656,7 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let spine = Spine::try_from(data)?;
+        // TODO: leave length validation to the caller
         let clavicle = extract_points(data, "Clavicle")?
             .validate_exact_length(Axis(0), 2)
             .map(|e| e.left_first());
@@ -670,9 +685,14 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let spine = Spine::try_from(data)?;
-        let femoral_head = extract_points(data, "FemoralHead")?
-            .validate_length_between(Axis(0), 1, 2)
-            .map(|e| e.left_first());
+        let femoral_head = extract_points(data, "FemoralHead")?.left_first();
+        if femoral_head.len_of(Axis(0)) > 2 {
+            return Err(ScolError::InvalidPointCount(
+                "FemoralHead".to_string(),
+                femoral_head.len(),
+            ));
+        }
+        let femoral_head = AtMost2(femoral_head);
 
         Ok(SagittalPoints {
             spine,

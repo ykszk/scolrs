@@ -359,7 +359,7 @@ fn test_lenke_case4() -> Result<()> {
         .as_path()
         .try_into()?;
     let sagittal_points = scolrs::SagittalPoints::try_from(&data)?;
-    assert_eq!(sagittal_points.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(sagittal_points.femoral_head.0.len_of(Axis(0)), 2);
 
     let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
 
