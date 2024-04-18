@@ -494,7 +494,11 @@ pub enum MeasureError {
     ZeroLengthLine,
 }
 
-trait CommonComponent {
+trait Named {
+    fn name(&self) -> &'static str;
+}
+
+trait CommonComponent: Named {
     fn draw(
         &self,
         spine: &Spine,
@@ -515,6 +519,11 @@ trait CoronalComponent {
 }
 
 struct VertebralLabels;
+impl Named for VertebralLabels {
+    fn name(&self) -> &'static str {
+        "Centroids"
+    }
+}
 impl CommonComponent for VertebralLabels {
     fn draw(
         &self,
@@ -536,6 +545,11 @@ impl CommonComponent for VertebralLabels {
 }
 
 struct VertebralPoints;
+impl Named for VertebralPoints {
+    fn name(&self) -> &'static str {
+        "VertebralPoints"
+    }
+}
 impl CommonComponent for VertebralPoints {
     fn draw(
         &self,
@@ -598,6 +612,11 @@ static CORONAL_COMPONENTS: [&str; 12] = [
 ];
 
 struct Centroids;
+impl Named for Centroids {
+    fn name(&self) -> &'static str {
+        "Centroids"
+    }
+}
 impl CommonComponent for Centroids {
     fn draw(
         &self,
@@ -727,6 +746,11 @@ impl<'a> CoronalComponent for CurveApex<'a> {
 }
 
 struct SpinalLine;
+impl Named for SpinalLine {
+    fn name(&self) -> &'static str {
+        "SpinalLine"
+    }
+}
 impl CommonComponent for SpinalLine {
     fn draw(
         &self,
@@ -1130,8 +1154,7 @@ fn draw_incidence_angle(
     g
 }
 
-trait SagittalComponent {
-    fn name(&self) -> &'static str;
+trait SagittalComponent: Named {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1143,41 +1166,9 @@ trait SagittalComponent {
     fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
 }
 
-trait Kyphosis {
-    fn draw(
-        &self,
-        label: &str,
-        aux_param: CobbAux,
-        curve: &Curve,
-        sagittal_points: &SagittalPoints,
-        painter: &Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
-        let g = painter.cobb(
-            group,
-            &sagittal_points.spine,
-            curve,
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        );
-        Ok(g)
-    }
-}
-
 macro_rules! _impl_kyophosis {
     ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
-        struct $name;
-
         impl SagittalComponent for $name {
-            fn name(&self) -> &'static str {
-                Self::NAME
-            }
             fn draw(
                 &self,
                 sagittal_points: &SagittalPoints,
@@ -1229,8 +1220,15 @@ macro_rules! _impl_kyophosis {
 /// Optionally, a display name can be provided as the second argument
 macro_rules! impl_kyphosis {
     ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
+        struct $name;
+
+        impl Named for $name {
+            fn name(&self) -> &'static str {
+                stringify!($name)
+            }
+        }
+
         impl $name {
-            const NAME: &'static str = stringify!($name);
             const SUP: usize = $sup;
             const INF: usize = $inf;
         }
@@ -1238,8 +1236,15 @@ macro_rules! impl_kyphosis {
     };
 
     ($name:ident, $disp_name:expr, $sup:expr, $inf:expr, $opposite:expr) => {
+        struct $name;
+
+        impl Named for $name {
+            fn name(&self) -> &'static str {
+                $disp_name
+            }
+        }
+
         impl $name {
-            const NAME: &'static str = $disp_name;
             const SUP: usize = $sup;
             const INF: usize = $inf;
         }
@@ -1285,10 +1290,12 @@ impl LumbarLordosis {
         (sup, inf)
     }
 }
-impl SagittalComponent for LumbarLordosis {
+impl Named for LumbarLordosis {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+}
+impl SagittalComponent for LumbarLordosis {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1331,10 +1338,12 @@ impl SagittalBalance {
         stack![Axis(0), c_c7, pos_sac]
     }
 }
-impl SagittalComponent for SagittalBalance {
+impl Named for SagittalBalance {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+}
+impl SagittalComponent for SagittalBalance {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1370,11 +1379,12 @@ impl LumbosacralAngle {
         (sup, inf)
     }
 }
-impl SagittalComponent for LumbosacralAngle {
+impl Named for LumbosacralAngle {
     fn name(&self) -> &'static str {
         Self::NAME
     }
-
+}
+impl SagittalComponent for LumbosacralAngle {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1405,10 +1415,12 @@ struct PelvicIncidence;
 impl PelvicIncidence {
     const NAME: &'static str = "PelvicIncidence";
 }
-impl SagittalComponent for PelvicIncidence {
+impl Named for PelvicIncidence {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+}
+impl SagittalComponent for PelvicIncidence {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1421,7 +1433,7 @@ impl SagittalComponent for PelvicIncidence {
                 InvalidNumberOfPoints::TooFewPoints(0, 2),
             ));
         }
-        let label = "PelvicIncidence";
+        let label = Self::NAME;
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
 
         let g = draw_incidence_angle(
@@ -1444,10 +1456,12 @@ struct L5IncidenceAngle;
 impl L5IncidenceAngle {
     const NAME: &'static str = "L5IncidenceAngle";
 }
-impl SagittalComponent for L5IncidenceAngle {
+impl Named for L5IncidenceAngle {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+}
+impl SagittalComponent for L5IncidenceAngle {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1460,7 +1474,7 @@ impl SagittalComponent for L5IncidenceAngle {
                 InvalidNumberOfPoints::TooFewPoints(0, 2),
             ));
         }
-        let label = "L5IncidenceAngle";
+        let label = Self::NAME;
         let l5_sup = sagittal_points
             .spine
             .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2)
@@ -1487,10 +1501,12 @@ struct PelvicRadiusAngle;
 impl PelvicRadiusAngle {
     const NAME: &'static str = "PelvicRadiusAngle";
 }
-impl SagittalComponent for PelvicRadiusAngle {
+impl Named for PelvicRadiusAngle {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+}
+impl SagittalComponent for PelvicRadiusAngle {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1505,7 +1521,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         }
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        let label = "PelvicRadiusAngle";
+        let label = Self::NAME;
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
@@ -1576,17 +1592,11 @@ pub fn draw_sagittal(
     document = document.add(style);
 
     // common components
-    for component in ["VertebralLabels", "VertebralPoints"] {
-        let group = match component {
-            "VertebralLabels" => {
-                VertebralLabels {}.draw(spine, &painter, &mut label_colors, &mut line_colors)
-            }
-            "VertebralPoints" => {
-                VertebralPoints {}.draw(spine, &painter, &mut label_colors, &mut line_colors)
-            }
-            _ => panic!("Unknown component"),
-        };
-        document = document.add(group);
+    let common_components: Vec<Box<dyn CommonComponent>> =
+        vec![Box::new(VertebralLabels {}), Box::new(VertebralPoints {})];
+    for component in common_components {
+        let g = component.draw(spine, &painter, &mut label_colors, &mut line_colors);
+        document = document.add(g);
     }
 
     let spinal_measures: Vec<Box<dyn SagittalComponent>> = vec![
