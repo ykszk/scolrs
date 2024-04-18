@@ -2,7 +2,7 @@ use crate::cli::{Direction, SvgArgs};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
-use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, ScolDesc};
+use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, SagittalMeasure, ScolDesc};
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
     let draw_param = if let Some(filename) = args.config {
@@ -74,9 +74,16 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         }
         Direction::Lateral => {
             let sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
+            let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
+                SagittalMeasure::all()
+            } else {
+                args.measures
+            };
             draw_sagittal(
                 data,
                 sagittal_points,
+                measures,
+                args.hide,
                 draw_param,
                 svg_size,
                 label_colors,

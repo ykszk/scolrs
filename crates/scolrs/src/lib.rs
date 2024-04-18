@@ -1,10 +1,10 @@
+use clap::ValueEnum;
 use labelme_rs::LabelMeData;
 use log::{debug, error};
 use ndarray::{
     concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
     Axis, Data,
 };
-
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -1312,6 +1312,39 @@ impl Display for StructuralReason {
             StructuralReason::Major() => write!(f, "{:?}", self),
             StructuralReason::Minor(r) => write!(f, "Minor({})", r.to_structural_string()),
         }
+    }
+}
+
+#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+#[clap(rename_all = "PascalCase")]
+pub enum SagittalMeasure {
+    ThoracicKyphosis,
+    ProximalThoracicKyphosis,
+    MidLowerThoracicKyphosis,
+    ThoracoLumbarSagittalAlignment,
+    LumbarLordosis,
+    SagittalBalance,
+    LumbosacralAngle,
+    PelvicIncidence,
+    L5IncidenceAngle,
+    PelvicRadiusAngle,
+}
+
+impl SagittalMeasure {
+    pub fn all() -> Vec<Self> {
+        vec![
+            SagittalMeasure::ThoracicKyphosis,
+            SagittalMeasure::ProximalThoracicKyphosis,
+            SagittalMeasure::MidLowerThoracicKyphosis,
+            SagittalMeasure::ThoracoLumbarSagittalAlignment,
+            SagittalMeasure::LumbarLordosis,
+            SagittalMeasure::SagittalBalance,
+            SagittalMeasure::LumbosacralAngle,
+            SagittalMeasure::PelvicIncidence,
+            SagittalMeasure::L5IncidenceAngle,
+            SagittalMeasure::PelvicRadiusAngle,
+        ]
     }
 }
 

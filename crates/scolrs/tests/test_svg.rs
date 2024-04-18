@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use scolrs::{
     draw_coronal, draw_sagittal, ApexSet, ColorPalette, CoronalPoints, CurveSet, DrawParam,
-    SagittalPoints, Spine,
+    SagittalMeasure, SagittalPoints, Spine,
 };
 use std::path::{Path, PathBuf};
 use svg::Document;
@@ -59,9 +59,11 @@ fn _test_svg(
         )
     } else {
         let sagittal_points = SagittalPoints::try_from(&data.data)?;
+        let measures = SagittalMeasure::all();
         draw_sagittal(
             data,
             sagittal_points,
+            measures,
             draw_param,
             svg_size,
             label_colors,

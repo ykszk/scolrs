@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
+use scolrs::SagittalMeasure;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -27,8 +28,10 @@ pub enum Direction {
 #[derive(Parser, Debug)]
 pub struct SvgArgs {
     /// Input labelme json filename
+    #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
     /// Output svg filename
+    #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
     /// Use specified curves instaed of calculating from the points
     #[clap(long)]
@@ -51,6 +54,12 @@ pub struct SvgArgs {
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
+    /// Measurements to draw. By default, all measurements are drawn
+    #[clap(long)]
+    pub measures: Vec<SagittalMeasure>,
+    /// Hide measurements
+    #[clap(long)]
+    pub hide: Vec<SagittalMeasure>,
 }
 
 #[derive(Parser, Debug)]

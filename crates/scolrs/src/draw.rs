@@ -1,8 +1,4 @@
-use std::collections::HashMap;
-use std::io::Read;
-use std::ops::{AddAssign, SubAssign};
-
-use crate::{angle_from_lines, CoronalPoints, L2Norm, SagittalPoints};
+use crate::{angle_from_lines, CoronalPoints, L2Norm, SagittalMeasure, SagittalPoints};
 use crate::{
     ApexSet, Corners, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS,
 };
@@ -10,8 +6,10 @@ use labelme_rs::LabelMeDataWImage;
 use log::{debug, warn};
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
+use std::collections::HashMap;
+use std::io::Read;
+use std::ops::{AddAssign, SubAssign};
 use svg::node::element;
-
 pub type LineColors = HashMap<String, String>;
 
 #[derive(Debug, serde::Deserialize)]
@@ -30,7 +28,7 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
     Ok(colors)
 }
 
-struct Painter {
+pub struct Painter {
     pub param: DrawParam,
     pub size: (usize, usize),
 }
@@ -93,7 +91,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CobbAux {
+pub struct CobbAux {
     plate_scale: f32,
     perpendicular_scale: f32,
 }
@@ -134,7 +132,7 @@ where
 }
 
 impl Painter {
-    fn new(param: DrawParam, size: (usize, usize)) -> Self {
+    pub fn new(param: DrawParam, size: (usize, usize)) -> Self {
         Self { param, size }
     }
 
@@ -403,7 +401,7 @@ impl Painter {
         )
     }
 
-    fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
+    pub fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
         let (w, h) = self.size;
         let mut document = svg::Document::new()
             .set("width", w)
@@ -494,11 +492,11 @@ pub enum MeasureError {
     ZeroLengthLine,
 }
 
-trait Named {
+pub trait Named {
     fn name(&self) -> &'static str;
 }
 
-trait CommonComponent: Named {
+pub trait CommonComponent: Named {
     fn draw(
         &self,
         spine: &Spine,
@@ -508,7 +506,7 @@ trait CommonComponent: Named {
     ) -> element::Group;
 }
 
-trait CoronalComponent {
+pub trait CoronalComponent {
     fn draw(
         &self,
         coronal_points: &CoronalPoints,
@@ -518,7 +516,7 @@ trait CoronalComponent {
     ) -> Option<element::Group>;
 }
 
-struct VertebralLabels;
+pub struct VertebralLabels;
 impl Named for VertebralLabels {
     fn name(&self) -> &'static str {
         "Centroids"
@@ -544,7 +542,7 @@ impl CommonComponent for VertebralLabels {
     }
 }
 
-struct VertebralPoints;
+pub struct VertebralPoints;
 impl Named for VertebralPoints {
     fn name(&self) -> &'static str {
         "VertebralPoints"
@@ -1275,7 +1273,7 @@ impl_kyphosis!(
 );
 
 impl_kyphosis!(
-    T10L2Kyphosis,
+    ThoracoLumbarSagittalAlignment,
     VertebralIndex::T10 as usize,
     VertebralIndex::L2 as usize,
     false
@@ -1577,9 +1575,30 @@ fn femoral_incidence_angle(
     Ok(angle_rad.to_degrees())
 }
 
+impl From<SagittalMeasure> for Box<dyn SagittalComponent> {
+    fn from(measure: SagittalMeasure) -> Self {
+        match measure {
+            SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis {}),
+            SagittalMeasure::ProximalThoracicKyphosis => Box::new(ProximalThoracicKyphosis {}),
+            SagittalMeasure::MidLowerThoracicKyphosis => Box::new(MidLowerThoracicKyphosis {}),
+            SagittalMeasure::ThoracoLumbarSagittalAlignment => {
+                Box::new(ThoracoLumbarSagittalAlignment {})
+            }
+            SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis {}),
+            SagittalMeasure::SagittalBalance => Box::new(SagittalBalance {}),
+            SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle {}),
+            SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence {}),
+            SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle {}),
+            SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle {}),
+        }
+    }
+}
+
 pub fn draw_sagittal(
     data: LabelMeDataWImage,
     sagittal_points: SagittalPoints,
+    measures: Vec<SagittalMeasure>,
+    hide: Vec<SagittalMeasure>,
     draw_param: DrawParam,
     svg_size: (usize, usize),
     mut label_colors: ColorPalette,
@@ -1599,28 +1618,23 @@ pub fn draw_sagittal(
         document = document.add(g);
     }
 
-    let spinal_measures: Vec<Box<dyn SagittalComponent>> = vec![
-        // spinal measures
-        Box::new(ThoracicKyphosis {}),
-        Box::new(ProximalThoracicKyphosis {}),
-        Box::new(MidLowerThoracicKyphosis {}),
-        Box::new(T10L2Kyphosis {}),
-        Box::new(LumbarLordosis {}),
-        Box::new(SagittalBalance {}),
-        Box::new(LumbosacralAngle {}),
-        // pelvic measures
-        Box::new(PelvicIncidence {}),
-        Box::new(L5IncidenceAngle {}),
-        Box::new(PelvicRadiusAngle {}),
-    ];
-    for spinal_measure in spinal_measures {
+    for measure in measures {
+        let spinal_measure: Box<dyn SagittalComponent> = measure.into();
         match spinal_measure.draw(
             &sagittal_points,
             &painter,
             &mut label_colors,
             &mut line_colors,
         ) {
-            Ok(g) => document = document.add(g),
+            Ok(g) => {
+                let visibility = if hide.contains(&measure) {
+                    "hidden"
+                } else {
+                    "visible"
+                };
+                let g = g.set("visibility", visibility);
+                document = document.add(g)
+            }
             Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
         }
     }
