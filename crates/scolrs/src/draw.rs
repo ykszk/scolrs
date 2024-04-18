@@ -1183,12 +1183,10 @@ trait Kyphosis {
     }
 }
 
-macro_rules! impl_kyphosis {
-    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr) => {
+macro_rules! _impl_kyophosis {
+    ($name:ident, $sup:expr, $inf:expr) => {
         struct $name;
-        impl $name {
-            const NAME: &'static str = $disp_name;
-        }
+
         impl Kyphosis for $name {
             const SUP: usize = $sup;
             const INF: usize = $inf;
@@ -1220,49 +1218,33 @@ macro_rules! impl_kyphosis {
     };
 }
 
+/// Implement Kyphosis for each kyphosis type
+///
+/// Optionally, a display name can be provided as the second argument
+macro_rules! impl_kyphosis {
+    ($name:ident, $sup:expr, $inf:expr) => {
+        impl $name {
+            const NAME: &'static str = stringify!($name);
+        }
+        _impl_kyophosis!($name, $sup, $inf);
+    };
+
+    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr) => {
+        impl $name {
+            const NAME: &'static str = $disp_name;
+        }
+        _impl_kyophosis!($name, $sup, $inf);
+    };
+}
+
 impl_kyphosis!(
     ProximalThoracicKyphosis,
-    "ProximalThoracicKyphosis",
     VertebralIndex::T2 as usize,
     VertebralIndex::T5 as usize
 );
 
-// struct ProximalThoracicKyphosis;
-// impl ProximalThoracicKyphosis {
-//     const NAME: &'static str = "ProximalThoracicKyphosis";
-// }
-// impl Kyphosis for ProximalThoracicKyphosis {
-//     const SUP: usize = VertebralIndex::T2 as usize;
-//     const INF: usize = VertebralIndex::T5 as usize;
-// }
-// impl SagittalComponent for ProximalThoracicKyphosis {
-//     fn name(&self) -> &'static str {
-//         Self::NAME
-//     }
-//     fn draw(
-//         &mut self,
-//         sagittal_points: &SagittalPoints,
-//         painter: &Painter,
-//         _label_colors: &mut ColorPalette,
-//         line_colors: &mut ColorPalette,
-//     ) -> Result<element::Group, MeasureError> {
-//         self.draw_kyphosis(
-//             Self::NAME,
-//             sagittal_points,
-//             painter,
-//             _label_colors,
-//             line_colors,
-//         )
-//     }
-
-//     fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
-//         self.measure_kyphosis(sagittal_points)
-//     }
-// }
-
 impl_kyphosis!(
     ThoracicKyphosis,
-    "ThoracicKyphosis",
     VertebralIndex::T2 as usize,
     VertebralIndex::T12 as usize
 );
@@ -1276,7 +1258,6 @@ impl_kyphosis!(
 
 impl_kyphosis!(
     T10L2Kyphosis,
-    "T10L2Kyphosis",
     VertebralIndex::T10 as usize,
     VertebralIndex::L2 as usize
 );
