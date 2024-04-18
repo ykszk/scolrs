@@ -1,6 +1,6 @@
 use crate::cli::{Direction, SvgArgs};
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
+use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
 use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, ScolDesc};
 
@@ -15,13 +15,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     debug!("Loading {:?}", args.input);
 
-    let data: LabelMeData = args
+    let mut data: LabelMeDataWImage = args
         .input
         .as_path()
         .try_into()
         .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
 
-    let mut data: LabelMeDataWImage = data.try_into()?;
     if let Some(resize) = args.resize {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);

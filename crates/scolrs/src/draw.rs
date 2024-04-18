@@ -7,7 +7,7 @@ use crate::{
     ApexSet, Corners, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS,
 };
 use labelme_rs::LabelMeDataWImage;
-use log::debug;
+use log::{debug, warn};
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
@@ -466,10 +466,23 @@ impl ColorPalette {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum InvalidNumberOfPoints {
+    // Too few points, expected and actual
+    #[error("Too few points, expected: {0}, actual: {1}")]
+    TooFewPoints(usize, usize),
+    // Too many points, expected and actual
+    #[error("Too many points, expected: {0}, actual: {1}")]
+    TooManyPoints(usize, usize),
+    // Incorrect number of points, expected and actual
+    #[error("Incorrect number of points, expected: {0}, actual: {1}")]
+    IncorrectNumberOfPoints(usize, usize),
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum MeasureError {
     // Invalid number of points
-    #[error("Invalid number of points: {0} != {1}")]
-    InvalidNumberOfPoints(usize, usize),
+    #[error("Invalid number of points")]
+    InvalidNumberOfPoints(#[from] InvalidNumberOfPoints),
 
     // Too few points
     #[error("Too few points: {0} at least required")]
@@ -1075,7 +1088,7 @@ impl CoronalComponent for LegLengthDiscrepancy {
     }
 }
 
-fn incidence_angle(
+fn draw_incidence_angle(
     label: &str,
     femoral_heads: Array2<f32>,
     plate: Array2<f32>,
@@ -1117,29 +1130,24 @@ fn incidence_angle(
 }
 
 trait SagittalComponent {
+    fn name(&self) -> &'static str;
     fn draw(
         &mut self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError>
-    where
-        Self: Sized;
+    ) -> Result<element::Group, MeasureError>;
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>
-    where
-        Self: Sized;
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
 }
 
-struct ThoracicKyphosis;
-impl ThoracicKyphosis {
-    const SUP: usize = VertebralIndex::T2 as usize;
-    const INF: usize = VertebralIndex::T12 as usize;
-}
-impl SagittalComponent for ThoracicKyphosis {
-    fn draw(
+trait Kyphosis {
+    const SUP: usize;
+    const INF: usize;
+    fn draw_kyphosis(
         &mut self,
+        label: &str,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1147,7 +1155,6 @@ impl SagittalComponent for ThoracicKyphosis {
     ) -> Result<element::Group, MeasureError> {
         let mut opposite_param = CobbAux::opposite_default();
         opposite_param.plate_scale = -3.0;
-        let label = "ThoracicKyphosis";
         let group = element::Group::new()
             .set("class", label)
             .set("stroke", line_colors.get_or_new(label));
@@ -1156,8 +1163,8 @@ impl SagittalComponent for ThoracicKyphosis {
             group,
             &sagittal_points.spine,
             &Curve {
-                sup: ThoracicKyphosis::SUP,
-                inf: ThoracicKyphosis::INF,
+                sup: Self::SUP,
+                inf: Self::INF,
             },
             &opposite_param,
             mean_plate_length,
@@ -1166,21 +1173,122 @@ impl SagittalComponent for ThoracicKyphosis {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>
-    where
-        Self: Sized,
-    {
+    fn measure_kyphosis(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let spine = &sagittal_points.spine;
-        let sup_plate = spine.sup_plate(ThoracicKyphosis::SUP);
-        let inf_plate = spine.inf_plate(ThoracicKyphosis::INF);
+        let sup_plate = spine.sup_plate(Self::SUP);
+        let inf_plate = spine.inf_plate(Self::INF);
         let angle_rad = angle_between(sup_plate, inf_plate);
         let angle_deg = angle_rad.to_degrees();
         Ok(angle_deg)
     }
 }
 
+macro_rules! impl_kyphosis {
+    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr) => {
+        struct $name;
+        impl $name {
+            const NAME: &'static str = $disp_name;
+        }
+        impl Kyphosis for $name {
+            const SUP: usize = $sup;
+            const INF: usize = $inf;
+        }
+        impl SagittalComponent for $name {
+            fn name(&self) -> &'static str {
+                Self::NAME
+            }
+            fn draw(
+                &mut self,
+                sagittal_points: &SagittalPoints,
+                painter: &Painter,
+                _label_colors: &mut ColorPalette,
+                line_colors: &mut ColorPalette,
+            ) -> Result<element::Group, MeasureError> {
+                self.draw_kyphosis(
+                    Self::NAME,
+                    sagittal_points,
+                    painter,
+                    _label_colors,
+                    line_colors,
+                )
+            }
+
+            fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+                self.measure_kyphosis(sagittal_points)
+            }
+        }
+    };
+}
+
+impl_kyphosis!(
+    ProximalThoracicKyphosis,
+    "ProximalThoracicKyphosis",
+    VertebralIndex::T2 as usize,
+    VertebralIndex::T5 as usize
+);
+
+// struct ProximalThoracicKyphosis;
+// impl ProximalThoracicKyphosis {
+//     const NAME: &'static str = "ProximalThoracicKyphosis";
+// }
+// impl Kyphosis for ProximalThoracicKyphosis {
+//     const SUP: usize = VertebralIndex::T2 as usize;
+//     const INF: usize = VertebralIndex::T5 as usize;
+// }
+// impl SagittalComponent for ProximalThoracicKyphosis {
+//     fn name(&self) -> &'static str {
+//         Self::NAME
+//     }
+//     fn draw(
+//         &mut self,
+//         sagittal_points: &SagittalPoints,
+//         painter: &Painter,
+//         _label_colors: &mut ColorPalette,
+//         line_colors: &mut ColorPalette,
+//     ) -> Result<element::Group, MeasureError> {
+//         self.draw_kyphosis(
+//             Self::NAME,
+//             sagittal_points,
+//             painter,
+//             _label_colors,
+//             line_colors,
+//         )
+//     }
+
+//     fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+//         self.measure_kyphosis(sagittal_points)
+//     }
+// }
+
+impl_kyphosis!(
+    ThoracicKyphosis,
+    "ThoracicKyphosis",
+    VertebralIndex::T2 as usize,
+    VertebralIndex::T12 as usize
+);
+
+impl_kyphosis!(
+    MidLowerThoracicKyphosis,
+    "Mid/LowerThoracicKyphosis",
+    VertebralIndex::T5 as usize,
+    VertebralIndex::T12 as usize
+);
+
+impl_kyphosis!(
+    T10L2Kyphosis,
+    "T10L2Kyphosis",
+    VertebralIndex::T10 as usize,
+    VertebralIndex::L2 as usize
+);
+
 struct PelvicIncidence;
+impl PelvicIncidence {
+    const NAME: &'static str = "PelvicIncidence";
+}
 impl SagittalComponent for PelvicIncidence {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
     fn draw(
         &mut self,
         sagittal_points: &SagittalPoints,
@@ -1189,13 +1297,14 @@ impl SagittalComponent for PelvicIncidence {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
-            // TODO: implement TooFewPoints error
-            return Err(MeasureError::InvalidNumberOfPoints(0, 2));
+            return Err(MeasureError::InvalidNumberOfPoints(
+                InvalidNumberOfPoints::TooFewPoints(0, 2),
+            ));
         }
         let label = "PelvicIncidence";
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
 
-        let g = incidence_angle(
+        let g = draw_incidence_angle(
             label,
             sagittal_points.femoral_head.0.to_owned(),
             sac_sup.to_owned(),
@@ -1205,29 +1314,131 @@ impl SagittalComponent for PelvicIncidence {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>
-    where
-        Self: Sized,
-    {
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let plate = sagittal_points.spine.sacral_sup_plate();
+        femoral_incidence_angle(plate, &sagittal_points.femoral_head)
+    }
+}
+
+struct L5IncidenceAngle;
+impl L5IncidenceAngle {
+    const NAME: &'static str = "L5IncidenceAngle";
+}
+impl SagittalComponent for L5IncidenceAngle {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+    fn draw(
+        &mut self,
+        sagittal_points: &SagittalPoints,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
-            // TODO: implement TooFewPoints error
-            return Err(MeasureError::InvalidNumberOfPoints(0, 2));
+            return Err(MeasureError::InvalidNumberOfPoints(
+                InvalidNumberOfPoints::TooFewPoints(0, 2),
+            ));
+        }
+        let label = "L5IncidenceAngle";
+        let l5_sup = sagittal_points
+            .spine
+            .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2)
+            .to_owned();
+        let g = draw_incidence_angle(
+            label,
+            sagittal_points.femoral_head.0.to_owned(),
+            l5_sup.to_owned(),
+            painter,
+            line_colors,
+        );
+        Ok(g)
+    }
+
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let plate = sagittal_points
+            .spine
+            .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2);
+        femoral_incidence_angle(plate, &sagittal_points.femoral_head)
+    }
+}
+
+struct PelvicRadiusAngle;
+impl PelvicRadiusAngle {
+    const NAME: &'static str = "PelvicRadiusAngle";
+}
+impl SagittalComponent for PelvicRadiusAngle {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+    fn draw(
+        &mut self,
+        sagittal_points: &SagittalPoints,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        if sagittal_points.femoral_head.0.is_empty() {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                InvalidNumberOfPoints::TooFewPoints(0, 2),
+            ));
         }
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let plate = sagittal_points.spine.sacral_sup_plate();
-
-        let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
-        let line_sac2fem = stack![Axis(0), sac_sup_mid, mid_femoral_heads];
-        let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
-        let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
-        perp_sac /= perp_sac.l2norm();
-        perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
-        perp_sac += &sac_sup_mid;
-        let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
-        let angle_rad = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
-        let angle_deg = angle_rad.to_degrees();
-        Ok(angle_deg)
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        let label = "PelvicRadiusAngle";
+        let color = line_colors.get_or_new(label);
+        let mut g = element::Group::new()
+            .set("class", label)
+            .set("fill", color)
+            .set("stroke", color);
+        for p in sagittal_points.femoral_head.0.axis_iter(Axis(0)) {
+            g = g.add(painter.point(p));
+        }
+        if sagittal_points.femoral_head.0.len_of(Axis(0)) == 2 {
+            g = g.add(painter.point(mid_femoral_heads.view()));
+            g = g.add(painter.line(sagittal_points.femoral_head.0.view()));
+        }
+        g = g.add(painter.line(sac_sup.view()));
+        let post_sac = sac_sup.index_axis(Axis(0), 1);
+        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
+        g = g.add(painter.line(line_fem2post_sac.view()));
+        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
+        let text = format!("{:.1}°", angle);
+        let text = painter.text(&text, post_sac, Some(label));
+        g = g.add(text);
+        Ok(g)
     }
+
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        let post_sac = sac_sup.index_axis(Axis(0), 1);
+        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
+        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
+        Ok(angle.to_degrees())
+    }
+}
+
+fn femoral_incidence_angle(
+    plate: ArrayView2<f32>,
+    femoral_head: &crate::AtMost2<Array2<f32>>,
+) -> Result<f32, MeasureError> {
+    if femoral_head.0.is_empty() {
+        return Err(MeasureError::InvalidNumberOfPoints(
+            InvalidNumberOfPoints::TooFewPoints(0, 2),
+        ));
+    }
+    let mid_femoral_heads = femoral_head.0.mean_axis(Axis(0)).unwrap();
+    let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
+    let line_sac2fem = stack![Axis(0), sac_sup_mid, mid_femoral_heads];
+    let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
+    let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
+    perp_sac /= perp_sac.l2norm();
+    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
+    perp_sac += &sac_sup_mid;
+    let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
+    let angle_rad = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
+    Ok(angle_rad.to_degrees())
 }
 
 pub fn draw_sagittal(
@@ -1260,64 +1471,25 @@ pub fn draw_sagittal(
 
     let aux_param = CobbAux::default();
     let mean_plate_length = mean_plate_length(&sagittal_points.spine);
-    if let Ok(g) = (ThoracicKyphosis {}.draw(
-        &sagittal_points,
-        &painter,
-        &mut label_colors,
-        &mut line_colors,
-    )) {
-        document = document.add(g);
+
+    let spinal_measures: Vec<Box<dyn SagittalComponent>> = vec![
+        Box::new(ThoracicKyphosis {}),
+        Box::new(ProximalThoracicKyphosis {}),
+        Box::new(MidLowerThoracicKyphosis {}),
+        Box::new(T10L2Kyphosis {}),
+    ];
+    for mut spinal_measure in spinal_measures {
+        match spinal_measure.draw(
+            &sagittal_points,
+            &painter,
+            &mut label_colors,
+            &mut line_colors,
+        ) {
+            Ok(g) => document = document.add(g),
+            Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
+        }
     }
 
-    {
-        let label = "Mid/LowerThoracicKyphosis";
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let sup = VertebralIndex::T5 as usize;
-        let inf = VertebralIndex::T12 as usize;
-        document = document.add(painter.cobb(
-            group,
-            spine,
-            &Curve { sup, inf },
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        ));
-    }
-    {
-        let label = "ProximalThoracicKyphosis";
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let sup = VertebralIndex::T2 as usize;
-        let inf = VertebralIndex::T5 as usize;
-        document = document.add(painter.cobb(
-            group,
-            spine,
-            &Curve { sup, inf },
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        ));
-    }
-    {
-        // required for structural/non-structural analysis for thoracic and tl/l curves
-        let label = "T10L2";
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let sup = VertebralIndex::T10 as usize;
-        let inf = VertebralIndex::L2 as usize;
-        document = document.add(painter.cobb(
-            group,
-            spine,
-            &Curve { sup, inf },
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        ));
-    }
     {
         let label = "LumbarLordosis";
         let group = element::Group::new()
@@ -1367,62 +1539,26 @@ pub fn draw_sagittal(
             Some(label),
         ));
     }
+    let pelvic_measures: Vec<Box<dyn SagittalComponent>> = vec![
+        Box::new(PelvicIncidence {}),
+        Box::new(L5IncidenceAngle {}),
+        Box::new(PelvicRadiusAngle {}),
+    ];
 
-    if let Ok(g) = (PelvicIncidence {}.draw(
-        &sagittal_points,
-        &painter,
-        &mut label_colors,
-        &mut line_colors,
-    )) {
-        document = document.add(g);
-    }
-
-    if !sagittal_points.femoral_head.0.is_empty() {
-        let femoral_heads = sagittal_points.femoral_head.0;
-        {
-            let label = "L5IncidenceAngle";
-            // Choose the vertebra one level above the sacrum, which is L5 in most cases
-            let l5_sup = spine
-                .sup_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
-                .to_owned();
-            document = document.add(incidence_angle(
-                label,
-                femoral_heads.to_owned(),
-                l5_sup.to_owned(),
-                &painter,
-                &mut line_colors,
-            ));
-        }
-        {
-            let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
-            let sac_sup = spine.sacral_sup_plate();
-            let label = "PelvicRadiusAngle";
-            let color = line_colors.get_or_new(label);
-            let mut g = element::Group::new()
-                .set("class", label)
-                .set("fill", color)
-                .set("stroke", color);
-            for p in femoral_heads.axis_iter(Axis(0)) {
-                g = g.add(painter.point(p));
-            }
-            if femoral_heads.len_of(Axis(0)) == 2 {
-                g = g.add(painter.point(mid_femoral_heads.view()));
-                g = g.add(painter.line(femoral_heads.view()));
-            }
-            g = g.add(painter.line(sac_sup.view()));
-            let post_sac = sac_sup.index_axis(Axis(0), 1);
-            let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
-            g = g.add(painter.line(line_fem2post_sac.view()));
-            let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
-            let text = format!("{:.1}°", angle);
-            let text = painter.text(&text, post_sac, Some(label));
-            g = g.add(text);
-            document = document.add(g);
+    for mut pelvic_measure in pelvic_measures.into_iter() {
+        match pelvic_measure.draw(
+            &sagittal_points,
+            &painter,
+            &mut label_colors,
+            &mut line_colors,
+        ) {
+            Ok(g) => document = document.add(g),
+            Err(err) => warn!("Failed to draw {}: {:?}", pelvic_measure.name(), err),
         }
     }
-
     document
 }
+
 pub fn draw_coronal(
     data: LabelMeDataWImage,
     coronal_points: CoronalPoints,
