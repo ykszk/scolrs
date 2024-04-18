@@ -44,6 +44,7 @@ where
 }
 
 /// Signed angle from line1 to line2 in radians
+/// TODO: Check the difference from [`angle_from_lines`]?
 pub fn angle_between<S>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<S, Ix2>) -> f32
 where
     S: ndarray::Data<Elem = f32>,
@@ -1143,18 +1144,16 @@ trait SagittalComponent {
 }
 
 trait Kyphosis {
-    const SUP: usize;
-    const INF: usize;
-    fn draw_kyphosis(
+    fn draw(
         &mut self,
         label: &str,
+        aux_param: CobbAux,
+        curve: &Curve,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let mut opposite_param = CobbAux::opposite_default();
-        opposite_param.plate_scale = -3.0;
         let group = element::Group::new()
             .set("class", label)
             .set("stroke", line_colors.get_or_new(label));
@@ -1162,35 +1161,19 @@ trait Kyphosis {
         let g = painter.cobb(
             group,
             &sagittal_points.spine,
-            &Curve {
-                sup: Self::SUP,
-                inf: Self::INF,
-            },
-            &opposite_param,
+            curve,
+            &aux_param,
             mean_plate_length,
             Some(label),
         );
         Ok(g)
     }
-
-    fn measure_kyphosis(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
-        let spine = &sagittal_points.spine;
-        let sup_plate = spine.sup_plate(Self::SUP);
-        let inf_plate = spine.inf_plate(Self::INF);
-        let angle_rad = angle_between(sup_plate, inf_plate);
-        let angle_deg = angle_rad.to_degrees();
-        Ok(angle_deg)
-    }
 }
 
 macro_rules! _impl_kyophosis {
-    ($name:ident, $sup:expr, $inf:expr) => {
+    ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
         struct $name;
 
-        impl Kyphosis for $name {
-            const SUP: usize = $sup;
-            const INF: usize = $inf;
-        }
         impl SagittalComponent for $name {
             fn name(&self) -> &'static str {
                 Self::NAME
@@ -1202,17 +1185,40 @@ macro_rules! _impl_kyophosis {
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, MeasureError> {
-                self.draw_kyphosis(
-                    Self::NAME,
-                    sagittal_points,
-                    painter,
-                    _label_colors,
-                    line_colors,
-                )
+                let label = self.name();
+                let aux_param = if $opposite {
+                    CobbAux::opposite_default()
+                } else {
+                    CobbAux::default()
+                };
+                let curve = Curve {
+                    sup: Self::SUP,
+                    inf: Self::INF,
+                };
+                let group = element::Group::new()
+                    .set("class", label)
+                    .set("stroke", line_colors.get_or_new(label));
+                let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
+                let g = painter.cobb(
+                    group,
+                    &sagittal_points.spine,
+                    &curve,
+                    &aux_param,
+                    mean_plate_length,
+                    Some(label),
+                );
+                Ok(g)
             }
 
             fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
-                self.measure_kyphosis(sagittal_points)
+                let angle = sagittal_points
+                    .spine
+                    .angle(&Curve {
+                        sup: Self::SUP,
+                        inf: Self::INF,
+                    })
+                    .unwrap();
+                Ok(angle)
             }
         }
     };
@@ -1222,45 +1228,178 @@ macro_rules! _impl_kyophosis {
 ///
 /// Optionally, a display name can be provided as the second argument
 macro_rules! impl_kyphosis {
-    ($name:ident, $sup:expr, $inf:expr) => {
+    ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
         impl $name {
             const NAME: &'static str = stringify!($name);
+            const SUP: usize = $sup;
+            const INF: usize = $inf;
         }
-        _impl_kyophosis!($name, $sup, $inf);
+        _impl_kyophosis!($name, $sup, $inf, $opposite);
     };
 
-    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr) => {
+    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr, $opposite:expr) => {
         impl $name {
             const NAME: &'static str = $disp_name;
+            const SUP: usize = $sup;
+            const INF: usize = $inf;
         }
-        _impl_kyophosis!($name, $sup, $inf);
+        _impl_kyophosis!($name, $sup, $inf, $opposite);
     };
 }
 
 impl_kyphosis!(
     ProximalThoracicKyphosis,
     VertebralIndex::T2 as usize,
-    VertebralIndex::T5 as usize
+    VertebralIndex::T5 as usize,
+    false
 );
 
 impl_kyphosis!(
     ThoracicKyphosis,
     VertebralIndex::T2 as usize,
-    VertebralIndex::T12 as usize
+    VertebralIndex::T12 as usize,
+    true
 );
 
 impl_kyphosis!(
     MidLowerThoracicKyphosis,
     "Mid/LowerThoracicKyphosis",
     VertebralIndex::T5 as usize,
-    VertebralIndex::T12 as usize
+    VertebralIndex::T12 as usize,
+    false
 );
 
 impl_kyphosis!(
     T10L2Kyphosis,
     VertebralIndex::T10 as usize,
-    VertebralIndex::L2 as usize
+    VertebralIndex::L2 as usize,
+    false
 );
+
+struct LumbarLordosis;
+impl LumbarLordosis {
+    const NAME: &'static str = "LumbarLordosis";
+    fn prep(sagittal_points: &SagittalPoints) -> (usize, usize) {
+        let sup = VertebralIndex::T12 as usize;
+        let inf = sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 1;
+        (sup, inf)
+    }
+}
+impl SagittalComponent for LumbarLordosis {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+    fn draw(
+        &mut self,
+        sagittal_points: &SagittalPoints,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let aux_param = CobbAux::default();
+        let label = self.name();
+        let group = element::Group::new()
+            .set("class", label)
+            .set("stroke", line_colors.get_or_new(label));
+        let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
+        let (sup, inf) = Self::prep(sagittal_points);
+        let g = painter.cobb(
+            group,
+            &sagittal_points.spine,
+            &Curve { sup, inf },
+            &aux_param,
+            mean_plate_length,
+            Some(label),
+        );
+        Ok(g)
+    }
+
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let (sup, inf) = Self::prep(sagittal_points);
+        let angle = sagittal_points.spine.angle(&Curve { sup, inf }).unwrap();
+        Ok(angle)
+    }
+}
+
+struct SagittalBalance;
+impl SagittalBalance {
+    const NAME: &'static str = "SagittalBalance";
+    fn prep(sagittal_points: &SagittalPoints) -> Array2<f32> {
+        let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        let pos_sac = sac_sup.index_axis(Axis(0), 1);
+        stack![Axis(0), c_c7, pos_sac]
+    }
+}
+impl SagittalComponent for SagittalBalance {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+    fn draw(
+        &mut self,
+        sagittal_points: &SagittalPoints,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let points = Self::prep(sagittal_points);
+        let g = difference_in_x(Self::NAME, points.view(), painter, line_colors);
+        Ok(g)
+    }
+
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let points = Self::prep(sagittal_points);
+        let p1 = points.index_axis(Axis(0), 0);
+        let p2 = points.index_axis(Axis(0), 1);
+        let dx = p1[0] - p2[0];
+        Ok(dx)
+    }
+}
+
+struct LumbosacralAngle;
+impl LumbosacralAngle {
+    const NAME: &'static str = "LumbosacralAngle";
+    fn prep(sagittal_points: &SagittalPoints) -> (Array2<f32>, Array2<f32>) {
+        let spine = &sagittal_points.spine;
+        let sup = spine
+            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
+            .to_owned();
+        let inf = spine
+            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 1)
+            .to_owned();
+        (sup, inf)
+    }
+}
+impl SagittalComponent for LumbosacralAngle {
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+
+    fn draw(
+        &mut self,
+        sagittal_points: &SagittalPoints,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let label = Self::NAME;
+        let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO:
+        let group = element::Group::new()
+            .set("class", label)
+            .set("stroke", line_colors.get_or_new(label));
+        let (sup, inf) = Self::prep(sagittal_points);
+        let aux_param = CobbAux::default();
+        let g =
+            painter.cobb_from_plates(group, sup, inf, &aux_param, mean_plate_length, Some(label));
+        Ok(g)
+    }
+
+    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+        let (sup, inf) = Self::prep(sagittal_points);
+        let angle = angle_between(sup.view(), inf.view()).to_degrees();
+        Ok(angle)
+    }
+}
 
 struct PelvicIncidence;
 impl PelvicIncidence {
@@ -1450,14 +1589,19 @@ pub fn draw_sagittal(
         document = document.add(group);
     }
 
-    let aux_param = CobbAux::default();
-    let mean_plate_length = mean_plate_length(&sagittal_points.spine);
-
     let spinal_measures: Vec<Box<dyn SagittalComponent>> = vec![
+        // spinal measures
         Box::new(ThoracicKyphosis {}),
         Box::new(ProximalThoracicKyphosis {}),
         Box::new(MidLowerThoracicKyphosis {}),
         Box::new(T10L2Kyphosis {}),
+        Box::new(LumbarLordosis {}),
+        Box::new(SagittalBalance {}),
+        Box::new(LumbosacralAngle {}),
+        // pelvic measures
+        Box::new(PelvicIncidence {}),
+        Box::new(L5IncidenceAngle {}),
+        Box::new(PelvicRadiusAngle {}),
     ];
     for mut spinal_measure in spinal_measures {
         match spinal_measure.draw(
@@ -1471,72 +1615,6 @@ pub fn draw_sagittal(
         }
     }
 
-    {
-        let label = "LumbarLordosis";
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let sup = VertebralIndex::T12 as usize;
-        let inf = spine.v_c7tl.0.len_of(Axis(0)) - 1;
-        document = document.add(painter.cobb(
-            group,
-            spine,
-            &Curve { sup, inf },
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        ));
-    }
-    {
-        let label = "SagittalBalance";
-        let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
-        let sac_sup = spine.sacral_sup_plate();
-        let pos_sac = sac_sup.index_axis(Axis(0), 1);
-        let points = stack![Axis(0), c_c7, pos_sac];
-        document = document.add(difference_in_x(
-            label,
-            points.view(),
-            &painter,
-            &mut line_colors,
-        ));
-    }
-    {
-        let label = "LumbosacralAngle";
-        let group = element::Group::new()
-            .set("class", label)
-            .set("stroke", line_colors.get_or_new(label));
-        let sup = spine
-            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
-            .to_owned();
-        let inf = spine
-            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 1)
-            .to_owned();
-        document = document.add(painter.cobb_from_plates(
-            group,
-            sup,
-            inf,
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        ));
-    }
-    let pelvic_measures: Vec<Box<dyn SagittalComponent>> = vec![
-        Box::new(PelvicIncidence {}),
-        Box::new(L5IncidenceAngle {}),
-        Box::new(PelvicRadiusAngle {}),
-    ];
-
-    for mut pelvic_measure in pelvic_measures.into_iter() {
-        match pelvic_measure.draw(
-            &sagittal_points,
-            &painter,
-            &mut label_colors,
-            &mut line_colors,
-        ) {
-            Ok(g) => document = document.add(g),
-            Err(err) => warn!("Failed to draw {}: {:?}", pelvic_measure.name(), err),
-        }
-    }
     document
 }
 

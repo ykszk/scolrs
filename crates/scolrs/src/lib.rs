@@ -349,6 +349,7 @@ where
     }
 }
 
+/// Angle between two lines in degrees
 /// TODO: Check the difference from [`angle_between`]?
 pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Option<f32> {
     let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
@@ -612,24 +613,7 @@ impl Spine {
     pub fn angle(&self, curve: &Curve) -> Option<f32> {
         let sup_line = self.sup_plate(curve.sup);
         let inf_line = self.inf_plate(curve.inf);
-        angle_from_lines(sup_line, inf_line);
-        let v_sup = &sup_line.index_axis(Axis(0), 1) - &sup_line.index_axis(Axis(0), 0);
-        let v_inf = &inf_line.index_axis(Axis(0), 1) - &inf_line.index_axis(Axis(0), 0);
-        let len_sup = v_sup.l2norm();
-        let len_inf = v_inf.l2norm();
-        if len_sup == 0.0 || len_inf == 0.0 {
-            return None;
-        }
-        let v_sup = &v_sup / len_sup;
-        let v_inf = &v_inf / len_inf;
-        let cos = v_sup.dot(&v_inf);
-        let cos = cos.max(-1.0).min(1.0);
-        let deg = cos.acos().to_degrees();
-        if v_sup[1] < v_inf[1] {
-            Some(-deg)
-        } else {
-            Some(deg)
-        }
+        angle_from_lines(sup_line, inf_line)
     }
 }
 
