@@ -1133,19 +1133,19 @@ fn draw_incidence_angle(
 trait SagittalComponent {
     fn name(&self) -> &'static str;
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError>;
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
 }
 
 trait Kyphosis {
     fn draw(
-        &mut self,
+        &self,
         label: &str,
         aux_param: CobbAux,
         curve: &Curve,
@@ -1179,7 +1179,7 @@ macro_rules! _impl_kyophosis {
                 Self::NAME
             }
             fn draw(
-                &mut self,
+                &self,
                 sagittal_points: &SagittalPoints,
                 painter: &Painter,
                 _label_colors: &mut ColorPalette,
@@ -1210,7 +1210,7 @@ macro_rules! _impl_kyophosis {
                 Ok(g)
             }
 
-            fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+            fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
                 let angle = sagittal_points
                     .spine
                     .angle(&Curve {
@@ -1290,7 +1290,7 @@ impl SagittalComponent for LumbarLordosis {
         Self::NAME
     }
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1314,7 +1314,7 @@ impl SagittalComponent for LumbarLordosis {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let (sup, inf) = Self::prep(sagittal_points);
         let angle = sagittal_points.spine.angle(&Curve { sup, inf }).unwrap();
         Ok(angle)
@@ -1336,7 +1336,7 @@ impl SagittalComponent for SagittalBalance {
         Self::NAME
     }
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1347,7 +1347,7 @@ impl SagittalComponent for SagittalBalance {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let points = Self::prep(sagittal_points);
         let p1 = points.index_axis(Axis(0), 0);
         let p2 = points.index_axis(Axis(0), 1);
@@ -1376,7 +1376,7 @@ impl SagittalComponent for LumbosacralAngle {
     }
 
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1394,7 +1394,7 @@ impl SagittalComponent for LumbosacralAngle {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let (sup, inf) = Self::prep(sagittal_points);
         let angle = angle_between(sup.view(), inf.view()).to_degrees();
         Ok(angle)
@@ -1410,7 +1410,7 @@ impl SagittalComponent for PelvicIncidence {
         Self::NAME
     }
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1434,7 +1434,7 @@ impl SagittalComponent for PelvicIncidence {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let plate = sagittal_points.spine.sacral_sup_plate();
         femoral_incidence_angle(plate, &sagittal_points.femoral_head)
     }
@@ -1449,7 +1449,7 @@ impl SagittalComponent for L5IncidenceAngle {
         Self::NAME
     }
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1475,7 +1475,7 @@ impl SagittalComponent for L5IncidenceAngle {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let plate = sagittal_points
             .spine
             .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2);
@@ -1492,7 +1492,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         Self::NAME
     }
     fn draw(
-        &mut self,
+        &self,
         sagittal_points: &SagittalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
@@ -1529,7 +1529,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         Ok(g)
     }
 
-    fn measure(&mut self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
+    fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let post_sac = sac_sup.index_axis(Axis(0), 1);
@@ -1603,7 +1603,7 @@ pub fn draw_sagittal(
         Box::new(L5IncidenceAngle {}),
         Box::new(PelvicRadiusAngle {}),
     ];
-    for mut spinal_measure in spinal_measures {
+    for spinal_measure in spinal_measures {
         match spinal_measure.draw(
             &sagittal_points,
             &painter,
