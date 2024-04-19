@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use scolrs::{
-    draw_coronal, draw_sagittal, ApexSet, ColorPalette, CoronalPoints, CurveSet, DrawParam,
-    SagittalMeasure, SagittalPoints, Spine,
+    draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalPoints, CurveSet,
+    DrawParam, SagittalMeasure, SagittalPoints, Spine,
 };
 use std::path::{Path, PathBuf};
 use svg::Document;
@@ -68,8 +68,10 @@ fn _test_svg(
             hide,
             draw_param,
             svg_size,
-            label_colors,
-            line_colors,
+            ColorPalettes {
+                label_colors,
+                line_colors,
+            },
         )
     };
 

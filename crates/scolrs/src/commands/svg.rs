@@ -2,7 +2,9 @@ use crate::cli::{Plane, SvgArgs};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
-use scolrs::{draw_coronal, draw_sagittal, ColorPalette, DrawParam, SagittalMeasure, ScolDesc};
+use scolrs::{
+    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawParam, SagittalMeasure, ScolDesc,
+};
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
     let draw_param = if let Some(filename) = args.config {
@@ -86,8 +88,10 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 args.hide,
                 draw_param,
                 svg_size,
-                label_colors,
-                line_colors,
+                ColorPalettes {
+                    label_colors,
+                    line_colors,
+                },
             )
         }
     };

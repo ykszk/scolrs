@@ -4,7 +4,7 @@ use crate::{
 };
 use labelme_rs::LabelMeDataWImage;
 use log::{debug, warn};
-use ndarray::{s, stack, Array1, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use std::collections::HashMap;
 use std::io::Read;
@@ -1554,9 +1554,8 @@ impl SagittalComponent for L5IncidenceAngle {
 struct PelvicRadiusAngle;
 impl PelvicRadiusAngle {
     const NAME: &'static str = "PelvicRadiusAngle";
-    fn prep(
-        sagittal_points: &SagittalPoints,
-    ) -> Result<(Array2<f32>, Array1<f32>, Array2<f32>), MeasureError> {
+
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
             return Err(MeasureError::InvalidNumberOfPoints(
                 InvalidNumberOfPoints::TooFewPoints(1, 0),
@@ -1566,7 +1565,7 @@ impl PelvicRadiusAngle {
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let post_sac = sac_sup.index_axis(Axis(0), 1);
         let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
-        Ok((sac_sup.to_owned(), post_sac.to_owned(), line_fem2post_sac))
+        Ok((sac_sup.to_owned(), line_fem2post_sac))
     }
 }
 impl Named for PelvicRadiusAngle {
@@ -1590,7 +1589,8 @@ impl SagittalComponent for PelvicRadiusAngle {
                 InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
-        let (sac_sup, post_sac, line_fem2post_sac) = Self::prep(sagittal_points)?;
+        let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
+        let post_sac = sac_sup.index_axis(Axis(0), 1);
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let label = Self::NAME;
         let color = line_colors.get_or_new(label);
@@ -1612,7 +1612,7 @@ impl SagittalComponent for PelvicRadiusAngle {
     }
 
     fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
-        let (sac_sup, _, line_fem2post_sac) = Self::prep(sagittal_points)?;
+        let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
         Ok(angle)
     }
@@ -1659,6 +1659,11 @@ impl From<SagittalMeasure> for Box<dyn SagittalComponent> {
     }
 }
 
+pub struct ColorPalettes {
+    pub label_colors: ColorPalette,
+    pub line_colors: ColorPalette,
+}
+
 pub fn draw_sagittal(
     data: LabelMeDataWImage,
     sagittal_points: SagittalPoints,
@@ -1666,9 +1671,12 @@ pub fn draw_sagittal(
     hide: Vec<SagittalMeasure>,
     draw_param: DrawParam,
     svg_size: (usize, usize),
-    mut label_colors: ColorPalette,
-    mut line_colors: ColorPalette,
+    palettes: ColorPalettes,
 ) -> element::SVG {
+    let ColorPalettes {
+        mut label_colors,
+        mut line_colors,
+    } = palettes;
     let spine = &sagittal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);

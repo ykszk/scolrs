@@ -694,7 +694,7 @@ pub struct C7TLS(pub Array3<f32>);
 pub struct VertebraeC7TL(pub Array3<f32>);
 
 /// Thoracic and lumber vertebrae
-pub struct VertebraeTL<'a>(ArrayView3<'a, f32>);
+pub struct VertebraeTL<'a>(pub ArrayView3<'a, f32>);
 
 impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
     fn from(c7tl: &'a VertebraeC7TL) -> Self {
