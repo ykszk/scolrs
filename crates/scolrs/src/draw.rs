@@ -501,6 +501,20 @@ pub trait Named {
     }
 }
 
+macro_rules! impl_named_for {
+    ($name:ident, $draw_type:expr) => {
+        impl Named for $name {
+            fn name(&self) -> &'static str {
+                stringify!($name)
+            }
+
+            fn draw_type(&self) -> &[&'static str] {
+                $draw_type
+            }
+        }
+    };
+}
+
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: Named {
     fn draw(
@@ -521,7 +535,9 @@ pub trait CommonComponent: Named {
     // }
 }
 
-pub trait CoronalComponent {
+// const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
+
+pub trait CoronalComponent: Named {
     fn draw(
         &self,
         coronal_points: &CoronalPoints,
@@ -529,19 +545,16 @@ pub trait CoronalComponent {
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Option<element::Group>;
+
+    // fn default_group(&self) -> element::Group {
+    //     self.default_group_w_classes(&[CORONAL_COMPONENT_CLASS])
+    // }
+
+    // fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
 }
 
 pub struct VertebralLabels;
-impl Named for VertebralLabels {
-    fn name(&self) -> &'static str {
-        "Centroids"
-    }
-
-    fn draw_type(&self) -> &[&'static str] {
-        &["Annotation", "Text"]
-    }
-}
-
+impl_named_for!(VertebralLabels, &[CLASS_ANNOTATION, CLASS_TEXT]);
 impl CommonComponent for VertebralLabels {
     fn draw(
         &self,
@@ -563,15 +576,7 @@ impl CommonComponent for VertebralLabels {
 }
 
 pub struct VertebralPoints;
-impl Named for VertebralPoints {
-    fn name(&self) -> &'static str {
-        "VertebralPoints"
-    }
-
-    fn draw_type(&self) -> &[&'static str] {
-        &["Annotation", "Point"]
-    }
-}
+impl_named_for!(VertebralPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl CommonComponent for VertebralPoints {
     fn draw(
         &self,
@@ -629,16 +634,19 @@ static CORONAL_COMPONENTS: [&str; 12] = [
     ID_LEG_LEN_DISCREPANCY,
 ];
 
-struct Centroids;
-impl Named for Centroids {
-    fn name(&self) -> &'static str {
-        "Centroids"
-    }
+// draw types
+const CLASS_ANNOTATION: &str = "Annotation";
+const CLASS_POINT: &str = "Point";
+const CLASS_POLYGON: &str = "Polygon";
+const CLASS_LINE: &str = "Line";
+const CLASS_TEXT: &str = "Text";
 
-    fn draw_type(&self) -> &[&'static str] {
-        &["Annotation", "Point"]
-    }
-}
+const CLASS_MEASURE: &str = "Measure";
+const CLASS_ANGLE: &str = "Angle";
+const CLASS_DISTANCE: &str = "Distance";
+
+struct Centroids;
+impl_named_for!(Centroids, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl CommonComponent for Centroids {
     fn draw(
         &self,
@@ -647,7 +655,7 @@ impl CommonComponent for Centroids {
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> element::Group {
-        let label = ID_CENTROID;
+        let label = self.name();
         let color = label_colors.get_or_new(label);
         let mut g_centroids = self.default_group().set("stroke", color).set("fill", color);
         let centroids = spine.tl_centroids();
@@ -669,6 +677,15 @@ fn mean_plate_length(scol: &Spine) -> f32 {
 }
 
 struct CobbAngles<'a>(&'a CurveSet);
+impl Named for CobbAngles<'_> {
+    fn name(&self) -> &'static str {
+        "CobbAngles"
+    }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &[CLASS_MEASURE, CLASS_ANGLE]
+    }
+}
 impl<'a> CoronalComponent for CobbAngles<'a> {
     fn draw(
         &self,
@@ -734,6 +751,16 @@ impl<'a> CoronalComponent for CobbAngles<'a> {
 }
 
 struct CurveApex<'a>(&'a ApexSet, &'a Corners<ndarray::OwnedRepr<f32>>);
+// impl_named_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
+impl Named for CurveApex<'_> {
+    fn name(&self) -> &'static str {
+        "CurveApex"
+    }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &[CLASS_ANNOTATION, CLASS_POLYGON]
+    }
+}
 impl<'a> CoronalComponent for CurveApex<'a> {
     fn draw(
         &self,
@@ -766,15 +793,7 @@ impl<'a> CoronalComponent for CurveApex<'a> {
 
 /// Spinal center line
 struct SpinalLine;
-impl Named for SpinalLine {
-    fn name(&self) -> &'static str {
-        "SpinalLine"
-    }
-
-    fn draw_type(&self) -> &[&'static str] {
-        &["Annotation", "Line"]
-    }
-}
+impl_named_for!(SpinalLine, &[CLASS_ANNOTATION, CLASS_LINE]);
 impl CommonComponent for SpinalLine {
     fn draw(
         &self,
@@ -804,6 +823,15 @@ impl CommonComponent for SpinalLine {
 
 /// center sacral vertical line (CSVL)
 struct Csvl<'a>(&'a ApexSet);
+impl<'a> Named for Csvl<'a> {
+    fn name(&self) -> &'static str {
+        "CSVL"
+    }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &[CLASS_ANNOTATION, CLASS_LINE]
+    }
+}
 impl<'a> CoronalComponent for Csvl<'a> {
     fn draw(
         &self,
@@ -835,6 +863,7 @@ impl<'a> CoronalComponent for Csvl<'a> {
 
 /// center sacral vertical line (CSVL)
 struct T1TiltAngle;
+impl_named_for!(T1TiltAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl CoronalComponent for T1TiltAngle {
     fn draw(
         &self,
@@ -886,6 +915,7 @@ impl CoronalComponent for T1TiltAngle {
 }
 
 struct CoronalBalance;
+impl_named_for!(CoronalBalance, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl CoronalComponent for CoronalBalance {
     fn draw(
         &self,
@@ -911,6 +941,7 @@ impl CoronalComponent for CoronalBalance {
 }
 
 struct ClavicleAngle;
+impl_named_for!(ClavicleAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl CoronalComponent for ClavicleAngle {
     fn draw(
         &self,
@@ -1004,6 +1035,7 @@ fn difference_in_y(
 }
 
 struct ShoulderHeight;
+impl_named_for!(ShoulderHeight, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl CoronalComponent for ShoulderHeight {
     fn draw(
         &self,
@@ -1052,6 +1084,7 @@ fn add_tilt_angle(
 }
 
 struct PelvicObliquity;
+impl_named_for!(PelvicObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl CoronalComponent for PelvicObliquity {
     fn draw(
         &self,
@@ -1074,6 +1107,7 @@ impl CoronalComponent for PelvicObliquity {
 }
 
 struct SacralObliquity;
+impl_named_for!(SacralObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl CoronalComponent for SacralObliquity {
     fn draw(
         &self,
@@ -1121,6 +1155,7 @@ impl CoronalComponent for SacralObliquity {
 }
 
 struct LegLengthDiscrepancy;
+impl_named_for!(LegLengthDiscrepancy, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl CoronalComponent for LegLengthDiscrepancy {
     fn draw(
         &self,
@@ -1315,21 +1350,13 @@ impl_kyphosis!(
 
 struct LumbarLordosis;
 impl LumbarLordosis {
-    const NAME: &'static str = "LumbarLordosis";
     fn prep(sagittal_points: &SagittalPoints) -> (usize, usize) {
         let sup = VertebralIndex::T12 as usize;
         let inf = sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 1;
         (sup, inf)
     }
 }
-impl Named for LumbarLordosis {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Angle"]
-    }
-}
+impl_named_for!(LumbarLordosis, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl SagittalComponent for LumbarLordosis {
     fn draw(
         &self,
@@ -1365,7 +1392,6 @@ impl SagittalComponent for LumbarLordosis {
 
 struct SagittalBalance;
 impl SagittalBalance {
-    const NAME: &'static str = "SagittalBalance";
     fn prep(sagittal_points: &SagittalPoints) -> Array2<f32> {
         let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
@@ -1373,14 +1399,7 @@ impl SagittalBalance {
         stack![Axis(0), c_c7, pos_sac]
     }
 }
-impl Named for SagittalBalance {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Distance"]
-    }
-}
+impl_named_for!(SagittalBalance, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl SagittalComponent for SagittalBalance {
     fn draw(
         &self,
@@ -1390,11 +1409,12 @@ impl SagittalComponent for SagittalBalance {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let points = Self::prep(sagittal_points);
-        let color = line_colors.get_or_new(Self::NAME);
+        let label = self.name();
+        let color = line_colors.get_or_new(label);
         let g = element::Group::new()
             .set("stroke", color)
             .set("fill", color);
-        let g = difference_in_x(g, Self::NAME, points.view(), painter);
+        let g = difference_in_x(g, label, points.view(), painter);
         Ok(g)
     }
 
@@ -1409,7 +1429,6 @@ impl SagittalComponent for SagittalBalance {
 
 struct LumbosacralAngle;
 impl LumbosacralAngle {
-    const NAME: &'static str = "LumbosacralAngle";
     fn prep(sagittal_points: &SagittalPoints) -> (Array2<f32>, Array2<f32>) {
         let spine = &sagittal_points.spine;
         let sup = spine
@@ -1421,14 +1440,7 @@ impl LumbosacralAngle {
         (sup, inf)
     }
 }
-impl Named for LumbosacralAngle {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Angle"]
-    }
-}
+impl_named_for!(LumbosacralAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl SagittalComponent for LumbosacralAngle {
     fn draw(
         &self,
@@ -1437,7 +1449,7 @@ impl SagittalComponent for LumbosacralAngle {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let label = Self::NAME;
+        let label = self.name();
         let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO:
         let group = self
             .default_group()
@@ -1457,17 +1469,7 @@ impl SagittalComponent for LumbosacralAngle {
 }
 
 struct PelvicIncidence;
-impl PelvicIncidence {
-    const NAME: &'static str = "PelvicIncidence";
-}
-impl Named for PelvicIncidence {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Angle"]
-    }
-}
+impl_named_for!(PelvicIncidence, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl SagittalComponent for PelvicIncidence {
     fn draw(
         &self,
@@ -1481,7 +1483,7 @@ impl SagittalComponent for PelvicIncidence {
                 InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
-        let label = Self::NAME;
+        let label = self.name();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let color = line_colors.get_or_new(label);
         let g = self.default_group().set("fill", color).set("stroke", color);
@@ -1502,17 +1504,7 @@ impl SagittalComponent for PelvicIncidence {
 }
 
 struct L5IncidenceAngle;
-impl L5IncidenceAngle {
-    const NAME: &'static str = "L5IncidenceAngle";
-}
-impl Named for L5IncidenceAngle {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Angle"]
-    }
-}
+impl_named_for!(L5IncidenceAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl SagittalComponent for L5IncidenceAngle {
     fn draw(
         &self,
@@ -1526,7 +1518,7 @@ impl SagittalComponent for L5IncidenceAngle {
                 InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
-        let label = Self::NAME;
+        let label = self.name();
         let l5_sup = sagittal_points
             .spine
             .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2)
@@ -1553,8 +1545,6 @@ impl SagittalComponent for L5IncidenceAngle {
 
 struct PelvicRadiusAngle;
 impl PelvicRadiusAngle {
-    const NAME: &'static str = "PelvicRadiusAngle";
-
     fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
             return Err(MeasureError::InvalidNumberOfPoints(
@@ -1568,14 +1558,7 @@ impl PelvicRadiusAngle {
         Ok((sac_sup.to_owned(), line_fem2post_sac))
     }
 }
-impl Named for PelvicRadiusAngle {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-    fn draw_type(&self) -> &[&'static str] {
-        &["Measure", "Angle"]
-    }
-}
+impl_named_for!(PelvicRadiusAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl SagittalComponent for PelvicRadiusAngle {
     fn draw(
         &self,
@@ -1592,7 +1575,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let post_sac = sac_sup.index_axis(Axis(0), 1);
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let label = Self::NAME;
+        let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
         for p in sagittal_points.femoral_head.0.axis_iter(Axis(0)) {
