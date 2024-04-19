@@ -53,6 +53,11 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         ColorPalette::new(scolrs::LineColors::default())
     };
 
+    let palettes = ColorPalettes {
+        label_colors,
+        line_colors,
+    };
+
     let document = match args.direction {
         Plane::Coronal => {
             let coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
@@ -69,8 +74,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 coronal_points,
                 draw_param,
                 svg_size,
-                label_colors,
-                line_colors,
+                palettes,
                 curve_apex_set,
             )
         }
@@ -88,10 +92,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 args.hide,
                 draw_param,
                 svg_size,
-                ColorPalettes {
-                    label_colors,
-                    line_colors,
-                },
+                palettes,
             )
         }
     };

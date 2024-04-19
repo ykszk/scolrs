@@ -1318,6 +1318,40 @@ impl Display for StructuralReason {
 #[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
+pub enum CoronalMeasure {
+    CobbAngles,
+    CurveApex,
+    CSVL,
+    T1TiltAngle,
+    CoronalBalance,
+    ClavicleAngle,
+    ShoulderHeight,
+    PelvicObliquity,
+    SacralObliquity,
+    LegLengthDiscrepancy,
+}
+
+impl CoronalMeasure {
+    pub fn all() -> Vec<Self> {
+        use CoronalMeasure::*;
+        vec![
+            CobbAngles,
+            CurveApex,
+            CSVL,
+            T1TiltAngle,
+            CoronalBalance,
+            ClavicleAngle,
+            ShoulderHeight,
+            PelvicObliquity,
+            SacralObliquity,
+            LegLengthDiscrepancy,
+        ]
+    }
+}
+
+#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "PascalCase")]
+#[clap(rename_all = "PascalCase")]
 pub enum SagittalMeasure {
     ThoracicKyphosis,
     ProximalThoracicKyphosis,
@@ -1333,17 +1367,18 @@ pub enum SagittalMeasure {
 
 impl SagittalMeasure {
     pub fn all() -> Vec<Self> {
+        use SagittalMeasure::*;
         vec![
-            SagittalMeasure::ThoracicKyphosis,
-            SagittalMeasure::ProximalThoracicKyphosis,
-            SagittalMeasure::MidLowerThoracicKyphosis,
-            SagittalMeasure::ThoracoLumbarSagittalAlignment,
-            SagittalMeasure::LumbarLordosis,
-            SagittalMeasure::SagittalBalance,
-            SagittalMeasure::LumbosacralAngle,
-            SagittalMeasure::PelvicIncidence,
-            SagittalMeasure::L5IncidenceAngle,
-            SagittalMeasure::PelvicRadiusAngle,
+            ThoracicKyphosis,
+            ProximalThoracicKyphosis,
+            MidLowerThoracicKyphosis,
+            ThoracoLumbarSagittalAlignment,
+            LumbarLordosis,
+            SagittalBalance,
+            LumbosacralAngle,
+            PelvicIncidence,
+            L5IncidenceAngle,
+            PelvicRadiusAngle,
         ]
     }
 }

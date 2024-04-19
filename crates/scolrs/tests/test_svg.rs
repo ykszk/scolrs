@@ -46,6 +46,10 @@ fn _test_svg(
         std::fs::File::open(&line_colors)
             .with_context(|| format!("Load line color file {:?}", line_colors))?,
     )?);
+    let palettes = ColorPalettes {
+        label_colors,
+        line_colors,
+    };
     let document = if coronal {
         let coronal_points = CoronalPoints::try_from(&data.data)?;
         draw_coronal(
@@ -53,8 +57,7 @@ fn _test_svg(
             coronal_points,
             draw_param,
             svg_size,
-            label_colors,
-            line_colors,
+            palettes,
             curve_apex_set,
         )
     } else {
@@ -68,10 +71,7 @@ fn _test_svg(
             hide,
             draw_param,
             svg_size,
-            ColorPalettes {
-                label_colors,
-                line_colors,
-            },
+            palettes,
         )
     };
 
