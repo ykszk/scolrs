@@ -1180,7 +1180,7 @@ fn draw_incidence_angle(
 }
 
 const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
-trait SagittalComponent: Named {
+pub trait SagittalComponent: Named {
     fn draw(
         &self,
         sagittal_points: &SagittalPoints,
@@ -1609,7 +1609,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         let post_sac = sac_sup.index_axis(Axis(0), 1);
         let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
-        Ok(angle.to_degrees())
+        Ok(angle)
     }
 }
 
@@ -1631,8 +1631,8 @@ fn femoral_incidence_angle(
     perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
     perp_sac += &sac_sup_mid;
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
-    let angle_rad = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
-    Ok(angle_rad.to_degrees())
+    let angle_deg = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
+    Ok(angle_deg)
 }
 
 impl From<SagittalMeasure> for Box<dyn SagittalComponent> {

@@ -1,4 +1,4 @@
-use crate::cli::{Direction, SvgArgs};
+use crate::cli::{Plane, SvgArgs};
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
@@ -52,7 +52,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     };
 
     let document = match args.direction {
-        Direction::Frontal => {
+        Plane::Coronal => {
             let coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
             let curve_apex_set = if let Some(filename) = args.curve_set {
                 let reader = std::fs::File::open(&filename)
@@ -72,7 +72,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 curve_apex_set,
             )
         }
-        Direction::Lateral => {
+        Plane::Sagittal => {
             let sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
             let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
                 SagittalMeasure::all()

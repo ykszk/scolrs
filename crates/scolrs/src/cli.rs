@@ -13,6 +13,8 @@ pub struct Cli {
 pub enum Command {
     /// Create SVG
     Svg(SvgArgs),
+    /// Measure scoliotic parameters
+    Measure(MeasureArgs),
     /// Determine curves
     Curve(CurveArgs),
     /// Lenke classification
@@ -20,9 +22,9 @@ pub enum Command {
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
-pub enum Direction {
-    Frontal,
-    Lateral,
+pub enum Plane {
+    Coronal,
+    Sagittal,
 }
 
 #[derive(Parser, Debug)]
@@ -46,8 +48,8 @@ pub struct SvgArgs {
     #[clap(long)]
     pub line_colors: Option<PathBuf>,
     /// Scan direction
-    #[clap(short, long, default_value = "frontal")]
-    pub direction: Direction,
+    #[clap(short, long, default_value = "coronal")]
+    pub direction: Plane,
     /// Resize x-ray image. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub resize: Option<String>,
@@ -60,6 +62,24 @@ pub struct SvgArgs {
     /// Hide measurements
     #[clap(long)]
     pub hide: Vec<SagittalMeasure>,
+}
+
+#[derive(Parser, Debug)]
+pub struct MeasureArgs {
+    /// Input labelme json filename
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Use specified curves instaed of calculating from the points
+    #[clap(long)]
+    pub curve_set: Option<PathBuf>,
+    #[clap(long)]
+    pub line_colors: Option<PathBuf>,
+    /// Scan direction
+    #[clap(short, long, default_value = "coronal")]
+    pub direction: Plane,
+    /// Measurements to draw. By default, all measurements are drawn
+    #[clap(long)]
+    pub measures: Vec<SagittalMeasure>,
 }
 
 #[derive(Parser, Debug)]

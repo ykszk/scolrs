@@ -1315,7 +1315,7 @@ impl Display for StructuralReason {
     }
 }
 
-#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum SagittalMeasure {
