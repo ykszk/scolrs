@@ -544,7 +544,7 @@ pub trait CoronalComponent: Named {
         painter: &Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group>;
+    ) -> Result<element::Group, MeasureError>;
 
     fn default_group(&self) -> element::Group {
         self.default_group_w_classes(&[CORONAL_COMPONENT_CLASS])
@@ -605,13 +605,13 @@ impl CommonComponent for VertebralPoints {
     }
 }
 
-// draw types
+// annotation draw types
 const CLASS_ANNOTATION: &str = "Annotation";
 const CLASS_POINT: &str = "Point";
 const CLASS_POLYGON: &str = "Polygon";
 const CLASS_LINE: &str = "Line";
 const CLASS_TEXT: &str = "Text";
-
+// measure draw types
 const CLASS_MEASURE: &str = "Measure";
 const CLASS_ANGLE: &str = "Angle";
 const CLASS_DISTANCE: &str = "Distance";
@@ -664,7 +664,7 @@ impl<'a> CoronalComponent for CobbAngles<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         let spine = &coronal_points.spine;
         let curve_set = self.0;
         debug!("Curve set:{:?}", curve_set);
@@ -717,7 +717,7 @@ impl<'a> CoronalComponent for CobbAngles<'a> {
             );
             g_angles = g_angles.add(group);
         }
-        Some(g_angles)
+        Ok(g_angles)
     }
 }
 
@@ -739,7 +739,7 @@ impl<'a> CoronalComponent for CurveApex<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         let apex_set = &self.0;
         let vert_discs = coronal_points.spine.tl_vert_disc_corners().0;
 
@@ -759,7 +759,7 @@ impl<'a> CoronalComponent for CurveApex<'a> {
                 .set("stroke", line_colors.get_or_new(label));
             g = g.add(polygon);
         }
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -811,7 +811,7 @@ impl<'a> CoronalComponent for Csvl<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         let spine = &coronal_points.spine;
         let label = self.name();
         let line_color = line_colors.get_or_new(label);
@@ -829,7 +829,7 @@ impl<'a> CoronalComponent for Csvl<'a> {
             vl[[0, 1]] = y;
             g = g.add(painter.line(vl));
         }
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -843,7 +843,7 @@ impl CoronalComponent for T1TiltAngle {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         let spine = &coronal_points.spine;
         let label = self.name();
         let mut g = element::Group::new().set("class", label);
@@ -882,7 +882,7 @@ impl CoronalComponent for T1TiltAngle {
                     .0;
             }
         };
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -895,7 +895,7 @@ impl CoronalComponent for CoronalBalance {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         let spine = &coronal_points.spine;
         let label = self.name();
         let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
@@ -908,7 +908,7 @@ impl CoronalComponent for CoronalBalance {
             .set("fill", color)
             .set("stroke", color);
         let g = difference_in_x(g, label, points.view(), painter);
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -921,17 +921,23 @@ impl CoronalComponent for ClavicleAngle {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
-        coronal_points.clavicle.as_ref()?;
+    ) -> Result<element::Group, MeasureError> {
+        if coronal_points.clavicle.0.len_of(Axis(0)) != 2 {
+            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                2,
+                coronal_points.clavicle.0.len_of(Axis(0)),
+            )
+            .into());
+        }
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let clavicle = coronal_points.clavicle.as_ref().unwrap();
+        let clavicle = &coronal_points.clavicle.0;
         g = add_tilt_angle(g, painter, clavicle, Some(label));
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -976,11 +982,15 @@ fn difference_in_x(
 
 fn difference_in_y(
     label: &str,
-    points: &Option<Array2<f32>>,
+    points: ArrayView2<f32>,
     painter: &Painter,
     line_colors: &mut ColorPalette,
-) -> Option<element::Group> {
-    let points = points.as_ref()?;
+) -> Result<element::Group, MeasureError> {
+    if points.len_of(Axis(0)) != 2 {
+        return Err(
+            InvalidNumberOfPoints::IncorrectNumberOfPoints(2, points.len_of(Axis(0))).into(),
+        );
+    }
     let color = line_colors.get_or_new(label);
     let mut g = element::Group::new()
         .set("class", label)
@@ -991,7 +1001,7 @@ fn difference_in_y(
     }
     g = g.add(painter.horizontal_line(points[[0, 1]]));
     g = g.add(painter.horizontal_line(points[[1, 1]]));
-    let mut vline = points.clone();
+    let mut vline = points.to_owned();
     vline[[1, 0]] = vline[[0, 0]];
     g = g.add(painter.line(vline.view()));
     let text_pos = vline.mean_axis(Axis(0)).unwrap();
@@ -1003,7 +1013,7 @@ fn difference_in_y(
     let text = painter.text(&text, text_pos, Some(label));
 
     g = g.add(text);
-    Some(g)
+    Ok(g)
 }
 
 struct ShoulderHeight;
@@ -1015,8 +1025,13 @@ impl CoronalComponent for ShoulderHeight {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
-        difference_in_y(self.name(), &coronal_points.shoulder, painter, line_colors)
+    ) -> Result<element::Group, MeasureError> {
+        difference_in_y(
+            self.name(),
+            coronal_points.shoulder.0.view(),
+            painter,
+            line_colors,
+        )
     }
 }
 
@@ -1059,17 +1074,23 @@ impl CoronalComponent for PelvicObliquity {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
-        coronal_points.pelvis.as_ref()?;
+    ) -> Result<element::Group, MeasureError> {
+        if coronal_points.pelvis.0.len_of(Axis(0)) != 2 {
+            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                2,
+                coronal_points.pelvis.0.len_of(Axis(0)),
+            )
+            .into());
+        }
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let pelvis = coronal_points.pelvis.as_ref().unwrap();
+        let pelvis = &coronal_points.pelvis.0;
         g = add_tilt_angle(g, painter, pelvis, Some(label));
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -1082,15 +1103,21 @@ impl CoronalComponent for SacralObliquity {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
-        coronal_points.femoral_head.as_ref()?;
+    ) -> Result<element::Group, MeasureError> {
+        if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
+            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                2,
+                coronal_points.femoral_head.0.len_of(Axis(0)),
+            )
+            .into());
+        }
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = element::Group::new()
             .set("class", label)
             .set("fill", color)
             .set("stroke", color);
-        let femoral_head = coronal_points.femoral_head.as_ref().unwrap();
+        let femoral_head = &coronal_points.femoral_head.0;
         for c in femoral_head.axis_iter(Axis(0)) {
             g = g.add(painter.point(c));
         }
@@ -1117,7 +1144,7 @@ impl CoronalComponent for SacralObliquity {
                 Some(label),
             )
             .0;
-        Some(g)
+        Ok(g)
     }
 }
 
@@ -1130,10 +1157,10 @@ impl CoronalComponent for LegLengthDiscrepancy {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Option<element::Group> {
+    ) -> Result<element::Group, MeasureError> {
         difference_in_y(
             self.name(),
-            &coronal_points.femoral_head,
+            coronal_points.femoral_head.0.view(),
             painter,
             line_colors,
         )
@@ -1714,15 +1741,19 @@ pub fn draw_coronal(
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity {}),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy {}),
         };
-        if let Some(g) = spinal_measure.draw(
+
+        match spinal_measure.draw(
             &coronal_points,
             &painter,
             &mut label_colors,
             &mut line_colors,
         ) {
-            document = document.add(g);
-        } else {
-            warn!("Failed to draw {}", spinal_measure.name());
+            Ok(g) => {
+                // TODO: set dynamic visibility
+                let g = g.set("visibility", "visible");
+                document = document.add(g);
+            }
+            Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
         }
     }
 

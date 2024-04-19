@@ -178,10 +178,10 @@ pub struct Spine {
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
-    pub clavicle: Option<Array2<f32>>,
-    pub shoulder: Option<Array2<f32>>,
-    pub pelvis: Option<Array2<f32>>,
-    pub femoral_head: Option<Array2<f32>>,
+    pub clavicle: AtMost2<Array2<f32>>,
+    pub shoulder: AtMost2<Array2<f32>>,
+    pub pelvis: AtMost2<Array2<f32>>,
+    pub femoral_head: AtMost2<Array2<f32>>,
 }
 
 #[derive(Debug, Clone)]
@@ -635,24 +635,27 @@ impl TryFrom<&LabelMeData> for Spine {
     }
 }
 
+fn _new_at_most2(data: &LabelMeData, label: &str) -> Result<AtMost2<Array2<f32>>, ScolError> {
+    let points = extract_points(data, label)?;
+    if points.len_of(Axis(0)) > 2 {
+        return Err(ScolError::InvalidPointCount(
+            label.to_string(),
+            points.len_of(Axis(0)),
+        ));
+    }
+    Ok(AtMost2(points))
+}
+
 impl TryFrom<&LabelMeData> for CoronalPoints {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let spine = Spine::try_from(data)?;
-        // TODO: leave length validation to the caller
-        let clavicle = extract_points(data, "Clavicle")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        let shoulder = extract_points(data, "Shoulder")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        let pelvis = extract_points(data, "Pelvis")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
-        let femoral_head = extract_points(data, "FemoralHead")?
-            .validate_exact_length(Axis(0), 2)
-            .map(|e| e.left_first());
+        // TODO: accept invalid number of points and let later functions handle it
+        let clavicle = _new_at_most2(data, "Clavicle")?;
+        let shoulder = _new_at_most2(data, "Shoulder")?;
+        let pelvis = _new_at_most2(data, "Pelvis")?;
+        let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
         Ok(CoronalPoints {
             spine,
@@ -669,14 +672,7 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let spine = Spine::try_from(data)?;
-        let femoral_head = extract_points(data, "FemoralHead")?.left_first();
-        if femoral_head.len_of(Axis(0)) > 2 {
-            return Err(ScolError::InvalidPointCount(
-                "FemoralHead".to_string(),
-                femoral_head.len(),
-            ));
-        }
-        let femoral_head = AtMost2(femoral_head);
+        let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
         Ok(SagittalPoints {
             spine,

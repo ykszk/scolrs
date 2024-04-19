@@ -350,9 +350,9 @@ fn test_lenke_case4() -> Result<()> {
         .try_into()?;
     let coronal_points = scolrs::CoronalPoints::try_from(&data)?;
 
-    assert_eq!(coronal_points.clavicle.ref_unwrap().len_of(Axis(0)), 2);
-    assert_eq!(coronal_points.shoulder.ref_unwrap().len_of(Axis(0)), 2);
-    assert_eq!(coronal_points.femoral_head.ref_unwrap().len_of(Axis(0)), 2);
+    assert_eq!(coronal_points.clavicle.0.len_of(Axis(0)), 2);
+    assert_eq!(coronal_points.shoulder.0.len_of(Axis(0)), 2);
+    assert_eq!(coronal_points.femoral_head.0.len_of(Axis(0)), 2);
 
     let data: LabelMeData = data_directory()
         .join("case4/lateral.json")
