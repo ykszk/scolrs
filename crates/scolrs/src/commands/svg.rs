@@ -1,6 +1,5 @@
 use crate::cli::{Plane, SvgArgs};
 use anyhow::{Context, Result};
-use clap::ValueEnum;
 use labelme_rs::{image::GenericImageView, serde_json, LabelMeDataWImage};
 use log::debug;
 use scolrs::{
