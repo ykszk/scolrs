@@ -1695,6 +1695,8 @@ pub fn draw_sagittal(
 pub fn draw_coronal(
     data: LabelMeDataWImage,
     coronal_points: CoronalPoints,
+    measures: Vec<CoronalMeasure>,
+    hide: Vec<CoronalMeasure>,
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
@@ -1727,7 +1729,6 @@ pub fn draw_coronal(
         let (cs, apexes, _major_curve) = spine.identify_curves();
         (cs, apexes)
     });
-    let measures = CoronalMeasure::all();
     for measure in measures {
         let spinal_measure: Box<dyn CoronalComponent> = match measure {
             CoronalMeasure::CobbAngles => Box::new(CobbAngles(&curve_set)),
@@ -1749,9 +1750,13 @@ pub fn draw_coronal(
             &mut line_colors,
         ) {
             Ok(g) => {
-                // TODO: set dynamic visibility
-                let g = g.set("visibility", "visible");
-                document = document.add(g);
+                let visibility = if hide.contains(&measure) {
+                    "hidden"
+                } else {
+                    "visible"
+                };
+                let g = g.set("visibility", visibility);
+                document = document.add(g)
             }
             Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
         }

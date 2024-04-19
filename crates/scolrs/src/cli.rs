@@ -23,7 +23,9 @@ pub enum Command {
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
 pub enum Plane {
+    /// AP, PA and frontal view
     Coronal,
+    /// Lateral view
     Sagittal,
 }
 
@@ -56,12 +58,15 @@ pub struct SvgArgs {
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
-    /// Measurements to draw. By default, all measurements are drawn
+    /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements
     #[clap(long)]
-    pub measures: Vec<SagittalMeasure>,
-    /// Hide measurements
+    pub measures: Vec<String>,
+    /// Hide measurements. Use `--list` to see all measurements
     #[clap(long)]
-    pub hide: Vec<SagittalMeasure>,
+    pub hide: Vec<String>,
+    /// List all measurements
+    #[clap(long)]
+    pub list: bool,
 }
 
 #[derive(Parser, Debug)]

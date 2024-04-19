@@ -1,12 +1,25 @@
 use crate::cli::{Plane, SvgArgs};
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
+use clap::ValueEnum;
+use labelme_rs::{image::GenericImageView, serde_json, LabelMeDataWImage};
 use log::debug;
 use scolrs::{
-    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawParam, SagittalMeasure, ScolDesc,
+    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, CoronalMeasure, DrawParam,
+    SagittalMeasure, ScolDesc,
 };
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
+    if args.list {
+        match args.direction {
+            Plane::Coronal => {
+                println!("{}", serde_json::to_string_pretty(&CoronalMeasure::all())?);
+            }
+            Plane::Sagittal => {
+                println!("{}", serde_json::to_string_pretty(&SagittalMeasure::all())?);
+            }
+        }
+        return Ok(());
+    }
     let draw_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
@@ -69,9 +82,25 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             } else {
                 None
             };
+            let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
+                CoronalMeasure::all()
+            } else {
+                let v = to_measure(&args.measures);
+                match v {
+                    Ok(v) => v,
+                    Err(e) => return Err(anyhow::anyhow!(e)),
+                }
+            };
+            let hide = to_measure(&args.hide);
+            let hide = match hide {
+                Ok(v) => v,
+                Err(e) => return Err(anyhow::anyhow!(e)),
+            };
             draw_coronal(
                 data,
                 coronal_points,
+                measures,
+                hide,
                 draw_param,
                 svg_size,
                 palettes,
@@ -83,13 +112,22 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
                 SagittalMeasure::all()
             } else {
-                args.measures
+                let v = to_measure(&args.measures);
+                match v {
+                    Ok(v) => v,
+                    Err(e) => return Err(anyhow::anyhow!(e)),
+                }
+            };
+            let hide = to_measure(&args.hide);
+            let hide = match hide {
+                Ok(v) => v,
+                Err(e) => return Err(anyhow::anyhow!(e)),
             };
             draw_sagittal(
                 data,
                 sagittal_points,
                 measures,
-                args.hide,
+                hide,
                 draw_param,
                 svg_size,
                 palettes,
@@ -101,4 +139,11 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     std::fs::write(args.output, document.to_string())?;
     Ok(())
+}
+
+fn to_measure<T: ValueEnum>(measures: &[String]) -> Result<Vec<T>, String> {
+    measures
+        .iter()
+        .map(|m| ValueEnum::from_str(m, false))
+        .collect()
 }

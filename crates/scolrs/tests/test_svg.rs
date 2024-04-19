@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use scolrs::{
-    draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalPoints, CurveSet,
-    DrawParam, SagittalMeasure, SagittalPoints, Spine,
+    draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalMeasure,
+    CoronalPoints, CurveSet, DrawParam, SagittalMeasure, SagittalPoints, Spine,
 };
 use std::path::{Path, PathBuf};
 use svg::Document;
@@ -50,11 +50,15 @@ fn _test_svg(
         label_colors,
         line_colors,
     };
+    let measures = CoronalMeasure::all();
+    let hide = Vec::new();
     let document = if coronal {
         let coronal_points = CoronalPoints::try_from(&data.data)?;
         draw_coronal(
             data,
             coronal_points,
+            measures,
+            hide,
             draw_param,
             svg_size,
             palettes,
