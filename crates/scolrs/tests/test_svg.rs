@@ -60,10 +60,12 @@ fn _test_svg(
     } else {
         let sagittal_points = SagittalPoints::try_from(&data.data)?;
         let measures = SagittalMeasure::all();
+        let hide = Vec::new();
         draw_sagittal(
             data,
             sagittal_points,
             measures,
+            hide,
             draw_param,
             svg_size,
             label_colors,

@@ -494,8 +494,18 @@ pub enum MeasureError {
 
 pub trait Named {
     fn name(&self) -> &'static str;
+    fn draw_type(&self) -> &[&'static str];
+    fn ided_group(&self) -> element::Group {
+        element::Group::new().set("id", self.name())
+    }
+    fn default_group_w_classes(&self, classes: &[&str]) -> element::Group {
+        let mut classes = Vec::from(classes);
+        classes.extend_from_slice(self.draw_type());
+        self.ided_group().set("class", classes)
+    }
 }
 
+const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: Named {
     fn draw(
         &self,
@@ -504,6 +514,15 @@ pub trait CommonComponent: Named {
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> element::Group;
+    fn default_group(&self) -> element::Group {
+        self.default_group_w_classes(&[COMMON_COMPONENT_CLASS])
+    }
+    // Create a group with extra classes
+    // fn group_with_extra_class(&self, extra_classes: &[&str]) -> element::Group {
+    //     let mut classes = vec![COMMON_COMPONENT_CLASS];
+    //     classes.extend_from_slice(extra_classes);
+    //     self.ided_group().set("class", classes.join(" "))
+    // }
 }
 
 pub trait CoronalComponent {
@@ -521,7 +540,12 @@ impl Named for VertebralLabels {
     fn name(&self) -> &'static str {
         "Centroids"
     }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &["Annotation", "Text"]
+    }
 }
+
 impl CommonComponent for VertebralLabels {
     fn draw(
         &self,
@@ -530,7 +554,7 @@ impl CommonComponent for VertebralLabels {
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> element::Group {
-        let mut g_vert_labels = element::Group::new().set("class", "VertebralLabels");
+        let mut g_vert_labels = self.default_group();
         let centroids = spine.tl_centroids();
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
@@ -547,6 +571,10 @@ impl Named for VertebralPoints {
     fn name(&self) -> &'static str {
         "VertebralPoints"
     }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &["Annotation", "Point"]
+    }
 }
 impl CommonComponent for VertebralPoints {
     fn draw(
@@ -559,10 +587,7 @@ impl CommonComponent for VertebralPoints {
         let mut g_corners = element::Group::new();
         for (i_label, &label) in crate::CORNER_LABELS.iter().enumerate() {
             let color = label_colors.get_or_new(label);
-            let mut sub_group = element::Group::new()
-                .set("class", format!("{ID_POINTS} {label}"))
-                .set("stroke", color)
-                .set("fill", color);
+            let mut sub_group = self.default_group().set("stroke", color).set("fill", color);
             let points = spine.c7tls.0.index_axis(Axis(1), i_label);
             let n_points = if i_label < 2 {
                 points.len_of(Axis(0))
@@ -579,7 +604,6 @@ impl CommonComponent for VertebralPoints {
     }
 }
 
-const ID_POINTS: &str = "Points";
 const ID_CENTROID: &str = "Centroid";
 const ID_COB_ANGLES: &str = "CobbAngles";
 const ID_CURVE_APEX: &str = "CurveApex";
@@ -614,6 +638,10 @@ impl Named for Centroids {
     fn name(&self) -> &'static str {
         "Centroids"
     }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &["Annotation", "Point"]
+    }
 }
 impl CommonComponent for Centroids {
     fn draw(
@@ -625,10 +653,7 @@ impl CommonComponent for Centroids {
     ) -> element::Group {
         let label = ID_CENTROID;
         let color = label_colors.get_or_new(label);
-        let mut g_centroids = element::Group::new()
-            .set("class", label)
-            .set("stroke", color)
-            .set("fill", color);
+        let mut g_centroids = self.default_group().set("stroke", color).set("fill", color);
         let centroids = spine.tl_centroids();
         for point in centroids.axis_iter(Axis(0)) {
             let p = painter.point(point);
@@ -743,10 +768,15 @@ impl<'a> CoronalComponent for CurveApex<'a> {
     }
 }
 
+/// Spinal center line
 struct SpinalLine;
 impl Named for SpinalLine {
     fn name(&self) -> &'static str {
         "SpinalLine"
+    }
+
+    fn draw_type(&self) -> &[&'static str] {
+        &["Annotation", "Line"]
     }
 }
 impl CommonComponent for SpinalLine {
@@ -874,7 +904,12 @@ impl CoronalComponent for CoronalBalance {
         let sac_sup = spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
         let points = stack![Axis(0), c_c7, mid_sac];
-        let g = difference_in_x(label, points.view(), painter, line_colors);
+        let color = line_colors.get_or_new(label);
+        let g = element::Group::new()
+            .set("class", label)
+            .set("fill", color)
+            .set("stroke", color);
+        let g = difference_in_x(g, label, points.view(), painter);
         Some(g)
     }
 }
@@ -902,16 +937,12 @@ impl CoronalComponent for ClavicleAngle {
 }
 
 fn difference_in_x(
+    group: element::Group,
     label: &str,
     points: ArrayView2<f32>,
     painter: &Painter,
-    line_colors: &mut ColorPalette,
 ) -> element::Group {
-    let color = line_colors.get_or_new(label);
-    let mut g = element::Group::new()
-        .set("class", label)
-        .set("fill", color)
-        .set("stroke", color);
+    let mut g = group;
     for c in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(c));
     }
@@ -1112,18 +1143,14 @@ impl CoronalComponent for LegLengthDiscrepancy {
 }
 
 fn draw_incidence_angle(
+    group: element::Group,
     label: &str,
     femoral_heads: Array2<f32>,
     plate: Array2<f32>,
     painter: &Painter,
-    line_colors: &mut ColorPalette,
 ) -> element::Group {
+    let mut g = group;
     let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
-    let color = line_colors.get_or_new(label);
-    let mut g = element::Group::new()
-        .set("class", label)
-        .set("fill", color)
-        .set("stroke", color);
     for p in femoral_heads.axis_iter(Axis(0)) {
         g = g.add(painter.point(p));
     }
@@ -1152,6 +1179,7 @@ fn draw_incidence_angle(
     g
 }
 
+const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
 trait SagittalComponent: Named {
     fn draw(
         &self,
@@ -1160,6 +1188,10 @@ trait SagittalComponent: Named {
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError>;
+
+    fn default_group(&self) -> element::Group {
+        self.default_group_w_classes(&[SAGITTAL_COMPONENT_CLASS])
+    }
 
     fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError>;
 }
@@ -1184,8 +1216,8 @@ macro_rules! _impl_kyophosis {
                     sup: Self::SUP,
                     inf: Self::INF,
                 };
-                let group = element::Group::new()
-                    .set("class", label)
+                let group = self
+                    .default_group()
                     .set("stroke", line_colors.get_or_new(label));
                 let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
                 let g = painter.cobb(
@@ -1224,6 +1256,9 @@ macro_rules! impl_kyphosis {
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
+            fn draw_type(&self) -> &[&'static str] {
+                &["Measure", "Angle"]
+            }
         }
 
         impl $name {
@@ -1239,6 +1274,9 @@ macro_rules! impl_kyphosis {
         impl Named for $name {
             fn name(&self) -> &'static str {
                 $disp_name
+            }
+            fn draw_type(&self) -> &[&'static str] {
+                &["Measure", "Angle"]
             }
         }
 
@@ -1292,6 +1330,9 @@ impl Named for LumbarLordosis {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Angle"]
+    }
 }
 impl SagittalComponent for LumbarLordosis {
     fn draw(
@@ -1303,8 +1344,8 @@ impl SagittalComponent for LumbarLordosis {
     ) -> Result<element::Group, MeasureError> {
         let aux_param = CobbAux::default();
         let label = self.name();
-        let group = element::Group::new()
-            .set("class", label)
+        let group = self
+            .default_group()
             .set("stroke", line_colors.get_or_new(label));
         let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
         let (sup, inf) = Self::prep(sagittal_points);
@@ -1340,6 +1381,9 @@ impl Named for SagittalBalance {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Distance"]
+    }
 }
 impl SagittalComponent for SagittalBalance {
     fn draw(
@@ -1350,7 +1394,11 @@ impl SagittalComponent for SagittalBalance {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let points = Self::prep(sagittal_points);
-        let g = difference_in_x(Self::NAME, points.view(), painter, line_colors);
+        let color = line_colors.get_or_new(Self::NAME);
+        let g = element::Group::new()
+            .set("stroke", color)
+            .set("fill", color);
+        let g = difference_in_x(g, Self::NAME, points.view(), painter);
         Ok(g)
     }
 
@@ -1381,6 +1429,9 @@ impl Named for LumbosacralAngle {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Angle"]
+    }
 }
 impl SagittalComponent for LumbosacralAngle {
     fn draw(
@@ -1392,8 +1443,8 @@ impl SagittalComponent for LumbosacralAngle {
     ) -> Result<element::Group, MeasureError> {
         let label = Self::NAME;
         let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO:
-        let group = element::Group::new()
-            .set("class", label)
+        let group = self
+            .default_group()
             .set("stroke", line_colors.get_or_new(label));
         let (sup, inf) = Self::prep(sagittal_points);
         let aux_param = CobbAux::default();
@@ -1417,6 +1468,9 @@ impl Named for PelvicIncidence {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Angle"]
+    }
 }
 impl SagittalComponent for PelvicIncidence {
     fn draw(
@@ -1433,13 +1487,14 @@ impl SagittalComponent for PelvicIncidence {
         }
         let label = Self::NAME;
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
-
+        let color = line_colors.get_or_new(label);
+        let g = self.default_group().set("fill", color).set("stroke", color);
         let g = draw_incidence_angle(
+            g,
             label,
             sagittal_points.femoral_head.0.to_owned(),
             sac_sup.to_owned(),
             painter,
-            line_colors,
         );
         Ok(g)
     }
@@ -1457,6 +1512,9 @@ impl L5IncidenceAngle {
 impl Named for L5IncidenceAngle {
     fn name(&self) -> &'static str {
         Self::NAME
+    }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Angle"]
     }
 }
 impl SagittalComponent for L5IncidenceAngle {
@@ -1477,12 +1535,14 @@ impl SagittalComponent for L5IncidenceAngle {
             .spine
             .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2)
             .to_owned();
+        let color = line_colors.get_or_new(label);
+        let g = self.default_group().set("fill", color).set("stroke", color);
         let g = draw_incidence_angle(
+            g,
             label,
             sagittal_points.femoral_head.0.to_owned(),
             l5_sup.to_owned(),
             painter,
-            line_colors,
         );
         Ok(g)
     }
@@ -1503,6 +1563,9 @@ impl Named for PelvicRadiusAngle {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+    fn draw_type(&self) -> &[&'static str] {
+        &["Measure", "Angle"]
+    }
 }
 impl SagittalComponent for PelvicRadiusAngle {
     fn draw(
@@ -1521,10 +1584,7 @@ impl SagittalComponent for PelvicRadiusAngle {
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let label = Self::NAME;
         let color = line_colors.get_or_new(label);
-        let mut g = element::Group::new()
-            .set("class", label)
-            .set("fill", color)
-            .set("stroke", color);
+        let mut g = self.default_group().set("fill", color).set("stroke", color);
         for p in sagittal_points.femoral_head.0.axis_iter(Axis(0)) {
             g = g.add(painter.point(p));
         }
