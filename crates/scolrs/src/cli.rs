@@ -72,8 +72,6 @@ pub struct MeasureArgs {
     /// Use specified curves instaed of calculating from the points
     #[clap(long)]
     pub curve_set: Option<PathBuf>,
-    #[clap(long)]
-    pub line_colors: Option<PathBuf>,
     /// Scan direction
     #[clap(short, long, default_value = "coronal")]
     pub direction: Plane,
