@@ -4,7 +4,7 @@ use crate::{
 };
 use labelme_rs::LabelMeDataWImage;
 use log::{debug, warn};
-use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array1, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use std::collections::HashMap;
 use std::io::Read;
@@ -466,13 +466,13 @@ impl ColorPalette {
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidNumberOfPoints {
-    // Too few points, expected and actual
+    /// Too few points, expected and actual
     #[error("Too few points, expected: {0}, actual: {1}")]
     TooFewPoints(usize, usize),
-    // Too many points, expected and actual
+    /// Too many points, expected and actual
     #[error("Too many points, expected: {0}, actual: {1}")]
     TooManyPoints(usize, usize),
-    // Incorrect number of points, expected and actual
+    /// Incorrect number of points, expected and actual
     #[error("Incorrect number of points, expected: {0}, actual: {1}")]
     IncorrectNumberOfPoints(usize, usize),
 }
@@ -482,10 +482,6 @@ pub enum MeasureError {
     // Invalid number of points
     #[error("Invalid number of points")]
     InvalidNumberOfPoints(#[from] InvalidNumberOfPoints),
-
-    // Too few points
-    #[error("Too few points: {0} at least required")]
-    TooFewPoints(usize),
 
     // Zero length line
     #[error("Zero length line")]
@@ -1482,7 +1478,7 @@ impl SagittalComponent for PelvicIncidence {
     ) -> Result<element::Group, MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
             return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(0, 2),
+                InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
         let label = Self::NAME;
@@ -1527,7 +1523,7 @@ impl SagittalComponent for L5IncidenceAngle {
     ) -> Result<element::Group, MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
             return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(0, 2),
+                InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
         let label = Self::NAME;
@@ -1558,6 +1554,20 @@ impl SagittalComponent for L5IncidenceAngle {
 struct PelvicRadiusAngle;
 impl PelvicRadiusAngle {
     const NAME: &'static str = "PelvicRadiusAngle";
+    fn prep(
+        sagittal_points: &SagittalPoints,
+    ) -> Result<(Array2<f32>, Array1<f32>, Array2<f32>), MeasureError> {
+        if sagittal_points.femoral_head.0.is_empty() {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                InvalidNumberOfPoints::TooFewPoints(1, 0),
+            ));
+        }
+        let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        let post_sac = sac_sup.index_axis(Axis(0), 1);
+        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
+        Ok((sac_sup.to_owned(), post_sac.to_owned(), line_fem2post_sac))
+    }
 }
 impl Named for PelvicRadiusAngle {
     fn name(&self) -> &'static str {
@@ -1577,11 +1587,11 @@ impl SagittalComponent for PelvicRadiusAngle {
     ) -> Result<element::Group, MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
             return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(0, 2),
+                InvalidNumberOfPoints::TooFewPoints(1, 0),
             ));
         }
+        let (sac_sup, post_sac, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let label = Self::NAME;
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1593,8 +1603,6 @@ impl SagittalComponent for PelvicRadiusAngle {
             g = g.add(painter.line(sagittal_points.femoral_head.0.view()));
         }
         g = g.add(painter.line(sac_sup.view()));
-        let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
         g = g.add(painter.line(line_fem2post_sac.view()));
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
         let text = format!("{:.1}°", angle);
@@ -1604,10 +1612,7 @@ impl SagittalComponent for PelvicRadiusAngle {
     }
 
     fn measure(&self, sagittal_points: &SagittalPoints) -> Result<f32, MeasureError> {
-        let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
+        let (sac_sup, _, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
         Ok(angle)
     }
@@ -1619,7 +1624,7 @@ fn femoral_incidence_angle(
 ) -> Result<f32, MeasureError> {
     if femoral_head.0.is_empty() {
         return Err(MeasureError::InvalidNumberOfPoints(
-            InvalidNumberOfPoints::TooFewPoints(0, 2),
+            InvalidNumberOfPoints::TooFewPoints(1, 0),
         ));
     }
     let mid_femoral_heads = femoral_head.0.mean_axis(Axis(0)).unwrap();
