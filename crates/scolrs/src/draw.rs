@@ -489,6 +489,10 @@ pub enum MeasureError {
     #[error("Zero length line")]
     ZeroLengthLine,
 
+    // Unable to measure
+    #[error("Unable to measure: {0}")]
+    UnableToMeasure(String),
+
     // No measurement is defined
     #[error("No measurement is defined")]
     NoMeasurementDefined,
@@ -656,83 +660,61 @@ fn mean_plate_length(scol: &Spine) -> f32 {
     diff.map_axis(Axis(1), |a| a.l2norm()).mean().unwrap()
 }
 
-struct CobbAngles<'a>(&'a CurveSet);
-impl Named for CobbAngles<'_> {
-    fn name(&self) -> &'static str {
-        "CobbAngles"
-    }
+macro_rules! impl_cobb_angle {
+    ($name:ident) => {
+        impl CoronalComponent for $name {
+            fn draw(
+                &self,
+                coronal_points: &CoronalPoints,
+                painter: &Painter,
+                _label_colors: &mut ColorPalette,
+                line_colors: &mut ColorPalette,
+            ) -> Result<element::Group, MeasureError> {
+                if self.0.is_none() {
+                    return Err(MeasureError::UnableToMeasure(format!(
+                        "No {} curve found",
+                        self.name()
+                    )));
+                }
+                let (curve, _angle) = self.0.as_ref().unwrap();
+                let color = line_colors.get_or_new(self.name());
+                let g = self.default_group().set("stroke", color);
+                let aux_param = CobbAux::default();
+                let mean_plate_length = mean_plate_length(&coronal_points.spine);
 
-    fn draw_type(&self) -> &[&'static str] {
-        &[CLASS_MEASURE, CLASS_ANGLE]
-    }
-}
-impl<'a> CoronalComponent for CobbAngles<'a> {
-    fn draw(
-        &self,
-        coronal_points: &CoronalPoints,
-        painter: &Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
-        let spine = &coronal_points.spine;
-        let curve_set = self.0;
-        debug!("Curve set:{:?}", curve_set);
-        let mut g_angles = element::Group::new().set("class", "CobbAngles");
-        let aux_param = CobbAux::default();
+                let group = painter.cobb(
+                    g,
+                    &coronal_points.spine,
+                    curve,
+                    &aux_param,
+                    mean_plate_length,
+                    Some(self.name()),
+                );
+                Ok(group)
+            }
 
-        let mean_plate_length = mean_plate_length(spine);
-
-        if let Some((mt_curve, _angle)) = &curve_set.mt {
-            let g_mt = element::Group::new()
-                .set("class", "MT")
-                .set("stroke", line_colors.get_or_new("MT"));
-            let group = painter.cobb(
-                g_mt,
-                spine,
-                mt_curve,
-                &aux_param,
-                mean_plate_length,
-                Some("MT"),
-            );
-            g_angles = g_angles.add(group);
-        };
-
-        if let Some((pt_curve, _angle)) = &curve_set.pt {
-            let g_pt = element::Group::new()
-                .set("class", "PT")
-                .set("stroke", line_colors.get_or_new("PT"));
-            let group = painter.cobb(
-                g_pt,
-                spine,
-                pt_curve,
-                &aux_param,
-                mean_plate_length,
-                Some("PT"),
-            );
-            g_angles = g_angles.add(group);
+            fn measure(&self, _10coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+                if let Some((_curve, angle)) = self.0.as_ref() {
+                    Ok(*angle)
+                } else {
+                    Err(MeasureError::NoMeasurementDefined)
+                }
+            }
         }
-
-        if let Some((tll_curve, _angle)) = &curve_set.tll {
-            let g_tll = element::Group::new()
-                .set("class", "TLL")
-                .set("stroke", line_colors.get_or_new("TLL"));
-            let group = painter.cobb(
-                g_tll,
-                spine,
-                tll_curve,
-                &aux_param,
-                mean_plate_length,
-                Some("TLL"),
-            );
-            g_angles = g_angles.add(group);
-        }
-        Ok(g_angles)
-    }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        todo!()
-    }
+    };
 }
+
+struct CobbPT(Option<(Curve, f32)>);
+impl_named_for!(CobbPT, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl_cobb_angle!(CobbPT);
+
+struct CobbMT(Option<(Curve, f32)>);
+impl_named_for!(CobbMT, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl_cobb_angle!(CobbMT);
+
+struct CobbTLL(Option<(Curve, f32)>);
+impl_named_for!(CobbTLL, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl_cobb_angle!(CobbTLL);
 
 struct CurveApex<'a>(&'a ApexSet);
 // impl_named_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
@@ -1068,12 +1050,19 @@ impl CoronalComponent for ShoulderHeight {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let color = line_colors.get_or_new(self.name());
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
+        let g = self.default_group().set("fill", color).set("stroke", color);
 
         draw_difference_in_y(self.name(), g, coronal_points.shoulder.0.view(), painter)
     }
 
     fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+        if coronal_points.shoulder.0.len_of(Axis(0)) != 2 {
+            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                2,
+                coronal_points.shoulder.0.len_of(Axis(0)),
+            )
+            .into());
+        }
         let points = coronal_points.shoulder.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)
@@ -1228,6 +1217,13 @@ impl CoronalComponent for LegLengthDiscrepancy {
     }
 
     fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+        if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
+            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                2,
+                coronal_points.femoral_head.0.len_of(Axis(0)),
+            )
+            .into());
+        }
         let points = coronal_points.femoral_head.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)
@@ -1705,7 +1701,10 @@ impl<'a> From<(CoronalMeasure, &'a CurveSet, &'a ApexSet)> for Box<dyn CoronalCo
     fn from(value: (CoronalMeasure, &'a CurveSet, &'a ApexSet)) -> Self {
         let (measure, curve_set, apex_set) = value;
         match measure {
-            CoronalMeasure::CobbAngles => Box::new(CobbAngles(curve_set)),
+            CoronalMeasure::CobbPT => Box::new(CobbPT(curve_set.pt.clone())),
+            CoronalMeasure::CobbMT => Box::new(CobbMT(curve_set.mt.clone())),
+            CoronalMeasure::CobbTLL => Box::new(CobbTLL(curve_set.tll.clone())),
+
             CoronalMeasure::CurveApex => Box::new(CurveApex(apex_set)),
             CoronalMeasure::CSVL => Box::new(Csvl(apex_set)),
             CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle {}),

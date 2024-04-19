@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
-use scolrs::SagittalMeasure;
 use std::path::PathBuf;
 
 #[derive(Parser)]

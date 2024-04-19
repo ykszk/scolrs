@@ -229,7 +229,7 @@ impl Display for Curve {
 
 /// Set of PT, MT, and TLL curves
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub struct CurveSet {
     pub pt: Option<(Curve, f32)>,
     pub mt: Option<(Curve, f32)>,
@@ -260,7 +260,7 @@ impl CurveSet {
 
 /// Set of PT, MT, and TLL apices
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub struct ApexSet {
     pub pt: Option<VertebraDiscIndex>,
     pub mt: Option<VertebraDiscIndex>,
@@ -1315,7 +1315,9 @@ impl Display for StructuralReason {
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum CoronalMeasure {
-    CobbAngles,
+    CobbPT,
+    CobbMT,
+    CobbTLL,
     CurveApex,
     CSVL,
     T1TiltAngle,
@@ -1331,7 +1333,9 @@ impl CoronalMeasure {
     pub fn all() -> Vec<Self> {
         use CoronalMeasure::*;
         vec![
-            CobbAngles,
+            CobbPT,
+            CobbMT,
+            CobbTLL,
             CurveApex,
             CSVL,
             T1TiltAngle,

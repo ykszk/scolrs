@@ -94,6 +94,18 @@ mod tests {
             direction,
             measures,
         };
+        cmd(args)?;
+
+        let input = data_dir.join(case_dir).join("frontal.json");
+        let curve_set = None;
+        let direction = Plane::Coronal;
+        let measures = Default::default();
+        let args = MeasureArgs {
+            input,
+            curve_set,
+            direction,
+            measures,
+        };
         cmd(args)
     }
 
