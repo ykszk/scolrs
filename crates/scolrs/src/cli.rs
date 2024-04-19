@@ -82,7 +82,7 @@ pub struct MeasureArgs {
     pub direction: Plane,
     /// Measurements to draw. By default, all measurements are drawn
     #[clap(long)]
-    pub measures: Vec<SagittalMeasure>,
+    pub measures: Vec<String>,
 }
 
 #[derive(Parser, Debug)]

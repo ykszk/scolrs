@@ -3,7 +3,10 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData};
 use log::{debug, warn};
-use scolrs::{SagittalComponent, SagittalMeasure};
+use scolrs::{
+    string_to_measure, CoronalComponent, CoronalMeasure, SagittalComponent, SagittalMeasure,
+    ScolDesc,
+};
 
 pub fn cmd(args: MeasureArgs) -> Result<()> {
     debug!("Loading {:?}", args.input);
@@ -14,35 +17,43 @@ pub fn cmd(args: MeasureArgs) -> Result<()> {
         .try_into()
         .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
 
-    let results = match args.direction {
+    match args.direction {
         Plane::Coronal => {
             warn!("Coronal plane is not implemented");
-            Default::default()
-            // let coronal_points = scolrs::CoronalPoints::try_from(&data)?;
-            // let curve_apex_set = if let Some(filename) = args.curve_set {
-            //     let reader = std::fs::File::open(&filename)
-            //         .with_context(|| format!("Load curve set {:?}", filename))?;
-            //     let cs: ScolDesc = labelme_rs::serde_json::from_reader(reader)?;
-            //     Some((cs.curves, cs.apices))
-            // } else {
-            //     None
-            // };
-            // draw_coronal(
-            //     data,
-            //     coronal_points,
-            //     draw_param,
-            //     svg_size,
-            //     label_colors,
-            //     line_colors,
-            //     curve_apex_set,
-            // )
+            let coronal_points = scolrs::CoronalPoints::try_from(&data)?;
+            let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
+                CoronalMeasure::all()
+            } else {
+                string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
+            };
+            let (curve_set, apex_set) = if let Some(curve_set) = args.curve_set {
+                let reader = std::fs::File::open(&curve_set)
+                    .with_context(|| format!("Load curve set {:?}", curve_set))?;
+                let cs: ScolDesc = serde_json::from_reader(reader)?;
+                (cs.curves, cs.apices)
+            } else {
+                let (cs, apexes, _major_curve) = coronal_points.spine.identify_curves();
+                (cs, apexes)
+            };
+            let mut results: IndexMap<CoronalMeasure, f32> = Default::default();
+            for measure in measures {
+                let spinal_measure: Box<dyn CoronalComponent> =
+                    (measure, &curve_set, &apex_set).into();
+                match spinal_measure.measure(&coronal_points) {
+                    Ok(m) => {
+                        results.insert(measure, m);
+                    }
+                    Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&results)?);
         }
         Plane::Sagittal => {
             let sagittal_points = scolrs::SagittalPoints::try_from(&data)?;
             let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
                 SagittalMeasure::all()
             } else {
-                args.measures
+                string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
             };
             let mut results: IndexMap<SagittalMeasure, f32> = Default::default();
             for measure in measures {
@@ -54,14 +65,9 @@ pub fn cmd(args: MeasureArgs) -> Result<()> {
                     Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.name(), err),
                 }
             }
-            results
+            println!("{}", serde_json::to_string_pretty(&results)?);
         }
     };
-
-    // serde_json::to_writer_pretty(std::io::stdout(), &results)?;
-    // println!();
-    // Use to_string so that tests can capture the output
-    println!("{}", serde_json::to_string_pretty(&results)?);
 
     Ok(())
 }
