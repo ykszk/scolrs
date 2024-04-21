@@ -57,8 +57,7 @@ fn _test_svg(
         draw_coronal(
             data,
             coronal_points,
-            draws,
-            hide,
+            (draws, hide),
             draw_param,
             svg_size,
             palettes,

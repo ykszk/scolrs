@@ -526,6 +526,20 @@ macro_rules! impl_named_for {
     };
 }
 
+macro_rules! impl_named_w_lifetime_for {
+    ($name:ident, $draw_type:expr) => {
+        impl<'a> Named for $name<'a> {
+            fn name(&self) -> &'static str {
+                stringify!($name)
+            }
+
+            fn draw_type(&self) -> &[&'static str] {
+                $draw_type
+            }
+        }
+    };
+}
+
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: Named {
     fn draw(
@@ -718,16 +732,7 @@ impl_named_for!(CobbTLL, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl_cobb_angle!(CobbTLL);
 
 struct CurveApex<'a>(&'a ApexSet);
-// impl_named_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
-impl Named for CurveApex<'_> {
-    fn name(&self) -> &'static str {
-        "CurveApex"
-    }
-
-    fn draw_type(&self) -> &[&'static str] {
-        &[CLASS_ANNOTATION, CLASS_POLYGON]
-    }
-}
+impl_named_w_lifetime_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
 impl<'a> CoronalComponent for CurveApex<'a> {
     fn draw(
         &self,
@@ -795,15 +800,7 @@ impl CommonComponent for SpinalLine {
 
 /// center sacral vertical line (CSVL)
 struct Csvl<'a>(&'a ApexSet);
-impl<'a> Named for Csvl<'a> {
-    fn name(&self) -> &'static str {
-        "CSVL"
-    }
-
-    fn draw_type(&self) -> &[&'static str] {
-        &[CLASS_ANNOTATION, CLASS_LINE]
-    }
-}
+impl_named_w_lifetime_for!(Csvl, &[CLASS_ANNOTATION, CLASS_LINE]);
 impl<'a> CoronalComponent for Csvl<'a> {
     fn draw(
         &self,
@@ -1785,8 +1782,7 @@ pub fn draw_sagittal(
 pub fn draw_coronal(
     data: LabelMeDataWImage,
     coronal_points: CoronalPoints,
-    draws: Vec<CoronalMeasure>,
-    hide: Vec<CoronalMeasure>,
+    draws_hide: (Vec<CoronalMeasure>, Vec<CoronalMeasure>),
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
@@ -1796,6 +1792,7 @@ pub fn draw_coronal(
         mut label_colors,
         mut line_colors,
     } = palettes;
+    let (draws, hide) = draws_hide;
 
     let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);

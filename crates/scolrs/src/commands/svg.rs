@@ -87,7 +87,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             } else {
                 None
             };
-            let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
+            let draws: Vec<CoronalMeasure> = if args.measures.is_empty() {
                 CoronalMeasure::all_draws()
             } else {
                 let v = string_to_measure(&args.measures);
@@ -104,8 +104,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             draw_coronal(
                 data,
                 coronal_points,
-                measures,
-                hide,
+                (draws, hide),
                 draw_param,
                 svg_size,
                 palettes,
@@ -114,7 +113,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         }
         Plane::Sagittal => {
             let sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
-            let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
+            let draws: Vec<SagittalMeasure> = if args.measures.is_empty() {
                 SagittalMeasure::all_draws()
             } else {
                 let v = string_to_measure(&args.measures);
@@ -131,7 +130,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             draw_sagittal(
                 data,
                 sagittal_points,
-                measures,
+                draws,
                 hide,
                 draw_param,
                 svg_size,
