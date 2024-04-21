@@ -83,6 +83,7 @@ mod tests {
     }
 
     fn _test_case(case_dir: &str) -> Result<()> {
+        // Just test if the command runs without errors
         let data_dir = test_data_directory();
         let input = data_dir.join(case_dir).join("lateral.json");
         let curve_set = None;
@@ -106,7 +107,36 @@ mod tests {
             direction,
             measures,
         };
-        cmd(args)
+        cmd(args)?;
+
+
+        // Test if the command fails with invalid measures
+        let input = data_dir.join(case_dir).join("lateral.json");
+        let curve_set = None;
+        let direction = Plane::Sagittal;
+        let measures = vec![
+           "CobbPT".to_string()];
+        let args = MeasureArgs {
+            input,
+            curve_set,
+            direction,
+            measures,
+        };
+        assert!(!cmd(args).is_ok());
+
+        let input = data_dir.join(case_dir).join("frontal.json");
+        let curve_set = None;
+        let direction = Plane::Coronal;
+        let measures = vec![
+           "ThoracicKyphosis".to_string()];
+        let args = MeasureArgs {
+            input,
+            curve_set,
+            direction,
+            measures,
+        };
+        assert!(!cmd(args).is_ok());
+        Ok(())
     }
 
     #[test]
