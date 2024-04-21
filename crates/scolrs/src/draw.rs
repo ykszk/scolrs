@@ -1313,7 +1313,7 @@ macro_rules! _impl_kyophosis {
                 let group = self
                     .default_group()
                     .set("stroke", line_colors.get_or_new(label));
-                let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
+                let mean_plate_length = mean_plate_length(&sagittal_points.spine);
                 let g = painter.cobb(
                     group,
                     &sagittal_points.spine,
@@ -1433,7 +1433,7 @@ impl SagittalComponent for LumbarLordosis {
         let group = self
             .default_group()
             .set("stroke", line_colors.get_or_new(label));
-        let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO: remove redundant calculation
+        let mean_plate_length = mean_plate_length(&sagittal_points.spine);
         let (sup, inf) = Self::prep(sagittal_points);
         let g = painter.cobb(
             group,
@@ -1511,7 +1511,7 @@ impl SagittalComponent for LumbosacralAngle {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let label = self.name();
-        let mean_plate_length = mean_plate_length(&sagittal_points.spine); // TODO:
+        let mean_plate_length = mean_plate_length(&sagittal_points.spine);
         let group = self
             .default_group()
             .set("stroke", line_colors.get_or_new(label));
