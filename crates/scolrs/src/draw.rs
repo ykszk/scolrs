@@ -7,6 +7,7 @@ use labelme_rs::LabelMeDataWImage;
 use log::{debug, warn};
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
@@ -466,7 +467,7 @@ impl ColorPalette {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
 pub enum InvalidNumberOfPoints {
     /// Too few points, expected and actual
     #[error("Too few points, expected: {0}, actual: {1}")]
@@ -479,7 +480,7 @@ pub enum InvalidNumberOfPoints {
     IncorrectNumberOfPoints(usize, usize),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
 pub enum MeasureError {
     // Invalid number of points
     #[error("Invalid number of points")]
@@ -865,7 +866,7 @@ impl CoronalComponent for T1TiltAngle {
             // T1 is vertical, which is highly unlikely
             debug!("T1 is vertical");
             g = g.add(painter.line(t1sup.view()));
-            g = g.add(painter.text("90°", mid, Some(label)));            
+            g = g.add(painter.text("90°", mid, Some(label)));
         } else {
             let mut arc_start = mid.to_owned();
             let arc_radius = mult_arc * l2r.l2norm();

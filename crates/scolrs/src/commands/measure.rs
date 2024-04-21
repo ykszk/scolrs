@@ -7,20 +7,22 @@ use crate::cli::{MeasureArgs, Plane};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
-use log::{debug, warn};
+use log::debug;
 use scolrs::{
-    string_to_measure, CoronalComponent, CoronalMeasure, SagittalComponent, SagittalMeasure,
-    ScolDesc,
+    string_to_measure, CoronalComponent, CoronalMeasure, MeasureError, SagittalComponent,
+    SagittalMeasure, ScolDesc,
 };
 use serde::{Deserialize, Serialize};
 
+type MeasureResult = std::result::Result<f32, MeasureError>;
+
 #[derive(Serialize, Deserialize)]
-pub struct MeasureLine<T>
+pub struct MeasureLine<V>
 where
-    T: std::hash::Hash + Eq + std::cmp::Ord,
+    V: std::hash::Hash + Eq + std::cmp::Ord,
 {
     pub filename: String,
-    pub content: IndexMap<T, f32>,
+    pub content: IndexMap<V, MeasureResult>,
 }
 
 type SagittalMeasureLine = MeasureLine<SagittalMeasure>;
@@ -81,22 +83,17 @@ fn process_json(args: MeasureArgs) -> Result<()> {
 fn measure_sagittal(
     data: &LabelMeData,
     args: &MeasureArgs,
-) -> Result<IndexMap<SagittalMeasure, f32>, anyhow::Error> {
+) -> Result<IndexMap<SagittalMeasure, MeasureResult>, anyhow::Error> {
     let sagittal_points = scolrs::SagittalPoints::try_from(data)?;
     let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
         SagittalMeasure::all()
     } else {
         string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
     };
-    let mut results: IndexMap<SagittalMeasure, f32> = Default::default();
+    let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
     for measure in measures {
         let spinal_measure: Box<dyn SagittalComponent> = measure.into();
-        match spinal_measure.measure(&sagittal_points) {
-            Ok(m) => {
-                results.insert(measure, m);
-            }
-            Err(err) => warn!("Failed to measure {}: {:?}", spinal_measure.name(), err),
-        }
+        results.insert(measure, spinal_measure.measure(&sagittal_points));
     }
     Ok(results)
 }
@@ -104,7 +101,7 @@ fn measure_sagittal(
 fn measure_coronal(
     data: &LabelMeData,
     args: &MeasureArgs,
-) -> Result<IndexMap<CoronalMeasure, f32>, anyhow::Error> {
+) -> Result<IndexMap<CoronalMeasure, MeasureResult>, anyhow::Error> {
     let coronal_points = scolrs::CoronalPoints::try_from(data)?;
     let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
         CoronalMeasure::all()
@@ -120,15 +117,10 @@ fn measure_coronal(
         let (cs, apexes, _major_curve) = coronal_points.spine.identify_curves();
         (cs, apexes)
     };
-    let mut results: IndexMap<CoronalMeasure, f32> = Default::default();
+    let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
     for measure in measures {
         let spinal_measure: Box<dyn CoronalComponent> = (measure, &curve_set, &apex_set).into();
-        match spinal_measure.measure(&coronal_points) {
-            Ok(m) => {
-                results.insert(measure, m);
-            }
-            Err(err) => warn!("Failed to measure {}: {:?}", spinal_measure.name(), err),
-        }
+        results.insert(measure, spinal_measure.measure(&coronal_points));
     }
     Ok(results)
 }
