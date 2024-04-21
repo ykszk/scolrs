@@ -78,7 +78,7 @@ fn _test_svg(
         )
     };
 
-    Ok(document)
+    Ok(document?)
 }
 
 fn test_coronal_sagittal(case: &str) -> Result<(Document, Document)> {

@@ -141,6 +141,6 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     debug!("Save to {:?}", args.output);
 
-    std::fs::write(args.output, document.to_string())?;
+    std::fs::write(args.output, document?.to_string())?;
     Ok(())
 }

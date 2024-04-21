@@ -92,8 +92,8 @@ fn measure_sagittal(
     };
     let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
     for measure in measures {
-        let spinal_measure: Box<dyn SagittalComponent> = measure.into();
-        results.insert(measure, spinal_measure.measure(&sagittal_points));
+        let spinal_measure: Box<dyn SagittalComponent> = (measure, &sagittal_points).into();
+        results.insert(measure, spinal_measure.measure());
     }
     Ok(results)
 }
