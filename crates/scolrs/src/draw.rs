@@ -856,11 +856,16 @@ impl CoronalComponent for T1TiltAngle {
         let mid = t1sup.mean_axis(Axis(0)).unwrap();
         let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
         let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
+        if l2r.l2norm() == 0.0 {
+            return Err(MeasureError::ZeroLengthLine);
+        }
         let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
         g = g.add(painter.line(sup_line.view()));
         if l2r[0] == 0.0 {
             // T1 is vertical, which is highly unlikely
-            debug!("T1 VERTICAL LINE!!!"); // TODO: implement
+            debug!("T1 is vertical");
+            g = g.add(painter.line(t1sup.view()));
+            g = g.add(painter.text("90°", mid, Some(label)));            
         } else {
             let mut arc_start = mid.to_owned();
             let arc_radius = mult_arc * l2r.l2norm();
