@@ -1333,7 +1333,7 @@ pub enum CoronalMeasure {
 }
 
 impl CoronalMeasure {
-    pub fn all() -> Vec<Self> {
+    pub fn all_draws() -> Vec<Self> {
         use CoronalMeasure::*;
         vec![
             CobbPT,
@@ -1341,6 +1341,21 @@ impl CoronalMeasure {
             CobbTLL,
             CurveApex,
             CSVL,
+            T1TiltAngle,
+            CoronalBalance,
+            ClavicleAngle,
+            ShoulderHeight,
+            PelvicObliquity,
+            SacralObliquity,
+            LegLengthDiscrepancy,
+        ]
+    }
+    pub fn all_measures() -> Vec<Self> {
+        use CoronalMeasure::*;
+        vec![
+            CobbPT,
+            CobbMT,
+            CobbTLL,
             T1TiltAngle,
             CoronalBalance,
             ClavicleAngle,
@@ -1371,7 +1386,22 @@ pub enum SagittalMeasure {
 }
 
 impl SagittalMeasure {
-    pub fn all() -> Vec<Self> {
+    pub fn all_draws() -> Vec<Self> {
+        use SagittalMeasure::*;
+        vec![
+            ThoracicKyphosis,
+            ProximalThoracicKyphosis,
+            MidLowerThoracicKyphosis,
+            ThoracoLumbarSagittalAlignment,
+            LumbarLordosis,
+            SagittalBalance,
+            LumbosacralAngle,
+            PelvicIncidence,
+            L5IncidenceAngle,
+            PelvicRadiusAngle,
+        ]
+    }
+    pub fn all_measures() -> Vec<Self> {
         use SagittalMeasure::*;
         vec![
             ThoracicKyphosis,

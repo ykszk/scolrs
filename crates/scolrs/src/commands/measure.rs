@@ -86,7 +86,7 @@ fn measure_sagittal(
 ) -> Result<IndexMap<SagittalMeasure, MeasureResult>, anyhow::Error> {
     let sagittal_points = scolrs::SagittalPoints::try_from(data)?;
     let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
-        SagittalMeasure::all()
+        SagittalMeasure::all_measures()
     } else {
         string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
     };
@@ -104,12 +104,12 @@ fn measure_coronal(
 ) -> Result<IndexMap<CoronalMeasure, MeasureResult>, anyhow::Error> {
     let coronal_points = scolrs::CoronalPoints::try_from(data)?;
     let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
-        CoronalMeasure::all()
+        CoronalMeasure::all_measures()
     } else {
         string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
     };
     let (curve_set, apex_set) = if let Some(curve_set) = args.curve_set.as_ref() {
-        let reader = std::fs::File::open(&curve_set)
+        let reader = std::fs::File::open(curve_set)
             .with_context(|| format!("Load curve set {:?}", curve_set))?;
         let cs: ScolDesc = serde_json::from_reader(reader)?;
         (cs.curves, cs.apices)
@@ -184,7 +184,7 @@ mod tests {
             direction,
             measures,
         };
-        assert!(!cmd(args).is_ok());
+        assert!(cmd(args).is_err());
 
         let input = data_dir.join(case_dir).join("frontal.json");
         let curve_set = None;
@@ -196,7 +196,7 @@ mod tests {
             direction,
             measures,
         };
-        assert!(!cmd(args).is_ok());
+        assert!(cmd(args).is_err());
         Ok(())
     }
 

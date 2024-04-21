@@ -1734,7 +1734,7 @@ const VISIBILITY_VISIBLE: &str = "visible";
 pub fn draw_sagittal(
     data: LabelMeDataWImage,
     sagittal_points: SagittalPoints,
-    measures: Vec<SagittalMeasure>,
+    draws: Vec<SagittalMeasure>,
     hide: Vec<SagittalMeasure>,
     draw_param: DrawParam,
     svg_size: (usize, usize),
@@ -1758,7 +1758,7 @@ pub fn draw_sagittal(
         document = document.add(g);
     }
 
-    for measure in measures {
+    for measure in draws {
         let spinal_measure: Box<dyn SagittalComponent> = measure.into();
         match spinal_measure.draw(
             &sagittal_points,
@@ -1785,7 +1785,7 @@ pub fn draw_sagittal(
 pub fn draw_coronal(
     data: LabelMeDataWImage,
     coronal_points: CoronalPoints,
-    measures: Vec<CoronalMeasure>,
+    draws: Vec<CoronalMeasure>,
     hide: Vec<CoronalMeasure>,
     draw_param: DrawParam,
     svg_size: (usize, usize),
@@ -1819,7 +1819,7 @@ pub fn draw_coronal(
         let (cs, apexes, _major_curve) = spine.identify_curves();
         (cs, apexes)
     });
-    for measure in measures {
+    for measure in draws {
         let spinal_measure: Box<dyn CoronalComponent> = (measure, &curve_set, &apex_set).into();
 
         match spinal_measure.draw(

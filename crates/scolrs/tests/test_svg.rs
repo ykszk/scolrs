@@ -50,14 +50,14 @@ fn _test_svg(
         label_colors,
         line_colors,
     };
-    let measures = CoronalMeasure::all();
+    let draws = CoronalMeasure::all_draws();
     let hide = Vec::new();
     let document = if coronal {
         let coronal_points = CoronalPoints::try_from(&data.data)?;
         draw_coronal(
             data,
             coronal_points,
-            measures,
+            draws,
             hide,
             draw_param,
             svg_size,
@@ -66,12 +66,12 @@ fn _test_svg(
         )
     } else {
         let sagittal_points = SagittalPoints::try_from(&data.data)?;
-        let measures = SagittalMeasure::all();
+        let draws = SagittalMeasure::all_draws();
         let hide = Vec::new();
         draw_sagittal(
             data,
             sagittal_points,
-            measures,
+            draws,
             hide,
             draw_param,
             svg_size,

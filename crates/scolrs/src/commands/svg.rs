@@ -11,10 +11,16 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     if args.list {
         match args.direction {
             Plane::Coronal => {
-                println!("{}", serde_json::to_string_pretty(&CoronalMeasure::all())?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&CoronalMeasure::all_draws())?
+                );
             }
             Plane::Sagittal => {
-                println!("{}", serde_json::to_string_pretty(&SagittalMeasure::all())?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&SagittalMeasure::all_draws())?
+                );
             }
         }
         return Ok(());
@@ -82,7 +88,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 None
             };
             let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
-                CoronalMeasure::all()
+                CoronalMeasure::all_draws()
             } else {
                 let v = string_to_measure(&args.measures);
                 match v {
@@ -109,7 +115,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         Plane::Sagittal => {
             let sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
             let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
-                SagittalMeasure::all()
+                SagittalMeasure::all_draws()
             } else {
                 let v = string_to_measure(&args.measures);
                 match v {
