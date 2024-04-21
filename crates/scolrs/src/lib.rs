@@ -7,6 +7,7 @@ use ndarray::{
 };
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ord;
 use std::fmt::Display;
 use std::iter::zip;
 use std::ops::AddAssign;
@@ -1311,7 +1312,9 @@ impl Display for StructuralReason {
     }
 }
 
-#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum CoronalMeasure {
@@ -1349,7 +1352,9 @@ impl CoronalMeasure {
     }
 }
 
-#[derive(ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum SagittalMeasure {
