@@ -512,19 +512,19 @@ pub trait Named {
     }
 }
 
-macro_rules! impl_named_for {
-    ($name:ident, $draw_type:expr) => {
-        impl Named for $name {
-            fn name(&self) -> &'static str {
-                stringify!($name)
-            }
+// macro_rules! impl_named_for {
+//     ($name:ident, $draw_type:expr) => {
+//         impl Named for $name {
+//             fn name(&self) -> &'static str {
+//                 stringify!($name)
+//             }
 
-            fn draw_type(&self) -> &[&'static str] {
-                $draw_type
-            }
-        }
-    };
-}
+//             fn draw_type(&self) -> &[&'static str] {
+//                 $draw_type
+//             }
+//         }
+//     };
+// }
 
 macro_rules! impl_named_w_lifetime_for {
     ($name:ident, $draw_type:expr) => {
@@ -560,22 +560,10 @@ pub trait CommonComponent: DrawComponent {
 }
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
-
-pub trait CoronalComponent: Named {
-    fn draw(
-        &self,
-        coronal_points: &CoronalPoints,
-        painter: &Painter,
-        label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError>;
-
-    /// Group with id of self.name() and classes of self.draw_type() and CORONAL_COMPONENT_CLASS
+pub trait CoronalComponent: DrawComponent + MeasureComponent {
     fn default_group(&self) -> element::Group {
         self.default_group_w_classes(&[CORONAL_COMPONENT_CLASS])
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError>;
 }
 
 const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
@@ -683,21 +671,21 @@ fn mean_plate_length(scol: &Spine) -> f32 {
 
 macro_rules! impl_cobb_angle {
     ($name:ident) => {
-        impl CoronalComponent for $name {
+        impl<'a> DrawComponent for $name<'a> {
             fn draw(
                 &self,
-                coronal_points: &CoronalPoints,
                 painter: &Painter,
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, MeasureError> {
-                if self.0.is_none() {
+                if self.1.is_none() {
                     return Err(MeasureError::UnableToMeasure(format!(
                         "No {} curve found",
                         self.name()
                     )));
                 }
-                let (curve, _angle) = self.0.as_ref().unwrap();
+                let coronal_points = self.0;
+                let (curve, _angle) = self.1.as_ref().unwrap();
                 let color = line_colors.get_or_new(self.name());
                 let g = self.default_group().set("stroke", color);
                 let aux_param = CobbAux::default();
@@ -713,9 +701,10 @@ macro_rules! impl_cobb_angle {
                 );
                 Ok(group)
             }
-
-            fn measure(&self, _10coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-                if let Some((_curve, angle)) = self.0.as_ref() {
+        }
+        impl<'a> MeasureComponent for $name<'a> {
+            fn measure(&self) -> Result<f32, MeasureError> {
+                if let Some((_curve, angle)) = self.1.as_ref() {
                     Ok(*angle)
                 } else {
                     Err(MeasureError::NoMeasurementDefined)
@@ -725,29 +714,33 @@ macro_rules! impl_cobb_angle {
     };
 }
 
-struct CobbPT(Option<(Curve, f32)>);
-impl_named_for!(CobbPT, &[CLASS_MEASURE, CLASS_ANGLE]);
+struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+impl_named_w_lifetime_for!(CobbPT, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for CobbPT<'a> {}
 impl_cobb_angle!(CobbPT);
 
-struct CobbMT(Option<(Curve, f32)>);
-impl_named_for!(CobbMT, &[CLASS_MEASURE, CLASS_ANGLE]);
+struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+impl_named_w_lifetime_for!(CobbMT, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for CobbMT<'a> {}
 impl_cobb_angle!(CobbMT);
 
-struct CobbTLL(Option<(Curve, f32)>);
-impl_named_for!(CobbTLL, &[CLASS_MEASURE, CLASS_ANGLE]);
+struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+impl_named_w_lifetime_for!(CobbTLL, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for CobbTLL<'a> {}
 impl_cobb_angle!(CobbTLL);
 
-struct CurveApex<'a>(&'a ApexSet);
+struct CurveApex<'a>(&'a CoronalPoints, &'a ApexSet);
 impl_named_w_lifetime_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
-impl<'a> CoronalComponent for CurveApex<'a> {
+impl<'a> CoronalComponent for CurveApex<'a> {}
+impl<'a> DrawComponent for CurveApex<'a> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let apex_set = &self.0;
+        let coronal_points = self.0;
+        let apex_set = &self.1;
         let vert_discs = coronal_points.spine.tl_vert_disc_corners().0;
 
         let label = self.name();
@@ -768,8 +761,9 @@ impl<'a> CoronalComponent for CurveApex<'a> {
         }
         Ok(g)
     }
-
-    fn measure(&self, _coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+}
+impl MeasureComponent for CurveApex<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
         Err(MeasureError::NoMeasurementDefined)
     }
 }
@@ -805,16 +799,17 @@ impl<'a> DrawComponent for SpinalLine<'a> {
 }
 
 /// center sacral vertical line (CSVL)
-struct Csvl<'a>(&'a ApexSet);
+struct Csvl<'a>(&'a CoronalPoints, &'a ApexSet);
 impl_named_w_lifetime_for!(Csvl, &[CLASS_ANNOTATION, CLASS_LINE]);
-impl<'a> CoronalComponent for Csvl<'a> {
+impl<'a> CoronalComponent for Csvl<'a> {}
+impl<'a> DrawComponent for Csvl<'a> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        let coronal_points = self.0;
         let spine = &coronal_points.spine;
         let label = self.name();
         let line_color = line_colors.get_or_new(label);
@@ -822,7 +817,7 @@ impl<'a> CoronalComponent for Csvl<'a> {
         let sup_plate = spine.sacral_sup_plate();
         let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
-        if let Some(tll) = self.0.tll {
+        if let Some(tll) = self.1.tll {
             let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
             let mid = sup_plate.mean_axis(Axis(0)).unwrap();
             let mut vl = ndarray::stack![Axis(0), mid, mid];
@@ -832,23 +827,25 @@ impl<'a> CoronalComponent for Csvl<'a> {
         }
         Ok(g)
     }
-
-    fn measure(&self, _coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+}
+impl MeasureComponent for Csvl<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
         Err(MeasureError::NoMeasurementDefined)
     }
 }
 
 /// center sacral vertical line (CSVL)
-struct T1TiltAngle;
-impl_named_for!(T1TiltAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
-impl CoronalComponent for T1TiltAngle {
+struct T1TiltAngle<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(T1TiltAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for T1TiltAngle<'a> {}
+impl DrawComponent for T1TiltAngle<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        let coronal_points = self.0;
         let spine = &coronal_points.spine;
         let label = self.name();
         let mut g = self
@@ -894,17 +891,19 @@ impl CoronalComponent for T1TiltAngle {
         };
         Ok(g)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        let tl_sup_lines = coronal_points.spine.tl_sup_lines();
+}
+impl MeasureComponent for T1TiltAngle<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle(t1sup)
     }
 }
 
-struct CoronalBalance;
-impl_named_for!(CoronalBalance, &[CLASS_MEASURE, CLASS_DISTANCE]);
-impl CoronalBalance {
+struct CoronalBalance<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(CoronalBalance, &[CLASS_MEASURE, CLASS_DISTANCE]);
+impl<'a> CoronalComponent for CoronalBalance<'a> {}
+impl CoronalBalance<'_> {
     fn prep(&self, spine: &Spine) -> Array2<f32> {
         let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = spine.sacral_sup_plate();
@@ -913,15 +912,14 @@ impl CoronalBalance {
         points
     }
 }
-impl CoronalComponent for CoronalBalance {
+impl DrawComponent for CoronalBalance<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let spine = &coronal_points.spine;
+        let spine = &self.0.spine;
         let label = self.name();
         let points = self.prep(spine);
         let color = line_colors.get_or_new(label);
@@ -929,24 +927,26 @@ impl CoronalComponent for CoronalBalance {
         let g = draw_difference_in_x(g, label, points.view(), painter);
         g
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        let points = self.prep(&coronal_points.spine);
+}
+impl MeasureComponent for CoronalBalance<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let points = self.prep(&self.0.spine);
         let dx = points.index_axis(Axis(0), 0)[0] - points.index_axis(Axis(0), 1)[0];
         Ok(dx)
     }
 }
 
-struct ClavicleAngle;
-impl_named_for!(ClavicleAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
-impl CoronalComponent for ClavicleAngle {
+struct ClavicleAngle<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(ClavicleAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for ClavicleAngle<'a> {}
+impl DrawComponent for ClavicleAngle<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        let coronal_points = self.0;
         if coronal_points.clavicle.0.len_of(Axis(0)) != 2 {
             return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
                 2,
@@ -961,9 +961,10 @@ impl CoronalComponent for ClavicleAngle {
         g = draw_tilt_angle(g, painter, clavicle, Some(label));
         Ok(g)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        tilt_angle(coronal_points.clavicle.0.view())
+}
+impl MeasureComponent for ClavicleAngle<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        tilt_angle(self.0.clavicle.0.view())
     }
 }
 
@@ -1048,12 +1049,12 @@ fn draw_difference_in_y(
     Ok(g)
 }
 
-struct ShoulderHeight;
-impl_named_for!(ShoulderHeight, &[CLASS_MEASURE, CLASS_DISTANCE]);
-impl CoronalComponent for ShoulderHeight {
+struct ShoulderHeight<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(ShoulderHeight, &[CLASS_MEASURE, CLASS_DISTANCE]);
+impl<'a> CoronalComponent for ShoulderHeight<'a> {}
+impl DrawComponent for ShoulderHeight<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
@@ -1061,10 +1062,12 @@ impl CoronalComponent for ShoulderHeight {
         let color = line_colors.get_or_new(self.name());
         let g = self.default_group().set("fill", color).set("stroke", color);
 
-        draw_difference_in_y(self.name(), g, coronal_points.shoulder.0.view(), painter)
+        draw_difference_in_y(self.name(), g, self.0.shoulder.0.view(), painter)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+}
+impl MeasureComponent for ShoulderHeight<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let coronal_points = self.0;
         if coronal_points.shoulder.0.len_of(Axis(0)) != 2 {
             return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
                 2,
@@ -1120,16 +1123,17 @@ fn draw_tilt_angle(
     g
 }
 
-struct PelvicObliquity;
-impl_named_for!(PelvicObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
-impl CoronalComponent for PelvicObliquity {
+struct PelvicObliquity<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(PelvicObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for PelvicObliquity<'a> {}
+impl DrawComponent for PelvicObliquity<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        let coronal_points = self.0;
         if coronal_points.pelvis.0.len_of(Axis(0)) != 2 {
             return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
                 2,
@@ -1144,22 +1148,24 @@ impl CoronalComponent for PelvicObliquity {
         g = draw_tilt_angle(g, painter, pelvis, Some(label));
         Ok(g)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        tilt_angle(coronal_points.pelvis.0.view())
+}
+impl MeasureComponent for PelvicObliquity<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        tilt_angle(self.0.pelvis.0.view())
     }
 }
 
-struct SacralObliquity;
-impl_named_for!(SacralObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
-impl CoronalComponent for SacralObliquity {
+struct SacralObliquity<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(SacralObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> CoronalComponent for SacralObliquity<'a> {}
+impl DrawComponent for SacralObliquity<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        let coronal_points = self.0;
         if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
             return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
                 2,
@@ -1199,33 +1205,31 @@ impl CoronalComponent for SacralObliquity {
             .0;
         Ok(g)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
-        tilt_angle(coronal_points.femoral_head.0.view())
+}
+impl MeasureComponent for SacralObliquity<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        tilt_angle(self.0.femoral_head.0.view())
     }
 }
 
-struct LegLengthDiscrepancy;
-impl_named_for!(LegLengthDiscrepancy, &[CLASS_MEASURE, CLASS_DISTANCE]);
-impl CoronalComponent for LegLengthDiscrepancy {
+struct LegLengthDiscrepancy<'a>(&'a CoronalPoints);
+impl_named_w_lifetime_for!(LegLengthDiscrepancy, &[CLASS_MEASURE, CLASS_DISTANCE]);
+impl<'a> CoronalComponent for LegLengthDiscrepancy<'a> {}
+impl DrawComponent for LegLengthDiscrepancy<'_> {
     fn draw(
         &self,
-        coronal_points: &CoronalPoints,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let color = line_colors.get_or_new(self.name());
         let g = self.default_group().set("fill", color).set("stroke", color);
-        draw_difference_in_y(
-            self.name(),
-            g,
-            coronal_points.femoral_head.0.view(),
-            painter,
-        )
+        draw_difference_in_y(self.name(), g, self.0.femoral_head.0.view(), painter)
     }
-
-    fn measure(&self, coronal_points: &CoronalPoints) -> Result<f32, MeasureError> {
+}
+impl MeasureComponent for LegLengthDiscrepancy<'_> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let coronal_points = self.0;
         if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
             return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
                 2,
@@ -1700,23 +1704,25 @@ impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn SagittalCompone
     }
 }
 
-impl<'a> From<(CoronalMeasure, &'a CurveSet, &'a ApexSet)> for Box<dyn CoronalComponent + 'a> {
-    fn from(value: (CoronalMeasure, &'a CurveSet, &'a ApexSet)) -> Self {
-        let (measure, curve_set, apex_set) = value;
+impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
+    for Box<dyn CoronalComponent + 'a>
+{
+    fn from(value: (CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)) -> Self {
+        let (measure, coronal_points, curve_set, apex_set) = value;
         match measure {
-            CoronalMeasure::CobbPT => Box::new(CobbPT(curve_set.pt.clone())),
-            CoronalMeasure::CobbMT => Box::new(CobbMT(curve_set.mt.clone())),
-            CoronalMeasure::CobbTLL => Box::new(CobbTLL(curve_set.tll.clone())),
+            CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
+            CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
+            CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
 
-            CoronalMeasure::CurveApex => Box::new(CurveApex(apex_set)),
-            CoronalMeasure::CSVL => Box::new(Csvl(apex_set)),
-            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle {}),
-            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance {}),
-            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle {}),
-            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight {}),
-            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity {}),
-            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity {}),
-            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy {}),
+            CoronalMeasure::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
+            CoronalMeasure::CSVL => Box::new(Csvl(coronal_points, apex_set)),
+            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
+            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
+            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
+            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
+            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
+            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
+            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
         }
     }
 }
@@ -1815,14 +1821,10 @@ pub fn draw_coronal(
         (cs, apexes)
     });
     for measure in draws {
-        let spinal_measure: Box<dyn CoronalComponent> = (measure, &curve_set, &apex_set).into();
+        let spinal_measure: Box<dyn CoronalComponent> =
+            (measure, &coronal_points, &curve_set, &apex_set).into();
 
-        match spinal_measure.draw(
-            &coronal_points,
-            &painter,
-            &mut label_colors,
-            &mut line_colors,
-        ) {
+        match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
                 let visibility = if hide.contains(&measure) {
                     VISIBILITY_HIDDEN

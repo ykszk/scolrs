@@ -119,8 +119,9 @@ fn measure_coronal(
     };
     let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
     for measure in measures {
-        let spinal_measure: Box<dyn CoronalComponent> = (measure, &curve_set, &apex_set).into();
-        results.insert(measure, spinal_measure.measure(&coronal_points));
+        let spinal_measure: Box<dyn CoronalComponent> =
+            (measure, &coronal_points, &curve_set, &apex_set).into();
+        results.insert(measure, spinal_measure.measure());
     }
     Ok(results)
 }
