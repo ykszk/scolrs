@@ -497,6 +497,10 @@ pub enum MeasureError {
     // No measurement is defined
     #[error("No measurement is defined")]
     NoMeasurementDefined,
+
+    // No curve is found
+    #[error("No curve is found")]
+    NoCurveFound,
 }
 
 pub trait Named {
@@ -679,10 +683,7 @@ macro_rules! impl_cobb_angle {
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, MeasureError> {
                 if self.1.is_none() {
-                    return Err(MeasureError::UnableToMeasure(format!(
-                        "No {} curve found",
-                        self.name()
-                    )));
+                    return Err(MeasureError::NoCurveFound);
                 }
                 let coronal_points = self.0;
                 let (curve, _angle) = self.1.as_ref().unwrap();
@@ -707,7 +708,7 @@ macro_rules! impl_cobb_angle {
                 if let Some((_curve, angle)) = self.1.as_ref() {
                     Ok(*angle)
                 } else {
-                    Err(MeasureError::NoMeasurementDefined)
+                    Err(MeasureError::NoCurveFound)
                 }
             }
         }
