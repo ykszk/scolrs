@@ -2,7 +2,6 @@ use crate::{
     angle_from_lines, CoronalMeasure, CoronalPoints, L2Norm, SagittalMeasure, SagittalPoints,
 };
 use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
-use clap::ValueEnum;
 use labelme_rs::LabelMeDataWImage;
 use log::{debug, warn};
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
@@ -11,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
+use std::str::FromStr;
 use svg::node::element;
 pub type LineColors = HashMap<String, String>;
 
@@ -1842,9 +1842,15 @@ pub fn draw_coronal(
     Ok(document)
 }
 
-pub fn string_to_measure<T: ValueEnum>(measures: &[String]) -> Result<Vec<T>, String> {
-    measures
-        .iter()
-        .map(|m| ValueEnum::from_str(m, false))
-        .collect()
+pub fn parse_measures<TMeasure: FromStr>(measures: &[String]) -> Result<Vec<TMeasure>, String>
+where
+    <TMeasure as std::str::FromStr>::Err: std::fmt::Debug,
+{
+    let v: Result<Vec<TMeasure>, _> = measures.iter().map(|m| m.parse()).collect();
+    v.map_err(|e| {
+        format!(
+            "{:?}. Use `list` command to print all available measures",
+            e
+        )
+    })
 }

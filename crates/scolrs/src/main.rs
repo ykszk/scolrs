@@ -5,7 +5,7 @@ mod cli;
 use cli::Cli;
 use cli::Command;
 mod commands;
-use commands::{curve, lenke, measure, svg};
+use commands::{curve, lenke, list, measure, svg};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -15,5 +15,6 @@ fn main() -> Result<()> {
         Command::Measure(args) => measure::cmd(args),
         Command::Curve(args) => curve::cmd(args),
         Command::Lenke(args) => lenke::cmd(args),
+        Command::List(args) => list::cmd(args),
     }
 }

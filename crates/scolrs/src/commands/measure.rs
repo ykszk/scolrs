@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    string_to_measure, CoronalComponent, CoronalMeasure, MeasureError, SagittalComponent,
+    parse_measures, CoronalComponent, CoronalMeasure, MeasureError, SagittalComponent,
     SagittalMeasure, ScolDesc,
 };
 use serde::{Deserialize, Serialize};
@@ -88,7 +88,7 @@ fn measure_sagittal(
     let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
         SagittalMeasure::all_measures()
     } else {
-        string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
+        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
     };
     let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
     for measure in measures {
@@ -106,7 +106,7 @@ fn measure_coronal(
     let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
         CoronalMeasure::all_measures()
     } else {
-        string_to_measure(&args.measures).map_err(|e| anyhow::anyhow!(e))?
+        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
     };
     let (curve_set, apex_set) = if let Some(curve_set) = args.curve_set.as_ref() {
         let reader = std::fs::File::open(curve_set)
@@ -161,6 +161,8 @@ mod tests {
             measures,
         };
         cmd(args)?;
+
+        // TODO: Test correct measurements
 
         let input = data_dir.join(case_dir).join("frontal.json");
         let curve_set = None;

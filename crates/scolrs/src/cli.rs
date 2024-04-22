@@ -18,6 +18,8 @@ pub enum Command {
     Curve(CurveArgs),
     /// Lenke classification
     Lenke(LenkeArgs),
+    /// List available measurements
+    List(ListArgs),
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
@@ -58,14 +60,11 @@ pub struct SvgArgs {
     #[clap(long)]
     pub size: Option<String>,
     /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements
-    #[clap(long)]
+    #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
     /// Hide measurements. Use `--list` to see all measurements
     #[clap(long)]
     pub hide: Vec<String>,
-    /// List all measurements
-    #[clap(long)]
-    pub list: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -80,7 +79,7 @@ pub struct MeasureArgs {
     #[clap(short, long, default_value = "coronal")]
     pub direction: Plane,
     /// Measurements to draw. By default, all measurements are drawn
-    #[clap(long)]
+    #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
 }
 
@@ -108,3 +107,6 @@ pub struct LenkeArgs {
     #[clap(short, long)]
     pub left: Option<PathBuf>,
 }
+
+#[derive(Parser, Debug)]
+pub struct ListArgs {}

@@ -240,7 +240,7 @@ dependencies = [
  "clap",
  "coolor",
  "criterion",
- "env_logger 0.10.1",
+ "env_logger",
  "image",
  "imageproc",
  "log",
@@ -447,7 +447,7 @@ dependencies = [
  "dicom",
  "dicom-pixeldata",
  "dicom-transfer-syntax-registry",
- "env_logger 0.11.3",
+ "env_logger",
  "log",
  "ndarray",
  "ndarray-ndimage",
@@ -705,19 +705,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95b3f3e67048839cb0d0781f445682a35113da7121f7c949db0e2be96a4fbece"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38b35839ba51819680ba087cd351788c9a3c476841207e0b8cee0b04722343b9"
@@ -808,8 +795,8 @@ dependencies = [
  "cmake",
  "libc",
  "snafu",
- "strum",
- "strum_macros",
+ "strum 0.24.1",
+ "strum_macros 0.24.3",
 ]
 
 [[package]]
@@ -1538,7 +1525,7 @@ version = "0.1.0"
 dependencies = [
  "clahe",
  "devsc",
- "env_logger 0.11.3",
+ "env_logger",
  "numpy",
  "pyo3",
  "walkdir",
@@ -1795,7 +1782,7 @@ dependencies = [
  "anyhow",
  "clap",
  "csv",
- "env_logger 0.11.3",
+ "env_logger",
  "indexmap 2.2.6",
  "labelme-rs",
  "log",
@@ -1806,6 +1793,7 @@ dependencies = [
  "rulinalg",
  "serde",
  "serde_repr",
+ "strum 0.26.2",
  "svg 0.14.0",
  "thiserror",
  "toml",
@@ -1957,6 +1945,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
 
 [[package]]
+name = "strum"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
+dependencies = [
+ "strum_macros 0.26.2",
+]
+
+[[package]]
 name = "strum_macros"
 version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1967,6 +1964,19 @@ dependencies = [
  "quote",
  "rustversion",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.58",
 ]
 
 [[package]]
@@ -2027,15 +2037,6 @@ checksum = "1e4129646ca0ed8f45d09b929036bafad5377103edd06e50bf574b353d2b08d9"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "termcolor"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff1bc3d3f05aff0403e8ac0d92ced918ec05b666a43f83297ccef5bea8a3d449"
-dependencies = [
- "winapi-util",
 ]
 
 [[package]]

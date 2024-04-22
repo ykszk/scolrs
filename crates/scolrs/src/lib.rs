@@ -1313,7 +1313,20 @@ impl Display for StructuralReason {
 }
 
 #[derive(
-    ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
 )]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
@@ -1368,10 +1381,23 @@ impl CoronalMeasure {
 }
 
 #[derive(
-    ValueEnum, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
 )]
-#[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
 pub enum SagittalMeasure {
     ThoracicKyphosis,
     ProximalThoracicKyphosis,

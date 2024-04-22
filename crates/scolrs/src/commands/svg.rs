@@ -1,30 +1,13 @@
 use crate::cli::{Plane, SvgArgs};
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, serde_json, LabelMeDataWImage};
+use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
 use scolrs::{
-    draw_coronal, draw_sagittal, string_to_measure, ColorPalette, ColorPalettes, CoronalMeasure,
+    draw_coronal, draw_sagittal, parse_measures, ColorPalette, ColorPalettes, CoronalMeasure,
     DrawParam, SagittalMeasure, ScolDesc,
 };
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
-    if args.list {
-        match args.direction {
-            Plane::Coronal => {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&CoronalMeasure::all_draws())?
-                );
-            }
-            Plane::Sagittal => {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&SagittalMeasure::all_draws())?
-                );
-            }
-        }
-        return Ok(());
-    }
     let draw_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
@@ -90,13 +73,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let draws: Vec<CoronalMeasure> = if args.measures.is_empty() {
                 CoronalMeasure::all_draws()
             } else {
-                let v = string_to_measure(&args.measures);
+                let v = parse_measures(&args.measures);
                 match v {
                     Ok(v) => v,
                     Err(e) => return Err(anyhow::anyhow!(e)),
                 }
             };
-            let hide = string_to_measure(&args.hide);
+            let hide = parse_measures(&args.hide);
             let hide = match hide {
                 Ok(v) => v,
                 Err(e) => return Err(anyhow::anyhow!(e)),
@@ -116,13 +99,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let draws: Vec<SagittalMeasure> = if args.measures.is_empty() {
                 SagittalMeasure::all_draws()
             } else {
-                let v = string_to_measure(&args.measures);
+                let v = parse_measures(&args.measures);
                 match v {
                     Ok(v) => v,
                     Err(e) => return Err(anyhow::anyhow!(e)),
                 }
             };
-            let hide = string_to_measure(&args.hide);
+            let hide = parse_measures(&args.hide);
             let hide = match hide {
                 Ok(v) => v,
                 Err(e) => return Err(anyhow::anyhow!(e)),
