@@ -577,6 +577,7 @@ pub trait SagittalComponent: DrawComponent + MeasureComponent {
     }
 }
 
+/// Label text for each vertebra
 pub struct VertebralLabels<'a>(&'a Spine);
 impl_named_w_lifetime_for!(VertebralLabels, &[CLASS_ANNOTATION, CLASS_TEXT]);
 impl<'a> CommonComponent for VertebralLabels<'a> {}
@@ -599,6 +600,7 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
     }
 }
 
+/// Four corner points of each vertebra
 pub struct VertebralPoints<'a>(&'a Spine);
 impl_named_w_lifetime_for!(VertebralPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl<'a> CommonComponent for VertebralPoints<'a> {}
@@ -642,6 +644,7 @@ const CLASS_MEASURE: &str = "Measure";
 const CLASS_ANGLE: &str = "Angle";
 const CLASS_DISTANCE: &str = "Distance";
 
+/// Centroids of each vertebra
 struct Centroids<'a>(&'a Spine);
 impl_named_w_lifetime_for!(Centroids, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl<'a> CommonComponent for Centroids<'a> {}
@@ -715,21 +718,25 @@ macro_rules! impl_cobb_angle {
     };
 }
 
+/// Cobb angle for PT curve
 struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
 impl_named_w_lifetime_for!(CobbPT, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for CobbPT<'a> {}
 impl_cobb_angle!(CobbPT);
 
+/// Cobb angle for MT curve
 struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
 impl_named_w_lifetime_for!(CobbMT, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for CobbMT<'a> {}
 impl_cobb_angle!(CobbMT);
 
+/// Cobb angle for TLL curve
 struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
 impl_named_w_lifetime_for!(CobbTLL, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for CobbTLL<'a> {}
 impl_cobb_angle!(CobbTLL);
 
+/// Curve apices for each curve
 struct CurveApex<'a>(&'a CoronalPoints, &'a ApexSet);
 impl_named_w_lifetime_for!(CurveApex, &[CLASS_ANNOTATION, CLASS_POLYGON]);
 impl<'a> CoronalComponent for CurveApex<'a> {}
@@ -799,8 +806,8 @@ impl<'a> DrawComponent for SpinalLine<'a> {
     }
 }
 
-/// center sacral vertical line (CSVL)
-struct Csvl<'a>(&'a CoronalPoints, &'a ApexSet);
+/// center sacral vertical line (CSVL) (p. 54)
+pub struct Csvl<'a>(&'a CoronalPoints, &'a ApexSet);
 impl_named_w_lifetime_for!(Csvl, &[CLASS_ANNOTATION, CLASS_LINE]);
 impl<'a> CoronalComponent for Csvl<'a> {}
 impl<'a> DrawComponent for Csvl<'a> {
@@ -835,8 +842,8 @@ impl MeasureComponent for Csvl<'_> {
     }
 }
 
-/// center sacral vertical line (CSVL)
-struct T1TiltAngle<'a>(&'a CoronalPoints);
+/// T1 Tilt Angle (p.55)
+pub struct T1TiltAngle<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(T1TiltAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for T1TiltAngle<'a> {}
 impl DrawComponent for T1TiltAngle<'_> {
@@ -901,7 +908,8 @@ impl MeasureComponent for T1TiltAngle<'_> {
     }
 }
 
-struct CoronalBalance<'a>(&'a CoronalPoints);
+/// Coronal balance (p. 54)
+pub struct CoronalBalance<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(CoronalBalance, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl<'a> CoronalComponent for CoronalBalance<'a> {}
 impl CoronalBalance<'_> {
@@ -937,7 +945,8 @@ impl MeasureComponent for CoronalBalance<'_> {
     }
 }
 
-struct ClavicleAngle<'a>(&'a CoronalPoints);
+/// Clavicle angle (p. 56)
+pub struct ClavicleAngle<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(ClavicleAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for ClavicleAngle<'a> {}
 impl DrawComponent for ClavicleAngle<'_> {
@@ -1050,7 +1059,8 @@ fn draw_difference_in_y(
     Ok(g)
 }
 
-struct ShoulderHeight<'a>(&'a CoronalPoints);
+/// Radiographic shoulder height (p.57)
+pub struct ShoulderHeight<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(ShoulderHeight, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl<'a> CoronalComponent for ShoulderHeight<'a> {}
 impl DrawComponent for ShoulderHeight<'_> {
@@ -1124,7 +1134,8 @@ fn draw_tilt_angle(
     g
 }
 
-struct PelvicObliquity<'a>(&'a CoronalPoints);
+/// Pelvic Obliquity (p.69)
+pub struct PelvicObliquity<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(PelvicObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for PelvicObliquity<'a> {}
 impl DrawComponent for PelvicObliquity<'_> {
@@ -1156,7 +1167,8 @@ impl MeasureComponent for PelvicObliquity<'_> {
     }
 }
 
-struct SacralObliquity<'a>(&'a CoronalPoints);
+/// Sacral Obliquity (p.70)
+pub struct SacralObliquity<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(SacralObliquity, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> CoronalComponent for SacralObliquity<'a> {}
 impl DrawComponent for SacralObliquity<'_> {
@@ -1213,7 +1225,8 @@ impl MeasureComponent for SacralObliquity<'_> {
     }
 }
 
-struct LegLengthDiscrepancy<'a>(&'a CoronalPoints);
+/// Leg Length Discrepancy (p.69)
+pub struct LegLengthDiscrepancy<'a>(&'a CoronalPoints);
 impl_named_w_lifetime_for!(LegLengthDiscrepancy, &[CLASS_MEASURE, CLASS_DISTANCE]);
 impl<'a> CoronalComponent for LegLengthDiscrepancy<'a> {}
 impl DrawComponent for LegLengthDiscrepancy<'_> {
@@ -1335,8 +1348,9 @@ macro_rules! _impl_kyophosis {
 ///
 /// Optionally, a display name can be provided as the second argument
 macro_rules! impl_kyphosis {
-    ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
-        struct $name<'a>(&'a SagittalPoints);
+    ($doc:expr, $name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
+        #[doc = $doc]
+        pub struct $name<'a>(&'a SagittalPoints);
         impl_named_w_lifetime_for!($name, &[CLASS_MEASURE, CLASS_ANGLE]);
         impl<'a> SagittalComponent for $name<'a> {}
 
@@ -1347,7 +1361,8 @@ macro_rules! impl_kyphosis {
         _impl_kyophosis!($name, $sup, $inf, $opposite);
     };
 
-    ($name:ident, $disp_name:expr, $sup:expr, $inf:expr, $opposite:expr) => {
+    ($doc:expr, $name:ident, $disp_name:expr, $sup:expr, $inf:expr, $opposite:expr) => {
+        #[doc = $doc]
         struct $name<'a>(&'a SagittalPoints);
 
         impl<'a> Named for $name<'a> {
@@ -1369,6 +1384,7 @@ macro_rules! impl_kyphosis {
 }
 
 impl_kyphosis!(
+    "Proximal thoracic kyphosis (p.65)",
     ProximalThoracicKyphosis,
     VertebralIndex::T2 as usize,
     VertebralIndex::T5 as usize,
@@ -1376,6 +1392,7 @@ impl_kyphosis!(
 );
 
 impl_kyphosis!(
+    "Thoracic kyphosis (p.65)",
     ThoracicKyphosis,
     VertebralIndex::T2 as usize,
     VertebralIndex::T12 as usize,
@@ -1383,6 +1400,7 @@ impl_kyphosis!(
 );
 
 impl_kyphosis!(
+    "Mid/Lower thoracic kyphosis (p.65)",
     MidLowerThoracicKyphosis,
     "Mid/LowerThoracicKyphosis",
     VertebralIndex::T5 as usize,
@@ -1391,13 +1409,15 @@ impl_kyphosis!(
 );
 
 impl_kyphosis!(
+    "Thoracolumbar(T10/L2) sagittal alignment (p.66)",
     ThoracoLumbarSagittalAlignment,
     VertebralIndex::T10 as usize,
     VertebralIndex::L2 as usize,
     false
 );
 
-struct LumbarLordosis<'a>(&'a SagittalPoints);
+/// Lumbar sagittal alignment (T12/S1) (p.66)
+pub struct LumbarLordosis<'a>(&'a SagittalPoints);
 impl<'a> LumbarLordosis<'a> {
     fn prep(spine: &Spine) -> (usize, usize) {
         let sup = VertebralIndex::T12 as usize;
@@ -1442,7 +1462,8 @@ impl<'a> MeasureComponent for LumbarLordosis<'a> {
     }
 }
 
-struct SagittalBalance<'a>(&'a SagittalPoints);
+/// Sagittal balance (p.67)
+pub struct SagittalBalance<'a>(&'a SagittalPoints);
 impl<'a> SagittalBalance<'a> {
     fn prep(sagittal_points: &SagittalPoints) -> Array2<f32> {
         let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
@@ -1478,7 +1499,8 @@ impl<'a> MeasureComponent for SagittalBalance<'a> {
     }
 }
 
-struct LumbosacralAngle<'a>(&'a SagittalPoints);
+/// Lumbosacral angle (p.105)
+pub struct LumbosacralAngle<'a>(&'a SagittalPoints);
 impl<'a> LumbosacralAngle<'a> {
     fn prep(spine: &Spine) -> (Array2<f32>, Array2<f32>) {
         let sup = spine
@@ -1520,7 +1542,8 @@ impl<'a> MeasureComponent for LumbosacralAngle<'a> {
     }
 }
 
-struct PelvicIncidence<'a>(&'a SagittalPoints);
+/// Pelvic Incidence (p.97)
+pub struct PelvicIncidence<'a>(&'a SagittalPoints);
 impl_named_w_lifetime_for!(PelvicIncidence, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> SagittalComponent for PelvicIncidence<'a> {}
 impl<'a> DrawComponent for PelvicIncidence<'a> {
@@ -1556,7 +1579,12 @@ impl<'a> MeasureComponent for PelvicIncidence<'a> {
     }
 }
 
-struct L5IncidenceAngle<'a>(&'a SagittalPoints);
+// TODO: Pelvic Tilt (p.98)
+
+// TODO: Sacral Slope (p.99)
+
+/// L5 Incidence Angle (p.102)
+pub struct L5IncidenceAngle<'a>(&'a SagittalPoints);
 impl_named_w_lifetime_for!(L5IncidenceAngle, &[CLASS_MEASURE, CLASS_ANGLE]);
 impl<'a> SagittalComponent for L5IncidenceAngle<'a> {}
 impl<'a> DrawComponent for L5IncidenceAngle<'a> {
@@ -1599,7 +1627,8 @@ impl<'a> MeasureComponent for L5IncidenceAngle<'a> {
     }
 }
 
-struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
+/// Pelvic Radius Angle (p.101)
+pub struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
 impl<'a> PelvicRadiusAngle<'a> {
     fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
         if sagittal_points.femoral_head.0.is_empty() {
@@ -1781,8 +1810,6 @@ pub fn draw_sagittal(
 
     Ok(document)
 }
-
-// fn<T:> draw_component()
 
 pub fn draw_coronal(
     data: LabelMeDataWImage,

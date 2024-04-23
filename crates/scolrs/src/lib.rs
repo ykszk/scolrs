@@ -1374,8 +1374,8 @@ impl CoronalMeasure {
             ClavicleAngle,
             ShoulderHeight,
             PelvicObliquity,
-            SacralObliquity,
             LegLengthDiscrepancy,
+            SacralObliquity,
         ]
     }
 }
@@ -1405,10 +1405,10 @@ pub enum SagittalMeasure {
     ThoracoLumbarSagittalAlignment,
     LumbarLordosis,
     SagittalBalance,
-    LumbosacralAngle,
     PelvicIncidence,
     L5IncidenceAngle,
     PelvicRadiusAngle,
+    LumbosacralAngle,
 }
 
 impl SagittalMeasure {
