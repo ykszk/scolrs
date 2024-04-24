@@ -1,20 +1,36 @@
-use anyhow::Result;
-use scolrs::{
-    CoronalMeasure, SagittalMeasure,
-};
-use strum::VariantArray;
+use std::fmt::Display;
 
 use crate::cli::ListArgs;
+use anyhow::Result;
+use scolrs::{CoronalMeasure, SagittalMeasure};
 
-pub fn cmd(_args: ListArgs) -> Result<()> {
-    println!("Available coronal measurements:");
-    for measure in CoronalMeasure::VARIANTS {
+fn print_measures<T: Display>(title: &str, measures: Vec<T>) {
+    println!("{}", title);
+    for measure in measures {
         print!(" {}", measure);
     }
     println!();
-    println!("Available sagittal measurements:");
-    for measure in SagittalMeasure::VARIANTS {
-        print!(" {}", measure);
+}
+
+pub fn cmd(args: ListArgs) -> Result<()> {
+    if args.drawable {
+        print_measures(
+            "Available drawable components:",
+            CoronalMeasure::all_draws(),
+        );
+        print_measures(
+            "Available sagittal measurements:",
+            SagittalMeasure::all_draws(),
+        );
+    } else {
+        print_measures(
+            "Available coronal measurements:",
+            CoronalMeasure::all_measures(),
+        );
+        print_measures(
+            "Available sagittal measurements:",
+            SagittalMeasure::all_measures(),
+        );
     }
     println!();
     Ok(())

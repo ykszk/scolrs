@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::iter::zip;
 use std::ops::AddAssign;
 use std::result::Result;
+use strum::VariantArray;
 use thiserror::Error;
 mod defs;
 pub use defs::*;
@@ -1347,36 +1348,15 @@ pub enum CoronalMeasure {
 
 impl CoronalMeasure {
     pub fn all_draws() -> Vec<Self> {
-        use CoronalMeasure::*;
-        vec![
-            CobbPT,
-            CobbMT,
-            CobbTLL,
-            CurveApex,
-            CSVL,
-            T1TiltAngle,
-            CoronalBalance,
-            ClavicleAngle,
-            ShoulderHeight,
-            PelvicObliquity,
-            SacralObliquity,
-            LegLengthDiscrepancy,
-        ]
+        CoronalMeasure::VARIANTS.to_vec()
     }
     pub fn all_measures() -> Vec<Self> {
         use CoronalMeasure::*;
-        vec![
-            CobbPT,
-            CobbMT,
-            CobbTLL,
-            T1TiltAngle,
-            CoronalBalance,
-            ClavicleAngle,
-            ShoulderHeight,
-            PelvicObliquity,
-            LegLengthDiscrepancy,
-            SacralObliquity,
-        ]
+        CoronalMeasure::VARIANTS
+            .iter()
+            .filter(|v| !matches!(v, CurveApex | CSVL))
+            .copied()
+            .collect()
     }
 }
 
@@ -1402,10 +1382,12 @@ pub enum SagittalMeasure {
     ThoracicKyphosis,
     ProximalThoracicKyphosis,
     MidLowerThoracicKyphosis,
-    ThoracoLumbarSagittalAlignment,
+    ThoracolumbarSagittalAlignment,
     LumbarLordosis,
     SagittalBalance,
     PelvicIncidence,
+    PelvicTilt,
+    SacralSlope,
     L5IncidenceAngle,
     PelvicRadiusAngle,
     LumbosacralAngle,
@@ -1413,34 +1395,10 @@ pub enum SagittalMeasure {
 
 impl SagittalMeasure {
     pub fn all_draws() -> Vec<Self> {
-        use SagittalMeasure::*;
-        vec![
-            ThoracicKyphosis,
-            ProximalThoracicKyphosis,
-            MidLowerThoracicKyphosis,
-            ThoracoLumbarSagittalAlignment,
-            LumbarLordosis,
-            SagittalBalance,
-            LumbosacralAngle,
-            PelvicIncidence,
-            L5IncidenceAngle,
-            PelvicRadiusAngle,
-        ]
+        SagittalMeasure::VARIANTS.to_vec()
     }
     pub fn all_measures() -> Vec<Self> {
-        use SagittalMeasure::*;
-        vec![
-            ThoracicKyphosis,
-            ProximalThoracicKyphosis,
-            MidLowerThoracicKyphosis,
-            ThoracoLumbarSagittalAlignment,
-            LumbarLordosis,
-            SagittalBalance,
-            LumbosacralAngle,
-            PelvicIncidence,
-            L5IncidenceAngle,
-            PelvicRadiusAngle,
-        ]
+        Self::all_draws()
     }
 }
 

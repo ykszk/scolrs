@@ -109,4 +109,8 @@ pub struct LenkeArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct ListArgs {}
+pub struct ListArgs {
+    /// List all drawable components instead of measurements
+    #[clap(long)]
+    pub drawable: bool,
+}

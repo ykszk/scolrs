@@ -1410,7 +1410,7 @@ impl_kyphosis!(
 
 impl_kyphosis!(
     "Thoracolumbar(T10/L2) sagittal alignment (p.66)",
-    ThoracoLumbarSagittalAlignment,
+    ThoracolumbarSagittalAlignment,
     VertebralIndex::T10 as usize,
     VertebralIndex::L2 as usize,
     false
@@ -1579,9 +1579,118 @@ impl<'a> MeasureComponent for PelvicIncidence<'a> {
     }
 }
 
-// TODO: Pelvic Tilt (p.98)
+// Pelvic Tilt (p.98)
+pub struct PelvicTilt<'a>(&'a SagittalPoints);
+impl_named_w_lifetime_for!(PelvicTilt, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> PelvicTilt<'a> {
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+        if sagittal_points.femoral_head.0.is_empty() {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                InvalidNumberOfPoints::TooFewPoints(1, 0),
+            ));
+        }
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
+        let femoral_head = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
+        let sac2fem = stack![Axis(0), mid_sac, femoral_head];
+        let mut v_line_from_fem = sac2fem.clone();
+        v_line_from_fem[[0, 0]] = v_line_from_fem[[1, 0]];
+        Ok((sac2fem, v_line_from_fem))
+    }
+}
+impl<'a> SagittalComponent for PelvicTilt<'a> {}
+impl<'a> DrawComponent for PelvicTilt<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let sagittal_points = self.0;
+        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
+        let label = self.name();
+        let color = line_colors.get_or_new(label);
+        let mut g = self.default_group().set("fill", color).set("stroke", color);
+        g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
+        g = g.add(painter.point(sac2fem.index_axis(Axis(0), 0)));
+        // TODO: use painter.angle_between
+        g = g.add(painter.line(sac2fem.view()));
+        let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        g = g.add(painter.line(sac_sup.view()));
+        g = g.add(painter.line(v_line.view()));
+        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
+        let text = format!("{:.1}°", angle);
+        let text = painter.text(&text, sac2fem.index_axis(Axis(0), 1), Some(label));
+        g = g.add(text);
+        Ok(g)
+    }
+}
+impl<'a> MeasureComponent for PelvicTilt<'a> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let sagittal_points = self.0;
+        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
+        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
+        Ok(angle)
+    }
+}
 
-// TODO: Sacral Slope (p.99)
+// Sacral Slope (p.99)
+pub struct SacralSlope<'a>(&'a SagittalPoints);
+impl_named_w_lifetime_for!(SacralSlope, &[CLASS_MEASURE, CLASS_ANGLE]);
+impl<'a> SagittalComponent for SacralSlope<'a> {}
+impl<'a> SacralSlope<'a> {
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+        let sac_sup = sagittal_points.spine.sacral_sup_plate().to_owned();
+        let h_len = sac_sup
+            .index_axis(Axis(0), 0)
+            .l2_dist(&sac_sup.index_axis(Axis(0), 1))
+            .unwrap() as f32;
+        let mut h_line_sac = sac_sup.clone();
+        h_line_sac[[1, 1]] = h_line_sac[[0, 1]];
+        h_line_sac[[1, 0]] = h_line_sac[[0, 0]] + h_len;
+        Ok((sac_sup, h_line_sac))
+    }
+}
+
+impl<'a> DrawComponent for SacralSlope<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let sagittal_points = self.0;
+        let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
+        let label = self.name();
+        let color = line_colors.get_or_new(label);
+        let mut g = self.default_group().set("stroke", color);
+        // let angle = angle_between(h_line_sac.view(), sac_sup.view()).to_degrees();
+        let arc_radius = 0.5
+            * sac_sup
+                .index_axis(Axis(0), 0)
+                .l2_dist(&sac_sup.index_axis(Axis(0), 1))
+                .unwrap() as f32;
+        g = painter
+            .angle_between(
+                g,
+                sac_sup.view(),
+                h_line_sac.view(),
+                h_line_sac.index_axis(Axis(0), 0),
+                arc_radius,
+                Some(label),
+            )
+            .0;
+        Ok(g)
+    }
+}
+impl<'a> MeasureComponent for SacralSlope<'a> {
+    fn measure(&self) -> Result<f32, MeasureError> {
+        let sagittal_points = self.0;
+        let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
+        let angle = angle_between(sac_sup.view(), h_line_sac.view()).to_degrees();
+        Ok(angle)
+    }
+}
 
 /// L5 Incidence Angle (p.102)
 pub struct L5IncidenceAngle<'a>(&'a SagittalPoints);
@@ -1627,6 +1736,23 @@ impl<'a> MeasureComponent for L5IncidenceAngle<'a> {
     }
 }
 
+fn draw_femoral_center(
+    group: element::Group,
+    femoral_head: ArrayView2<f32>,
+    painter: &Painter,
+) -> element::Group {
+    let mut g = group;
+    for p in femoral_head.axis_iter(Axis(0)) {
+        g = g.add(painter.point(p));
+    }
+    if femoral_head.len_of(Axis(0)) == 2 {
+        let mid_femoral_heads = femoral_head.mean_axis(Axis(0)).unwrap();
+        g = g.add(painter.point(mid_femoral_heads.view()));
+        g = g.add(painter.line(femoral_head.view()));
+    }
+    g
+}
+
 /// Pelvic Radius Angle (p.101)
 pub struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
 impl<'a> PelvicRadiusAngle<'a> {
@@ -1653,24 +1779,12 @@ impl<'a> DrawComponent for PelvicRadiusAngle<'a> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let sagittal_points = self.0;
-        if sagittal_points.femoral_head.0.is_empty() {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(1, 0),
-            ));
-        }
         let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
-        for p in sagittal_points.femoral_head.0.axis_iter(Axis(0)) {
-            g = g.add(painter.point(p));
-        }
-        if sagittal_points.femoral_head.0.len_of(Axis(0)) == 2 {
-            g = g.add(painter.point(mid_femoral_heads.view()));
-            g = g.add(painter.line(sagittal_points.femoral_head.0.view()));
-        }
+        g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
         g = g.add(painter.line(sac_sup.view()));
         g = g.add(painter.line(line_fem2post_sac.view()));
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
@@ -1721,13 +1835,15 @@ impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn SagittalCompone
             SagittalMeasure::MidLowerThoracicKyphosis => {
                 Box::new(MidLowerThoracicKyphosis(sagittal_points))
             }
-            SagittalMeasure::ThoracoLumbarSagittalAlignment => {
-                Box::new(ThoracoLumbarSagittalAlignment(sagittal_points))
+            SagittalMeasure::ThoracolumbarSagittalAlignment => {
+                Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
             }
             SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
             SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
             SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
             SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
+            SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
+            SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
         }
