@@ -1114,23 +1114,20 @@ fn draw_tilt_angle(
     for p in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(p));
     }
-    for c in points.axis_iter(Axis(0)) {
-        g = g.add(painter.point(c));
-        let l2r = &points.index_axis(Axis(0), 1) - &points.index_axis(Axis(0), 0);
-        let mut hor_line = points.clone();
-        hor_line[[1, 1]] = points[[0, 1]];
-        let arc_radius = l2r.l2norm() * 0.8;
-        g = painter
-            .angle_between(
-                g,
-                hor_line.view(),
-                points.view(),
-                points.index_axis(Axis(0), 0),
-                arc_radius,
-                title,
-            )
-            .0
-    }
+    let l2r = &points.index_axis(Axis(0), 1) - &points.index_axis(Axis(0), 0);
+    let mut hor_line = points.clone();
+    hor_line[[1, 1]] = points[[0, 1]];
+    let arc_radius = l2r.l2norm() * 0.8;
+    g = painter
+        .angle_between(
+            g,
+            hor_line.view(),
+            points.view(),
+            points.index_axis(Axis(0), 0),
+            arc_radius,
+            title,
+        )
+        .0;
     g
 }
 
