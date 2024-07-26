@@ -2,10 +2,11 @@ use ndarray::{
     array, s, Array, Array1, ArrayView, ArrayView2, Axis, Dim, Dimension, Slice, SliceInfo,
     SliceInfoElem,
 };
-use ndarray_ndimage::{convolve, BorderMode};
+use ndarray_ndimage::{convolve, sobel, BorderMode};
 
 use log::debug;
 use ndarray_stats::QuantileExt;
+use serde::{Deserialize, Serialize};
 
 pub trait Normalize<D> {
     fn minmax_normalize(&self) -> Result<Array<u8, D>, ndarray_stats::errors::MinMaxError>
@@ -142,6 +143,24 @@ where
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFilter {
+    Original,
+    SobelX,
+    SobelY,
+    Laplacian,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PredicateSource {
+    pub filter: ImageFilter,
+    pub quantile_min: Option<f64>,
+    pub quantile_max: Option<f64>,
+    /// Use specified value as threshold instead of quantile value calculated from cdf
+    pub raw: bool,
+}
+
 /// Calculate trimming parameter (bounding box)
 ///
 /// # Arguments
@@ -149,38 +168,86 @@ where
 /// - `thresh_quantile` - Pixels below this value will be considered as noises
 pub fn trimming_box(
     img: ArrayView2<i16>,
-    thresh_quantile: f64,
+    predicate_sources: Vec<PredicateSource>,
 ) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let border_mode = BorderMode::Nearest;
     let weights = array![[0, 1, 0], [1, -4, 1], [0, 1, 0]];
-    let laplacian = convolve(&img.view(), &weights.view(), border_mode, 0);
     let original_shape = (img.nrows(), img.ncols());
 
-    let filtered = [
-        img.to_owned().minmax_normalize()?,
-        // sobel(&img, Axis(0), border_mode),
-        // sobel(&img, Axis(1), border_mode),
-        laplacian.minmax_normalize()?,
-    ];
+    // at least one of quantile_min and quantile_max should be set
+    // TODO: implement error handling
+    assert!(predicate_sources
+        .iter()
+        .all(|source| { source.quantile_min.is_some() || source.quantile_max.is_some() }));
+
+    let sources = predicate_sources
+        .iter()
+        .map(|source| {
+            let filtered = match source.filter {
+                ImageFilter::Original => img.to_owned().minmax_normalize()?,
+                ImageFilter::SobelX => sobel(&img, Axis(1), border_mode)
+                    .mapv(i16::abs)
+                    .minmax_normalize()?,
+                ImageFilter::SobelY => sobel(&img, Axis(0), border_mode)
+                    .mapv(i16::abs)
+                    .minmax_normalize()?,
+                ImageFilter::Laplacian => convolve(&img.view(), &weights.view(), border_mode, 0)
+                    .mapv(i16::abs)
+                    .minmax_normalize()?,
+            };
+            Ok((source, filtered))
+        })
+        .collect::<Result<Vec<_>, ndarray_stats::errors::MinMaxError>>()?;
 
     let mut bmin = [0usize, 0usize];
     let mut bmax = [original_shape.0 + 1, original_shape.1 + 1];
     let max_iter = 10;
     for i_iter in 0..max_iter {
         let prev = (bmin, bmax);
-        for (_i_filter, u8arr) in filtered.iter().enumerate() {
+        for (i_filter, source) in sources.iter().enumerate() {
             // manually create slices because ndarray::slice doesn't accept 0..len
+            let u8arr = source.1.view();
             let bboxed = u8arr.slice(create_slice(&(bmin, bmax), &original_shape));
-            let cdf = CDF::from(bboxed);
-            let (t_min, t_max) = (
-                cdf.quantile(thresh_quantile),
-                cdf.quantile(1.0 - thresh_quantile),
+            let cdf = if source.0.raw {
+                None
+            } else {
+                Some(CDF::from(bboxed))
+            };
+            let t_min = source.0.quantile_min.map(|min| {
+                if source.0.raw {
+                    (min * 255.0) as u8
+                } else {
+                    cdf.as_ref().unwrap().quantile(min)
+                }
+            });
+            let t_max = source.0.quantile_max.map(|max| {
+                if source.0.raw {
+                    (max * 255.0) as u8
+                } else {
+                    cdf.unwrap().quantile(max)
+                }
+            });
+            debug!(
+                "Quantile for {}: {:?} -> ({:?}, {:?})",
+                i_filter, source.0, t_min, t_max,
             );
-            let predicate = |p| t_min < p && p < t_max;
-            let bbox = bounding_box(bboxed, predicate);
-            if let Some((local_bmin, local_bmax)) = bbox {
-                bmax = local_bmax.add(&bmin); // update bmax first
-                bmin = local_bmin.add(&bmin);
+            let bb = match (t_min, t_max) {
+                (None, None) => unreachable!(),
+                (Some(t_min), None) => bounding_box(bboxed, |p| p >= t_min),
+                (None, Some(t_max)) => bounding_box(bboxed, |p| p < t_max),
+                (Some(t_min), Some(t_max)) => bounding_box(bboxed, |p| p < t_max && p >= t_min),
+            };
+            if let Some((local_bmin, local_bmax)) = bb {
+                if local_bmax != [0usize, 0usize]
+                    || local_bmax != [original_shape.0 + 1, original_shape.1 + 1]
+                {
+                    bmax = local_bmax.add(&bmin); // update bmax first
+                    bmin = local_bmin.add(&bmin);
+                    debug!(
+                        "Updated bounding box {:?}: {:?} vs. {:?}",
+                        source.0.filter, bmin, bmax
+                    );
+                }
             }
         }
         if prev == (bmin, bmax) {
@@ -196,11 +263,11 @@ pub fn trimming_box(
 /// Call `trimming_box` with resampled input for faster calculation
 pub fn trimming_box_with_resample(
     img: ArrayView2<i16>,
-    thresh_quantile: f64,
+    predicate_sources: Vec<PredicateSource>,
     resample_step: usize,
 ) -> Result<BoundingBox, ndarray_stats::errors::MinMaxError> {
     let img = img.slice(s![..; resample_step, ..; resample_step]);
-    let (bmin, bmax) = trimming_box(img, thresh_quantile)?;
+    let (bmin, bmax) = trimming_box(img, predicate_sources)?;
     Ok((
         bmin.multiply(&[resample_step, resample_step]),
         bmax.multiply(&[resample_step, resample_step]),

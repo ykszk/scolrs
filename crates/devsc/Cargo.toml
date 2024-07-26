@@ -17,7 +17,7 @@ ndarray.workspace = true
 ndarray-ndimage = "0.4.0"
 ndarray-stats = "0.5.1"
 scolrs = { path = "../scolrs" }
-
+serde.workspace = true
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
 # getrandom = { features = ["js"] } # for ndarray-stats
 

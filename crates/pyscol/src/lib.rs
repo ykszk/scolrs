@@ -1,4 +1,4 @@
-use devscol::{trimming_box_with_resample, BoundingBox};
+use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
 
@@ -6,11 +6,15 @@ use pyo3::prelude::*;
 #[pyo3(name = "trimming_box_with_resample")]
 fn py_trimming_box_with_resample(
     arr2d: PyReadonlyArray2<'_, i16>,
-    thresh_quantile: f64,
+    predicate_sources_in_json: Vec<String>,
     resample_step: usize,
 ) -> PyResult<BoundingBox> {
     let arr2d = arr2d.as_array();
-    trimming_box_with_resample(arr2d, thresh_quantile, resample_step)
+    let predicate_sources: Vec<PredicateSource> = predicate_sources_in_json
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    trimming_box_with_resample(arr2d, predicate_sources, resample_step)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Error in trimming: {}", e)))
 }
 

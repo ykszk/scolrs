@@ -6,6 +6,7 @@ use ndarray::{
     Axis, Data,
 };
 use ndarray_stats::QuantileExt;
+pub use serde;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ord;
 use std::fmt::Display;
