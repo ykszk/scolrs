@@ -321,12 +321,15 @@ where
 }
 
 /// Check monotonicity of arrays
-pub trait Monotonic<T> {
+pub trait LineCharacteristic<T> {
     /// Check if the array is not-strictly increasing or decreasing
     fn is_monotonic(&self) -> bool;
+
+    /// Check if the array has the same sign
+    fn have_same_signs(&self) -> bool;
 }
 
-impl<S> Monotonic<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
+impl<S> LineCharacteristic<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
 where
     S: ndarray::Data<Elem = f32>,
 {
@@ -337,10 +340,9 @@ where
 
         let mut signs = Vec::new();
         for i in 1..self.len() {
-            let diff = self[i] - self[i - 1];
-            signs.push(if diff > 0.0 {
+            signs.push(if self[i] > self[i - 1] {
                 1
-            } else if diff < 0.0 {
+            } else if self[i] < self[i - 1] {
                 -1
             } else {
                 0
@@ -349,6 +351,15 @@ where
 
         let first_sign = signs[0];
         signs.iter().all(|&sign| sign == first_sign)
+    }
+
+    fn have_same_signs(&self) -> bool {
+        let mut non_zeros = self.iter().filter(|&&x| x != 0.0);
+        if let Some(first) = non_zeros.clone().next() {
+            non_zeros.all(|&x| x.signum() == first.signum())
+        } else {
+            true
+        }
     }
 }
 
@@ -500,16 +511,26 @@ impl Spine {
             return true;
         }
         let centroids = self.tl_centroids();
-        let ys = centroids.slice(s![sup..inf, 1]);
+        let ys = centroids.slice(s![sup + 1..inf, 1]);
         let xs = polynomial(ys, self.c_coefs.view());
 
-        // check if the first derivative is monotonic
-        let dxs = -&xs.slice(s![..xs.len() - 1]) + xs.slice(s![1..]);
+        // coefficients of the second derivative
+        let coefs2: Array1<f32> = self
+            .c_coefs
+            .slice(s![2..])
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f32)
+            .collect();
+
+        let ddxs = polynomial(ys, coefs2.view());
         debug!("sup: {}, inf: {}", sup, inf);
         debug!("xs: {:?}", xs);
-        debug!("dxs: {:?}", dxs);
-        debug!("is_monotonic: {}", dxs.is_monotonic());
-        dxs.is_monotonic()
+        debug!("ys: {:?}", ys);
+        debug!("ddxs: {:?}", ddxs);
+
+        debug!("ddxs.have_same_signs(): {}", ddxs.have_same_signs());
+        ddxs.have_same_signs()
     }
 
     fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f32)> {
@@ -586,6 +607,7 @@ impl Spine {
             let major_apex = self.id_apex(&largest_curve.0);
             major_curve = if major_apex <= VertebraDiscIndex::T5 {
                 // largest curve is PT
+                debug!("PT is the largest curve");
                 if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
                     curves.tll = self.find_largest_down(mt.0.inf);
                     curves.mt = Some(mt);
@@ -594,12 +616,14 @@ impl Spine {
                 Some(MajorCurve::MT) // PT is never major
             } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
                 // largest curve is MT
+                debug!("MT is the largest curve");
                 curves.pt = self.find_largest_up(largest_curve.0.sup);
                 curves.tll = self.find_largest_down(largest_curve.0.inf);
                 curves.mt = Some(largest_curve);
                 Some(MajorCurve::MT)
             } else {
                 // largest curve is TLL
+                debug!("TLL is the largest curve");
                 if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
                     curves.pt = self.find_largest_up(mt.0.sup);
                     curves.mt = Some(mt);
@@ -1405,7 +1429,7 @@ impl SagittalMeasure {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{Corners, Monotonic};
+    use super::{Corners, LineCharacteristic};
     use anyhow::Result;
     use ndarray::{arr3, array, Array3};
     #[test]
