@@ -69,7 +69,7 @@ pub struct SvgArgs {
 
 #[derive(Parser, Debug)]
 pub struct MeasureArgs {
-    /// Input labelme json filename
+    /// Input labelme json filename or ndjson. Specify '-' for stdin with ndjson format
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
     /// Use specified curves instaed of calculating from the points

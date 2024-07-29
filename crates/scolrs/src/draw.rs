@@ -413,7 +413,7 @@ impl Painter {
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
-            labelme_rs::img2base64(image, labelme_rs::image::ImageOutputFormat::Jpeg(75))
+            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)
         );
         let bg = element::Image::new()
             .set("x", 0i64)
