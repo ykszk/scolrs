@@ -10,6 +10,10 @@ description.workspace = true
 name = "scolrs"
 path = "src/main.rs"
 
+[[bin]]
+name = "neckrs"
+path = "src/neck_main.rs"
+
 [lib]
 name = "scolrs"
 path = "src/lib.rs"
@@ -24,8 +28,8 @@ labelme-rs = { version = "0.10.0", git = "https://github.com/ykszk/labelme-rs.gi
 log.workspace = true
 lyon_geom = "1.0.4"
 ndarray.workspace = true
-ndarray-stats = "0"
-rulinalg = "0.4.2"
+ndarray-stats = "0.5.1"
+rulinalg = "0.4.2" # replace with nalgebra?
 serde.workspace = true
 serde_repr = "0.1.17"
 strum = { version = "0.26.2", features = ["derive"] }

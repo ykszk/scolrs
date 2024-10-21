@@ -1,0 +1,478 @@
+{
+  "version": "5.0.1",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "TL",
+      "points": [
+        [
+          205.84375,
+          363.90234
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TL",
+      "points": [
+        [
+          151.93228,
+          461.92316
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TL",
+      "points": [
+        [
+          123.7513,
+          580.77344
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TL",
+      "points": [
+        [
+          138.45442,
+          688.5963
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TL",
+      "points": [
+        [
+          176.4375,
+          792.74347
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TL",
+      "points": [
+        [
+          241.3763,
+          879.73694
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          280.58463,
+          378.60547
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          231.57422,
+          466.82422
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          215.64583,
+          561.16925
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          221.77213,
+          654.28906
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          251.17838,
+          737.60675
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "TR",
+      "points": [
+        [
+          314.8919,
+          827.0508
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          221.77213,
+          329.59503
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          162.95963,
+          428.84113
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          127.42708,
+          541.56506
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          128.65234,
+          659.19006
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          162.95963,
+          771.91406
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          231.57422,
+          861.35803
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BL",
+      "points": [
+        [
+          280.58463,
+          934.87366
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          295.28775,
+          368.80338
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          246.27733,
+          453.34634
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          221.77213,
+          541.56506
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          221.77213,
+          639.58594
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          246.27733,
+          727.8047
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          305.08984,
+          816.02344
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "ExternalAuditoryCanal",
+      "points": [
+        [
+          515.8346,
+          78.416664
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Occipital",
+      "points": [
+        [
+          492.55466,
+          354.10025
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          437.41797,
+          344.29816
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          389.6328,
+          404.33594
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          339.39713,
+          466.82422
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          319.79297,
+          521.96094
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          309.99088,
+          574.6471
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          319.79297,
+          639.58594
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          363.90234,
+          733.93097
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "AnteriorC1Arch",
+      "points": [
+        [
+          349.19922,
+          187.46484
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "AnteriorDens",
+      "points": [
+        [
+          354.10025,
+          192.36588
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "PosteriorDens",
+      "points": [
+        [
+          378.60547,
+          254.85416
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "BR",
+      "points": [
+        [
+          369.08066,
+          892.2742
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    },
+    {
+      "label": "Lamina",
+      "points": [
+        [
+          440.0484,
+          855.1774
+        ]
+      ],
+      "group_id": null,
+      "shape_type": "point",
+      "flags": {}
+    }
+  ],
+  "imagePath": "extension_lateral.jpg",
+  "imageData": null,
+  "imageHeight": 941,
+  "imageWidth": 706
+}

@@ -19,6 +19,7 @@ mod defs;
 pub use defs::*;
 mod draw;
 pub use draw::*;
+pub mod head_neck;
 
 #[derive(Error, Debug)]
 pub enum ScolError {
