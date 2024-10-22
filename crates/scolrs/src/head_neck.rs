@@ -1,14 +1,14 @@
 use crate::{
     extract_points, points2line, ColorPalette, CommonComponent, DrawComponent, HasCornerPoints,
-    MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANNOTATION, CLASS_LINE,
-    CLASS_POINT, CORNER_LABELS,
+    MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION,
+    CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
 use serde::{Deserialize, Serialize};
 
 use labelme_rs::LabelMeData;
-use ndarray::{concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView2, Axis};
+use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
 use svg::node::element;
 
 #[derive(Debug, Clone)]
@@ -46,6 +46,12 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
                 corners[2].shape()[0] - 1,
             ));
         }
+        if corners[0].shape()[0] != 6 {
+            return Err(ScolError::InvalidPointCount(
+                "TL should be 6".into(),
+                corners[0].shape()[0],
+            ));
+        }
         // prepend first points of TL and TR
         let first = corners[0].index_axis(Axis(0), 0).insert_axis(Axis(0));
         corners[0] = concatenate(Axis(0), &[first, corners[0].view()]).unwrap();
@@ -61,29 +67,29 @@ pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
     pub lamina: Array2<f32>,
 
-    pub brow: Array1<f32>,
-    pub sella: Array1<f32>,
-    pub orbit: Array1<f32>,
-    pub external_auditory_canal: Array1<f32>,
-    pub occipital: Array1<f32>,
-    pub anterior_c1_arch: Array1<f32>,
-    pub anterior_dens: Array1<f32>,
-    pub posterior_dens: Array1<f32>,
-    pub posterior_hard_palate: Array1<f32>,
-    pub chin: Array1<f32>,
-    pub manubrium: Array1<f32>,
+    pub brow: Array2<f32>,
+    pub sella: Array2<f32>,
+    pub orbit: Array2<f32>,
+    pub external_auditory_canal: Array2<f32>,
+    pub occipital: Array2<f32>,
+    pub anterior_c1_arch: Array2<f32>,
+    pub anterior_dens: Array2<f32>,
+    pub posterior_dens: Array2<f32>,
+    pub posterior_hard_palate: Array2<f32>,
+    pub chin: Array2<f32>,
+    pub manubrium: Array2<f32>,
 }
 
-impl LateralPoints {
-    fn extract_optional_point(data: &LabelMeData, label: &str) -> Result<Array1<f32>, ScolError> {
-        let points = extract_points(data, label)?;
-        if points.is_empty() {
-            Ok(Array1::zeros(0))
-        } else {
-            Ok(points.index_axis(Axis(0), 0).to_owned())
-        }
-    }
-}
+// impl LateralPoints {
+//     fn extract_optional_point(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolError> {
+//         let points = extract_points(data, label)?;
+//         if points.is_empty() {
+//             Ok(Array1::zeros(0))
+//         } else {
+//             Ok(points.index_axis(Axis(0), 0).to_owned())
+//         }
+//     }
+// }
 
 impl TryFrom<&LabelMeData> for LateralPoints {
     type Error = ScolError;
@@ -91,17 +97,23 @@ impl TryFrom<&LabelMeData> for LateralPoints {
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let corners = VertebralCornerPoints::try_from(data)?;
         let lamina = extract_points(data, "Lamina")?;
-        let brow = Self::extract_optional_point(data, "Brow")?;
-        let sella = Self::extract_optional_point(data, "Sella")?;
-        let orbit = Self::extract_optional_point(data, "Orbit")?;
-        let external_auditory_canal = Self::extract_optional_point(data, "ExternalAuditoryCanal")?;
-        let occipital = Self::extract_optional_point(data, "Occipital")?;
-        let anterior_c1_arch = Self::extract_optional_point(data, "AnteriorC1Arch")?;
-        let anterior_dens = Self::extract_optional_point(data, "AnteriorDens")?;
-        let posterior_dens = Self::extract_optional_point(data, "PosteriorDens")?;
-        let posterior_hard_palate = Self::extract_optional_point(data, "PosteriorHardPalate")?;
-        let chin = Self::extract_optional_point(data, "Chin")?;
-        let manubrium = Self::extract_optional_point(data, "Manubrium")?;
+        if lamina.shape()[0] != 8 {
+            return Err(ScolError::InvalidPointCount(
+                "Lamina should have 8 points".into(),
+                lamina.shape()[0],
+            ));
+        }
+        let brow = extract_points(data, "Brow")?;
+        let sella = extract_points(data, "Sella")?;
+        let orbit = extract_points(data, "Orbit")?;
+        let external_auditory_canal = extract_points(data, "ExternalAuditoryCanal")?;
+        let occipital = extract_points(data, "Occipital")?;
+        let anterior_c1_arch = extract_points(data, "AnteriorC1Arch")?;
+        let anterior_dens = extract_points(data, "AnteriorDens")?;
+        let posterior_dens = extract_points(data, "PosteriorDens")?;
+        let posterior_hard_palate = extract_points(data, "PosteriorHardPalate")?;
+        let chin = extract_points(data, "Chin")?;
+        let manubrium = extract_points(data, "Manubrium")?;
 
         Ok(LateralPoints {
             corners,
@@ -151,84 +163,135 @@ pub trait NeckSagittalComponent: DrawComponent {
     }
 }
 
+trait ValidateLength {
+    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
+}
+
+impl ValidateLength for Array2<f32> {
+    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
+        if self.len_of(Axis(0)) != expected_len {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// All sacral available spaces
 #[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
-pub struct C1Sac<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for C1Sac<'a> {}
-impl<'a> DrawComponent for C1Sac<'a> {
+#[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
+pub struct Sacs<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for Sacs<'a> {}
+impl<'a> DrawComponent for Sacs<'a> {
     fn draw(
         &self,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        if self.0.posterior_dens.len() != 2 {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                    2,
-                    self.0.posterior_dens.len(),
-                ),
-            ));
-        }
-        let mut group = self.default_group();
-        let lamina = self.0.lamina.index_axis(Axis(0), 0);
-
-        let points = stack![Axis(0), lamina, self.0.posterior_dens];
+        self.0.posterior_dens.validate_length(1)?;
         let color = line_colors.get_or_new(self.name());
-        let line = painter.polyline(points.view());
-        group = group.add(line.set("stroke", color));
+        let mut group = self.default_group().set("stroke", color);
+        // C1SAC
+        let lamina = self.0.lamina.index_axis(Axis(0), 0);
+        let points = stack![
+            Axis(0),
+            lamina.view(),
+            self.0.posterior_dens.index_axis(Axis(0), 0).view()
+        ];
+        let line = painter.line(points.view());
+        group = group.add(line);
+
+        // C2SAC to T1SAC
+        let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
+        trs.index_axis_mut(Axis(0), 0)
+            .assign(&self.0.posterior_dens.index_axis(Axis(0), 0));
+        let brs = self.0.corners.0.index_axis(Axis(1), 3);
+        let tr_brs = stack![Axis(0), trs, brs];
+        let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]);
+        for (tr_br, lamina) in tr_brs
+            .axis_iter(Axis(1))
+            .zip(lamina_below_c2.axis_iter(Axis(0)))
+        {
+            let posterior_line = points2line(tr_br);
+            let l_lamina = lyon_geom::Point::new(lamina[0], lamina[1]);
+
+            let line_equation = posterior_line.equation();
+            let projected_point = line_equation.project_point(&l_lamina);
+
+            let points = stack![
+                Axis(0),
+                lamina,
+                Array::from(vec![projected_point.x, projected_point.y]).view()
+            ];
+            let line = painter.polyline(points.view());
+            group = group.add(line);
+        }
         Ok(group)
     }
 }
 
-impl<'a> MeasureComponent for C1Sac<'a> {
+impl<'a> MeasureComponent for Sacs<'a> {
     fn measure(&self) -> Result<f32, MeasureError> {
-        let points = &self.0.anterior_c1_arch;
-        // let len = points.len();
-        // if len < 2 {
-        //     return Err(MeasureError::InsufficientPoints(len));
-        // }
-        Ok(points.len() as f32)
+        // let lamina = self.0.lamina.index_axis(Axis(0), 0);
+        // let posterior_dens = self.0.posterior_dens.index_axis(Axis(0), 0);
+        // let distance = painter::distance(&lamina, &posterior_dens);
+        Ok(0.0)
     }
 }
 
+/// Atlanto-dental interval
 #[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
-pub struct C2Sac<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for C2Sac<'a> {}
-impl<'a> DrawComponent for C2Sac<'a> {
+#[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
+pub struct Adi<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for Adi<'a> {}
+impl<'a> DrawComponent for Adi<'a> {
     fn draw(
         &self,
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        if self.0.posterior_dens.len() != 2 {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                    2,
-                    self.0.posterior_dens.len(),
-                ),
-            ));
-        }
-        let mut group = self.default_group();
-        let brs = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2br = brs.index_axis(Axis(0), 3);
-        let posterior_line = points2line(stack![Axis(0), c2br, self.0.posterior_dens]);
-        let lamina = self.0.lamina.index_axis(Axis(0), 1);
-        let l_lamina = lyon_geom::Point::new(lamina[0], lamina[1]);
-
-        let line_equation = posterior_line.equation();
-        let projected_point = line_equation.project_point(&l_lamina);
-
+        self.0.anterior_dens.validate_length(1)?;
+        self.0.anterior_c1_arch.validate_length(1)?;
+        let color = line_colors.get_or_new(self.name());
+        let mut group = self.default_group().set("stroke", color);
         let points = stack![
             Axis(0),
-            lamina.view(),
-            Array::from(vec![projected_point.x, projected_point.y]).view()
+            self.0.anterior_dens.index_axis(Axis(0), 0).view(),
+            self.0.anterior_c1_arch.index_axis(Axis(0), 0).view()
         ];
+        let line = painter.line(points.view());
+        group = group.add(line);
+        Ok(group)
+    }
+}
+
+/// O-C2 Angle
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct OC2<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for OC2<'a> {}
+impl<'a> DrawComponent for OC2<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        self.0.occipital.validate_length(1)?;
+        self.0.posterior_hard_palate.validate_length(1)?;
         let color = line_colors.get_or_new(self.name());
-        let line = painter.polyline(points.view());
-        group = group.add(line.set("stroke", color));
+        let mut group = self.default_group().set("stroke", color);
+        let points = stack![
+            Axis(0),
+            self.0.occipital.index_axis(Axis(0), 0).view(),
+            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view()
+        ];
+        let line = painter.line(points.view());
+        group = group.add(line);
+        unimplemented!("Draw angle");
         Ok(group)
     }
 }
@@ -301,8 +364,10 @@ impl<'a> DrawComponent for OptionalPoints<'a> {
         ] {
             if !points.is_empty() {
                 let color = label_colors.get_or_new(label);
-                let p = painter.point(points.view());
-                group = group.add(p.set("stroke", color).set("fill", color));
+                for point in points.rows() {
+                    let p = painter.point(point);
+                    group = group.add(p.set("stroke", color).set("fill", color));
+                }
             }
         }
         Ok(group)

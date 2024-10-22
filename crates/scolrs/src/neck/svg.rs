@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
 use scolrs::head_neck::{
-    C1Sac, C2Sac, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints,
+    Adi, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints, Sacs, OC2,
 };
 use scolrs::{ColorPalette, CommonComponent, DrawParam, Painter};
 use svg::node::element;
@@ -62,10 +62,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     let cervical_points = scolrs::head_neck::LateralPoints::try_from(&data.data)?;
 
+    debug!("Drawing");
+
     let common_components: Vec<Box<dyn CommonComponent>> =
         vec![Box::new(CervicalPoints(&cervical_points))];
 
     for component in common_components {
+        debug!("Draw {:?}", component.name());
         let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
         document = document.add(g);
     }
@@ -73,11 +76,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = vec![
         Box::new(LaminalPoints(&cervical_points.lamina)),
         Box::new(OptionalPoints(&cervical_points)),
-        Box::new(C1Sac(&cervical_points)),
-        Box::new(C2Sac(&cervical_points)),
+        Box::new(Sacs(&cervical_points)),
+        Box::new(Adi(&cervical_points)),
+        Box::new(OC2(&cervical_points)),
     ];
 
     for component in neck_sagittal_components {
+        debug!("Draw {:?}", component.name());
         let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
         document = document.add(g);
     }
