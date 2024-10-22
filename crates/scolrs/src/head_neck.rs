@@ -1,9 +1,10 @@
 use crate::{
-    extract_points, impl_named_w_lifetime_for, ColorPalette, CommonComponent, DrawComponent,
-    HasCornerPoints, MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANNOTATION,
-    CLASS_LINE, CLASS_POINT, CORNER_LABELS,
+    extract_points, ColorPalette, CommonComponent, DrawComponent, HasCornerPoints,
+    MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANNOTATION, CLASS_LINE,
+    CLASS_POINT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
+use named_derive::Named;
 use serde::{Deserialize, Serialize};
 
 use labelme_rs::LabelMeData;
@@ -150,8 +151,9 @@ pub trait NeckSagittalComponent: DrawComponent {
     }
 }
 
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
 pub struct C1Sac<'a>(pub &'a LateralPoints);
-impl_named_w_lifetime_for!(C1Sac, &[CLASS_ANNOTATION, CLASS_LINE]);
 impl<'a> NeckSagittalComponent for C1Sac<'a> {}
 impl<'a> DrawComponent for C1Sac<'a> {
     fn draw(
@@ -185,8 +187,9 @@ impl<'a> MeasureComponent for C1Sac<'a> {
 }
 
 /// Four corner points of each vertebra
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct CervicalPoints<'a>(pub &'a LateralPoints);
-impl_named_w_lifetime_for!(CervicalPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl HasCornerPoints for CervicalPoints<'_> {
     fn top_left(&self) -> ArrayView2<f32> {
         self.0.corners.0.slice(s![1.., 0, ..])
@@ -203,8 +206,9 @@ impl HasCornerPoints for CervicalPoints<'_> {
 }
 impl<'a> CommonComponent for CervicalPoints<'a> {}
 
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct LaminalPoints<'a>(pub &'a Array2<f32>);
-impl_named_w_lifetime_for!(LaminalPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl<'a> NeckSagittalComponent for LaminalPoints<'a> {}
 impl<'a> DrawComponent for LaminalPoints<'a> {
     fn draw(
@@ -223,8 +227,9 @@ impl<'a> DrawComponent for LaminalPoints<'a> {
     }
 }
 
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct OptionalPoints<'a>(pub &'a LateralPoints);
-impl_named_w_lifetime_for!(OptionalPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
 impl<'a> NeckSagittalComponent for OptionalPoints<'a> {}
 impl<'a> DrawComponent for OptionalPoints<'a> {
     fn draw(
