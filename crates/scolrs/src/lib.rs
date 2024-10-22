@@ -116,6 +116,13 @@ impl LeftFirst for Array2<f32> {
     }
 }
 
+trait HasCornerPoints {
+    fn top_left(&self) -> ArrayView2<f32>;
+    fn top_right(&self) -> ArrayView2<f32>;
+    fn bottom_left(&self) -> ArrayView2<f32>;
+    fn bottom_right(&self) -> ArrayView2<f32>;
+}
+
 /// Polynomial fitting of `deg` degrees
 pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,

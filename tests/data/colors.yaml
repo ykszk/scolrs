@@ -26,7 +26,7 @@ label_colors:
     "Lamina": [255, 165, 0],
     "Manubrium": [34, 139, 34],
     "PosteriorHardPalate": [230, 192, 203],
-    "AnteriorC1Arch": [200, 206, 250],
+    "AnteriorC1Arch": [35, 71, 148],
     "AnteriorDens": [255, 165, 0],
     "PosteriorDens": [34, 139, 34],
   }

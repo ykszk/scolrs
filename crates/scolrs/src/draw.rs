@@ -1,5 +1,6 @@
 use crate::{
-    angle_from_lines, CoronalMeasure, CoronalPoints, L2Norm, SagittalMeasure, SagittalPoints,
+    angle_from_lines, CoronalMeasure, CoronalPoints, HasCornerPoints, L2Norm, SagittalMeasure,
+    SagittalPoints, CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::LabelMeDataWImage;
@@ -530,6 +531,7 @@ pub trait Named {
 //     };
 // }
 
+#[macro_export]
 macro_rules! impl_named_w_lifetime_for {
     ($name:ident, $draw_type:expr) => {
         impl<'a> Named for $name<'a> {
@@ -603,8 +605,27 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
 /// Four corner points of each vertebra
 pub struct VertebralPoints<'a>(&'a Spine);
 impl_named_w_lifetime_for!(VertebralPoints, &[CLASS_ANNOTATION, CLASS_POINT]);
+impl HasCornerPoints for VertebralPoints<'_> {
+    fn top_left(&self) -> ArrayView2<f32> {
+        self.0.c7tls.0.slice(s![.., 0, ..])
+    }
+    fn top_right(&self) -> ArrayView2<f32> {
+        self.0.c7tls.0.slice(s![.., 1, ..])
+    }
+    fn bottom_left(&self) -> ArrayView2<f32> {
+        self.0.c7tls.0.slice(s![..-1, 2, ..])
+    }
+    fn bottom_right(&self) -> ArrayView2<f32> {
+        self.0.c7tls.0.slice(s![..-1, 3, ..])
+    }
+}
 impl<'a> CommonComponent for VertebralPoints<'a> {}
-impl<'a> DrawComponent for VertebralPoints<'a> {
+
+///  Defautl component for drawing the four corner points of each vertebra
+impl<T> DrawComponent for T
+where
+    T: HasCornerPoints + CommonComponent + Named,
+{
     fn draw(
         &self,
         painter: &Painter,
@@ -612,18 +633,20 @@ impl<'a> DrawComponent for VertebralPoints<'a> {
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let mut g_corners = self.default_group();
-        for (i_label, &label) in crate::CORNER_LABELS.iter().enumerate() {
+        for (points, label) in [
+            self.top_left(),
+            self.top_right(),
+            self.bottom_left(),
+            self.bottom_right(),
+        ]
+        .into_iter()
+        .zip(CORNER_LABELS)
+        {
             let color = label_colors.get_or_new(label);
-            let mut sub_group = element::Group::new()
+            let mut sub_group: element::Group = element::Group::new()
                 .set("stroke", color)
                 .set("fill", color);
-            let points = self.0.c7tls.0.index_axis(Axis(1), i_label);
-            let n_points = if i_label < 2 {
-                points.len_of(Axis(0))
-            } else {
-                points.len_of(Axis(0)) - 1 // BL and BR points of sacrum are dummies
-            };
-            for point in points.axis_iter(Axis(0)).take(n_points) {
+            for point in points.axis_iter(Axis(0)) {
                 let p = painter.point(point);
                 sub_group = sub_group.add(p);
             }
@@ -634,15 +657,15 @@ impl<'a> DrawComponent for VertebralPoints<'a> {
 }
 
 // annotation draw types
-const CLASS_ANNOTATION: &str = "Annotation";
-const CLASS_POINT: &str = "Point";
-const CLASS_POLYGON: &str = "Polygon";
-const CLASS_LINE: &str = "Line";
-const CLASS_TEXT: &str = "Text";
+pub const CLASS_ANNOTATION: &str = "Annotation";
+pub const CLASS_POINT: &str = "Point";
+pub const CLASS_POLYGON: &str = "Polygon";
+pub const CLASS_LINE: &str = "Line";
+pub const CLASS_TEXT: &str = "Text";
 // measure draw types
-const CLASS_MEASURE: &str = "Measure";
-const CLASS_ANGLE: &str = "Angle";
-const CLASS_DISTANCE: &str = "Distance";
+pub const CLASS_MEASURE: &str = "Measure";
+pub const CLASS_ANGLE: &str = "Angle";
+pub const CLASS_DISTANCE: &str = "Distance";
 
 /// Centroids of each vertebra
 struct Centroids<'a>(&'a Spine);
