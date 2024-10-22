@@ -428,7 +428,7 @@ impl Painter {
     }
 }
 
-fn points2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
+pub fn points2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
 where
     S: ndarray::Data<Elem = f32>,
 {

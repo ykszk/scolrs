@@ -1,5 +1,5 @@
 use crate::{
-    extract_points, ColorPalette, CommonComponent, DrawComponent, HasCornerPoints,
+    extract_points, points2line, ColorPalette, CommonComponent, DrawComponent, HasCornerPoints,
     MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANNOTATION, CLASS_LINE,
     CLASS_POINT, CORNER_LABELS,
 };
@@ -8,7 +8,7 @@ use named_derive::Named;
 use serde::{Deserialize, Serialize};
 
 use labelme_rs::LabelMeData;
-use ndarray::{concatenate, s, stack, Array1, Array2, Array3, ArrayView2, Axis};
+use ndarray::{concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView2, Axis};
 use svg::node::element;
 
 #[derive(Debug, Clone)]
@@ -162,13 +162,19 @@ impl<'a> DrawComponent for C1Sac<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
+        if self.0.posterior_dens.len() != 2 {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                    2,
+                    self.0.posterior_dens.len(),
+                ),
+            ));
+        }
         let mut group = self.default_group();
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
-        let c1 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c1_tr_br = c1.slice(s![1..;2, ..]);
-        let c1_posterior_center = c1_tr_br.mean_axis(Axis(0)).unwrap();
-        let points = stack![Axis(0), lamina, c1_posterior_center];
-        let color = line_colors.get_or_new("C1Sac");
+
+        let points = stack![Axis(0), lamina, self.0.posterior_dens];
+        let color = line_colors.get_or_new(self.name());
         let line = painter.polyline(points.view());
         group = group.add(line.set("stroke", color));
         Ok(group)
@@ -183,6 +189,47 @@ impl<'a> MeasureComponent for C1Sac<'a> {
         //     return Err(MeasureError::InsufficientPoints(len));
         // }
         Ok(points.len() as f32)
+    }
+}
+
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
+pub struct C2Sac<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for C2Sac<'a> {}
+impl<'a> DrawComponent for C2Sac<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        if self.0.posterior_dens.len() != 2 {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                    2,
+                    self.0.posterior_dens.len(),
+                ),
+            ));
+        }
+        let mut group = self.default_group();
+        let brs = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2br = brs.index_axis(Axis(0), 3);
+        let posterior_line = points2line(stack![Axis(0), c2br, self.0.posterior_dens]);
+        let lamina = self.0.lamina.index_axis(Axis(0), 1);
+        let l_lamina = lyon_geom::Point::new(lamina[0], lamina[1]);
+
+        let line_equation = posterior_line.equation();
+        let projected_point = line_equation.project_point(&l_lamina);
+
+        let points = stack![
+            Axis(0),
+            lamina.view(),
+            Array::from(vec![projected_point.x, projected_point.y]).view()
+        ];
+        let color = line_colors.get_or_new(self.name());
+        let line = painter.polyline(points.view());
+        group = group.add(line.set("stroke", color));
+        Ok(group)
     }
 }
 

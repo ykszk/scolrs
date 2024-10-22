@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::debug;
 use scolrs::head_neck::{
-    C1Sac, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints,
+    C1Sac, C2Sac, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints,
 };
 use scolrs::{ColorPalette, CommonComponent, DrawParam, Painter};
 use svg::node::element;
@@ -74,6 +74,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         Box::new(LaminalPoints(&cervical_points.lamina)),
         Box::new(OptionalPoints(&cervical_points)),
         Box::new(C1Sac(&cervical_points)),
+        Box::new(C2Sac(&cervical_points)),
     ];
 
     for component in neck_sagittal_components {
