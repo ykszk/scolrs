@@ -1,8 +1,8 @@
 use crate::{
-    distanced_pair3, extract_points, points2line, Centroids, CobbAux, ColorPalette,
-    CommonComponent, Corners, DrawComponent, HasCornerPoints, L2Norm, MeasureComponent,
-    MeasureError, Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
-    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    angle_from_lines, distanced_pair3, extract_points, points2line, Centroids, CobbAux,
+    ColorPalette, CommonComponent, Corners, DrawComponent, HasCornerPoints, L2Norm, MeasureError,
+    Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
+    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -164,6 +164,10 @@ pub trait NeckSagittalComponent: DrawComponent {
     }
 }
 
+pub trait NeckMeasureComponent: Named {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError>;
+}
+
 trait ValidateLength {
     fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
 }
@@ -237,12 +241,42 @@ impl<'a> DrawComponent for Sacs<'a> {
     }
 }
 
-impl<'a> MeasureComponent for Sacs<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
-        // let lamina = self.0.lamina.index_axis(Axis(0), 0);
-        // let posterior_dens = self.0.posterior_dens.index_axis(Axis(0), 0);
-        // let distance = painter::distance(&lamina, &posterior_dens);
-        Ok(0.0)
+impl<'a> NeckMeasureComponent for Sacs<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        self.0.posterior_dens.validate_length(1)?;
+        let mut lengths: Vec<f32> = Vec::new();
+        // C1SAC
+        let lamina = self.0.lamina.index_axis(Axis(0), 0);
+        let points = stack![
+            Axis(0),
+            lamina.view(),
+            self.0.posterior_dens.index_axis(Axis(0), 0).view()
+        ];
+        lengths.push((&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm());
+
+        // C2SAC to T1SAC
+        let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
+        trs.index_axis_mut(Axis(0), 0)
+            .assign(&self.0.posterior_dens.index_axis(Axis(0), 0));
+        let brs = self.0.corners.0.index_axis(Axis(1), 3);
+        let tr_brs = stack![Axis(0), trs, brs];
+        let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]);
+        for (tr_br, lamina) in tr_brs
+            .axis_iter(Axis(1))
+            .zip(lamina_below_c2.axis_iter(Axis(0)))
+        {
+            let posterior_line = points2line(tr_br);
+            let l_lamina = lyon_geom::Point::new(lamina[0], lamina[1]);
+
+            let line_equation = posterior_line.equation();
+            let projected_point = line_equation.project_point(&l_lamina);
+            let projected_point = Array::from(vec![projected_point.x, projected_point.y]);
+
+            let points = stack![Axis(0), lamina, projected_point.view()];
+            lengths
+                .push((&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm());
+        }
+        Ok(lengths)
     }
 }
 
@@ -251,6 +285,13 @@ impl<'a> MeasureComponent for Sacs<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
 pub struct Adi<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for Adi<'a> {}
+impl Adi<'_> {
+    fn prep(&self) -> Result<(), MeasureError> {
+        self.0.anterior_dens.validate_length(1)?;
+        self.0.anterior_c1_arch.validate_length(1)?;
+        Ok(())
+    }
+}
 impl<'a> DrawComponent for Adi<'a> {
     fn draw(
         &self,
@@ -258,10 +299,9 @@ impl<'a> DrawComponent for Adi<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        self.0.anterior_dens.validate_length(1)?;
-        self.0.anterior_c1_arch.validate_length(1)?;
         let color = line_colors.get_or_new(self.name());
         let mut group = self.default_group().set("stroke", color);
+        self.prep()?;
         let points = stack![
             Axis(0),
             self.0.anterior_dens.index_axis(Axis(0), 0).view(),
@@ -272,6 +312,14 @@ impl<'a> DrawComponent for Adi<'a> {
         Ok(group)
     }
 }
+impl<'a> NeckMeasureComponent for Adi<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        self.prep()?;
+        let diff = &self.0.anterior_dens.index_axis(Axis(0), 0)
+            - &self.0.anterior_c1_arch.index_axis(Axis(0), 0);
+        Ok(vec![diff.l2norm()])
+    }
+}
 
 /// O-C2 Angle
 /// Angle between McGregor's line and C2 lower endplate
@@ -279,6 +327,20 @@ impl<'a> DrawComponent for Adi<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct OC2<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for OC2<'a> {}
+impl OC2<'_> {
+    fn prep(&self) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+        self.0.occipital.validate_length(1)?;
+        self.0.posterior_hard_palate.validate_length(1)?;
+        let mcgregor_points = stack![
+            Axis(0),
+            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view(),
+            self.0.occipital.index_axis(Axis(0), 0).view(),
+        ];
+        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]).to_owned();
+        Ok((mcgregor_points, c2_lower_endplate))
+    }
+}
 impl<'a> DrawComponent for OC2<'a> {
     fn draw(
         &self,
@@ -286,20 +348,12 @@ impl<'a> DrawComponent for OC2<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        self.0.occipital.validate_length(1)?;
-        self.0.posterior_hard_palate.validate_length(1)?;
         let color = line_colors.get_or_new(self.name());
         let mut group = self.default_group().set("stroke", color);
-        let mcgregor_points = stack![
-            Axis(0),
-            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view(),
-            self.0.occipital.index_axis(Axis(0), 0).view(),
-        ];
+        let (mcgregor_points, c2_lower_endplate) = self.prep()?;
         let line = painter.line(mcgregor_points.view());
         group = group.add(line);
-        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2_lower_endplate = c2.slice(s![2.., ..]);
-        let line = painter.line(c2_lower_endplate);
+        let line = painter.line(c2_lower_endplate.view());
         let c2_length = c2_lower_endplate.index_axis(Axis(0), 0).l2norm();
         group = painter.cobb_from_plates(
             group,
@@ -314,6 +368,14 @@ impl<'a> DrawComponent for OC2<'a> {
         );
         group = group.add(line);
         Ok(group)
+    }
+}
+impl<'a> NeckMeasureComponent for OC2<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        let (mcgregor_points, c2_lower_endplate) = self.prep()?;
+        let angle =
+            angle_from_lines(mcgregor_points.view(), c2_lower_endplate.view()).unwrap_or_default();
+        Ok(vec![angle])
     }
 }
 
@@ -351,6 +413,20 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
             );
         }
         Ok(group)
+    }
+}
+impl<'a> NeckMeasureComponent for WedgeAngle<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        let mut angles = Vec::new();
+        for i in 0..6 {
+            let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
+            let wedge_upper = wedge_upper.slice(s![2.., ..]);
+            let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
+            let wedge_lower = wedge_lower.slice(s![..2, ..]);
+            let angle = angle_from_lines(wedge_upper, wedge_lower).unwrap_or_default();
+            angles.push(angle);
+        }
+        Ok(angles)
     }
 }
 
