@@ -1,8 +1,8 @@
 use crate::{
-    extract_points, points2line, CobbAux, ColorPalette, CommonComponent, DrawComponent,
-    HasCornerPoints, L2Norm, MeasureComponent, MeasureError, Named, Painter, ScolError,
-    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
-    CORNER_LABELS,
+    distanced_pair3, extract_points, points2line, CobbAux, ColorPalette, CommonComponent,
+    DrawComponent, HasCornerPoints, L2Norm, MeasureComponent, MeasureError, Named, Painter,
+    ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+    CLASS_POINT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -220,13 +220,17 @@ impl<'a> DrawComponent for Sacs<'a> {
 
             let line_equation = posterior_line.equation();
             let projected_point = line_equation.project_point(&l_lamina);
+            let projected_point = Array::from(vec![projected_point.x, projected_point.y]);
 
-            let points = stack![
-                Axis(0),
-                lamina,
-                Array::from(vec![projected_point.x, projected_point.y]).view()
-            ];
-            let line = painter.polyline(points.view());
+            let points = stack![Axis(0), lamina, projected_point.view()];
+            let line = painter.line(points.view());
+            group = group.add(line);
+            let (line_p1, line_p2) = distanced_pair3(
+                tr_br.index_axis(Axis(0), 0),
+                tr_br.index_axis(Axis(0), 1),
+                projected_point.view(),
+            );
+            let line = painter.line(stack![Axis(0), line_p1, line_p2].view());
             group = group.add(line);
         }
         Ok(group)
@@ -309,6 +313,43 @@ impl<'a> DrawComponent for OC2<'a> {
             Some(self.name()),
         );
         group = group.add(line);
+        Ok(group)
+    }
+}
+
+/// Wedge (intervertebral) angles
+/// C2-C3 to C7-T1
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct WedgeAngle<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for WedgeAngle<'a> {}
+impl<'a> DrawComponent for WedgeAngle<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let mut group = self.default_group();
+        group = group.set("stroke", line_colors.get_or_new(self.name()));
+        for i in 0..6 {
+            let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
+            let wedge_upper = wedge_upper.slice(s![2.., ..]);
+            let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
+            let wedge_lower = wedge_lower.slice(s![..2, ..]);
+            let wedge_length = wedge_upper.index_axis(Axis(0), 0).l2norm();
+            group = painter.cobb_from_plates(
+                group,
+                wedge_upper.to_owned(),
+                wedge_lower.to_owned(),
+                &CobbAux {
+                    plate_scale: 0.25,
+                    ..Default::default()
+                },
+                wedge_length,
+                Some(self.name()),
+            );
+        }
         Ok(group)
     }
 }

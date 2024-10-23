@@ -58,7 +58,7 @@ where
 }
 
 /// Return the pair of vectors that has maximum distance
-fn distanced_pair3<S>(
+pub fn distanced_pair3<S>(
     p1: ArrayBase<S, Ix1>,
     p2: ArrayBase<S, Ix1>,
     p3: ArrayBase<S, Ix1>,
