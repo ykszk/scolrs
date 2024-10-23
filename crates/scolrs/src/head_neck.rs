@@ -1,8 +1,8 @@
 use crate::{
-    distanced_pair3, extract_points, points2line, CobbAux, ColorPalette, CommonComponent,
-    DrawComponent, HasCornerPoints, L2Norm, MeasureComponent, MeasureError, Named, Painter,
-    ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
-    CLASS_POINT, CORNER_LABELS,
+    distanced_pair3, extract_points, points2line, Centroids, CobbAux, ColorPalette,
+    CommonComponent, Corners, DrawComponent, HasCornerPoints, L2Norm, MeasureComponent,
+    MeasureError, Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
+    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -427,6 +427,46 @@ impl<'a> DrawComponent for OptionalPoints<'a> {
                     group = group.add(p.set("stroke", color).set("fill", color));
                 }
             }
+        }
+        Ok(group)
+    }
+}
+
+/// Label text for each vertebra
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
+pub struct VertebralLabels<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for VertebralLabels<'a> {}
+impl<'a> DrawComponent for VertebralLabels<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let mut group = self.default_group();
+        let mut c2t1_corners = self.0.corners.0.clone();
+        let dens = concatenate(
+            Axis(0),
+            &[self.0.anterior_dens.view(), self.0.posterior_dens.view()],
+        )
+        .unwrap();
+        let c2 = c2t1_corners.index_axis(Axis(0), 0);
+        let c2_bl_br = c2.slice(s![2.., ..]);
+
+        // Use the middle point of the dens and c2 lower endplate as the pseudo c2 top endplate
+        let c2_tl_tr = 2.0 * &dens / 3.0 + &c2_bl_br / 3.0;
+        c2t1_corners
+            .index_axis_mut(Axis(0), 0)
+            .slice_mut(s![..2, ..])
+            .assign(&c2_tl_tr);
+        let c1_centroid = dens.mean_axis(Axis(0)).unwrap();
+        let c2t1_centroids = Centroids::from(Corners(c2t1_corners));
+        let c1t1_centroids =
+            concatenate![Axis(0), c1_centroid.insert_axis(Axis(0)), c2t1_centroids];
+        for (i, centroid) in c1t1_centroids.axis_iter(Axis(0)).enumerate() {
+            let text = painter.text(&format!("{}", i + 1), centroid, None);
+            group = group.add(text);
         }
         Ok(group)
     }
