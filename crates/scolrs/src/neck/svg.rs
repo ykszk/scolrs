@@ -102,3 +102,39 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn output_path(name: &str) -> PathBuf {
+        if let Ok(dir) = std::env::var("TEST_OUTPUT_DIR") {
+            return PathBuf::from(dir).join(name);
+        }
+        let devnull = PathBuf::from("/dev/null");
+        if devnull.exists() {
+            devnull
+        } else {
+            PathBuf::from("NUL".to_string())
+        }
+    }
+
+    /// Entry point for debugging
+    #[test]
+    fn test_svg_cmd() -> Result<()> {
+        let output = output_path("neck_case1_lateral.svg");
+        let args = SvgArgs {
+            input: PathBuf::from("../../tests/data/neck_case1/lateral.json"),
+            output,
+            config: Some("../../tests/data/config.toml".into()),
+            label_colors: Some("../../tests/data/colors.yaml".into()),
+            line_colors: Some("../../tests/data/line_colors.csv".into()),
+            resize: None,
+            size: None,
+            measures: vec![],
+            hide: vec![],
+        };
+        cmd(args)
+    }
+}
