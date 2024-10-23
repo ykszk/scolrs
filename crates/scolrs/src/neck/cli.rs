@@ -49,9 +49,12 @@ pub struct SvgArgs {
 
 #[derive(Parser, Debug)]
 pub struct MeasureArgs {
-    /// Input json file
+    /// Input json/ndjson file
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
+    /// Output json/ndjson file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
     /// Measurements to draw. By default, all measurements are drawn
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
