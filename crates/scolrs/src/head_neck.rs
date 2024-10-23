@@ -1,8 +1,8 @@
 use crate::{
     angle_from_lines, distanced_pair3, extract_points, points2line, Centroids, CobbAux,
     ColorPalette, CommonComponent, Corners, DrawComponent, HasCornerPoints, L2Norm, MeasureError,
-    Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
-    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    Named, Painter, ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
+    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -166,21 +166,6 @@ pub trait NeckSagittalComponent: DrawComponent {
 
 pub trait NeckMeasureComponent: Named {
     fn measure(&self) -> Result<Vec<f32>, MeasureError>;
-}
-
-trait ValidateLength {
-    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
-}
-
-impl ValidateLength for Array2<f32> {
-    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
-        if self.len_of(Axis(0)) != expected_len {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// All sacral available spaces

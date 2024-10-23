@@ -1,6 +1,6 @@
 use crate::{
     angle_from_lines, CoronalMeasure, CoronalPoints, HasCornerPoints, L2Norm, SagittalMeasure,
-    SagittalPoints, CORNER_LABELS,
+    SagittalPoints, ValidateLength, CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::LabelMeDataWImage;
@@ -830,7 +830,7 @@ impl<'a> DrawComponent for Csvl<'a> {
         let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.1.tll {
-            let v_idx = ((tll as u8) / 2 - 1).max(0) as usize; // one level above the tll apex
+            let v_idx = ((tll as u8) / 2 - 1) as usize; // one level above the tll apex
             let mid = sup_plate.mean_axis(Axis(0)).unwrap();
             let mut vl = ndarray::stack![Axis(0), mid, mid];
             let y = spine.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
@@ -964,13 +964,7 @@ impl DrawComponent for ClavicleAngle<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let coronal_points = self.0;
-        if coronal_points.clavicle.0.len_of(Axis(0)) != 2 {
-            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                2,
-                coronal_points.clavicle.0.len_of(Axis(0)),
-            )
-            .into());
-        }
+        coronal_points.clavicle.0.validate_length(2)?;
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -986,11 +980,7 @@ impl MeasureComponent for ClavicleAngle<'_> {
 }
 
 fn difference_in_index(points: ArrayView2<f32>, index: usize) -> Result<f32, MeasureError> {
-    if points.len_of(Axis(0)) != 2 {
-        return Err(
-            InvalidNumberOfPoints::IncorrectNumberOfPoints(2, points.len_of(Axis(0))).into(),
-        );
-    }
+    points.validate_length(2)?;
     Ok(points.index_axis(Axis(0), 0)[index] - points.index_axis(Axis(0), 1)[index])
 }
 
@@ -1087,13 +1077,7 @@ impl DrawComponent for ShoulderHeight<'_> {
 impl MeasureComponent for ShoulderHeight<'_> {
     fn measure(&self) -> Result<f32, MeasureError> {
         let coronal_points = self.0;
-        if coronal_points.shoulder.0.len_of(Axis(0)) != 2 {
-            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                2,
-                coronal_points.shoulder.0.len_of(Axis(0)),
-            )
-            .into());
-        }
+        coronal_points.shoulder.0.validate_length(2)?;
         let points = coronal_points.shoulder.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)
@@ -1101,11 +1085,7 @@ impl MeasureComponent for ShoulderHeight<'_> {
 }
 
 fn tilt_angle(points: ArrayView2<f32>) -> Result<f32, MeasureError> {
-    if points.len_of(Axis(0)) != 2 {
-        return Err(
-            InvalidNumberOfPoints::IncorrectNumberOfPoints(2, points.len_of(Axis(0))).into(),
-        );
-    }
+    points.validate_length(2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];
     let angle = angle_between(hor_line.view(), points);
@@ -1152,13 +1132,7 @@ impl DrawComponent for PelvicObliquity<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let coronal_points = self.0;
-        if coronal_points.pelvis.0.len_of(Axis(0)) != 2 {
-            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                2,
-                coronal_points.pelvis.0.len_of(Axis(0)),
-            )
-            .into());
-        }
+        coronal_points.pelvis.0.validate_length(2)?;
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1186,13 +1160,7 @@ impl DrawComponent for SacralObliquity<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let coronal_points = self.0;
-        if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
-            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                2,
-                coronal_points.femoral_head.0.len_of(Axis(0)),
-            )
-            .into());
-        }
+        coronal_points.femoral_head.0.validate_length(2)?;
         let label = self.name();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1252,13 +1220,7 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
     fn measure(&self) -> Result<f32, MeasureError> {
         let coronal_points = self.0;
-        if coronal_points.femoral_head.0.len_of(Axis(0)) != 2 {
-            return Err(InvalidNumberOfPoints::IncorrectNumberOfPoints(
-                2,
-                coronal_points.femoral_head.0.len_of(Axis(0)),
-            )
-            .into());
-        }
+        coronal_points.femoral_head.0.validate_length(2)?;
         let points = coronal_points.femoral_head.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)

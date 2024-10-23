@@ -64,40 +64,25 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolEr
 #[derive(Debug, Clone)]
 pub struct AtMost2<T>(pub T);
 
-trait ArrayLengthValidation {
-    /// Validate the length of the array
-    /// Return `Some(self)` if the length is equal to `len`
-    /// Return `None` otherwise
-    fn validate_exact_length(self, axis: Axis, len: usize) -> Option<Self>
-    where
-        Self: std::marker::Sized;
-
-    /// Validate the length of the array
-    /// Return `Some(self)` if `min <= len <= max`
-    /// Return `None` otherwise
-    fn validate_length_between(self, axis: Axis, min: usize, max: usize) -> Option<Self>
-    where
-        Self: std::marker::Sized;
+trait ValidateLength {
+    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
 }
 
-impl ArrayLengthValidation for Array2<f32> {
-    fn validate_exact_length(self, axis: Axis, expected_len: usize) -> Option<Self> {
-        if self.len_of(axis) == expected_len {
-            Some(self)
-        } else {
-            None
+impl<S> ValidateLength for ndarray::ArrayBase<S, ndarray::Ix2>
+where
+    S: ndarray::Data<Elem = f32>,
+{
+    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
+        if self.len_of(Axis(0)) != expected_len {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
+            ));
         }
-    }
-    fn validate_length_between(self, axis: Axis, min: usize, max: usize) -> Option<Self> {
-        let len = self.len_of(axis);
-        if min <= len && len <= max {
-            Some(self)
-        } else {
-            None
-        }
+        Ok(())
     }
 }
 
+#[allow(dead_code)] // TODO: maybe remove?
 trait LeftFirst {
     /// sort array by x
     fn left_first(self) -> Self;
@@ -384,7 +369,7 @@ pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Optio
     let v_sup = &v_sup / len_sup;
     let v_inf = &v_inf / len_inf;
     let cos = v_sup.dot(&v_inf);
-    let cos = cos.max(-1.0).min(1.0);
+    let cos = cos.clamp(-1.0, 1.0);
     let deg = cos.acos().to_degrees();
     if v_sup[1] < v_inf[1] {
         Some(-deg)
