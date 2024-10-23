@@ -120,16 +120,62 @@ mod tests {
         }
     }
 
+    fn test_vars() -> (PathBuf, Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
+        let data_dir = PathBuf::from("../../tests/data/");
+        let config = Some(data_dir.join("config.toml"));
+        let label_colors = Some(data_dir.join("colors.yaml"));
+        let line_colors = Some(data_dir.join("line_colors.csv"));
+        (data_dir, config, label_colors, line_colors)
+    }
+
     /// Entry point for debugging
     #[test]
-    fn test_svg_cmd() -> Result<()> {
+    fn test_svg_cmd_neck_case1() -> Result<()> {
+        let (data_dir, config, label_colors, line_colors) = test_vars();
+
+        let input = data_dir.join("neck_case1/lateral.json");
         let output = output_path("neck_case1_lateral.svg");
         let args = SvgArgs {
-            input: PathBuf::from("../../tests/data/neck_case1/lateral.json"),
+            input,
             output,
-            config: Some("../../tests/data/config.toml".into()),
-            label_colors: Some("../../tests/data/colors.yaml".into()),
-            line_colors: Some("../../tests/data/line_colors.csv".into()),
+            config: config.clone(),
+            label_colors: label_colors.clone(),
+            line_colors: line_colors.clone(),
+            resize: None,
+            size: None,
+            measures: vec![],
+            hide: vec![],
+        };
+        cmd(args)
+    }
+
+    #[test]
+    fn test_svg_cmd_neck_case2() -> Result<()> {
+        let (data_dir, config, label_colors, line_colors) = test_vars();
+
+        let input = data_dir.join("neck_case2/extension_lateral.json");
+        let output = output_path("neck_case2_extension_lateral.svg");
+        let args = SvgArgs {
+            input,
+            output,
+            config: config.clone(),
+            label_colors: label_colors.clone(),
+            line_colors: line_colors.clone(),
+            resize: None,
+            size: None,
+            measures: vec![],
+            hide: vec![],
+        };
+        cmd(args)?;
+
+        let input = data_dir.join("neck_case2/flexion_lateral.json");
+        let output = output_path("neck_case2_flexion_lateral.svg");
+        let args = SvgArgs {
+            input,
+            output,
+            config: config.clone(),
+            label_colors: label_colors.clone(),
+            line_colors: line_colors.clone(),
             resize: None,
             size: None,
             measures: vec![],
