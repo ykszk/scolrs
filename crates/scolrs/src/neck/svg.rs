@@ -1,7 +1,7 @@
 use crate::neck::cli::SvgArgs;
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
-use log::debug;
+use log::{debug, warn};
 use scolrs::head_neck::{
     Adi, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints, Sacs, OC2,
 };
@@ -83,8 +83,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     for component in neck_sagittal_components {
         debug!("Draw {:?}", component.name());
-        let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
-        document = document.add(g);
+        match component.draw(&painter, &mut label_colors, &mut line_colors) {
+            Ok(g) => document = document.add(g),
+            Err(e) => match e {
+                scolrs::MeasureError::InvalidNumberOfPoints(err) => {
+                    warn!("Skip point count error:{:?}", err);
+                }
+                e => return Err(e.into()),
+            },
+        }
     }
 
     debug!("Save to {:?}", args.output);

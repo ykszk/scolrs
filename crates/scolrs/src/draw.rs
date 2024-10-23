@@ -97,8 +97,8 @@ where
 
 #[derive(Debug, Clone, Copy)]
 pub struct CobbAux {
-    plate_scale: f32,
-    perpendicular_scale: f32,
+    pub plate_scale: f32,
+    pub perpendicular_scale: f32,
 }
 
 impl Default for CobbAux {

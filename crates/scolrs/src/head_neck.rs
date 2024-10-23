@@ -1,7 +1,8 @@
 use crate::{
-    extract_points, points2line, ColorPalette, CommonComponent, DrawComponent, HasCornerPoints,
-    MeasureComponent, MeasureError, Named, Painter, ScolError, CLASS_ANGLE, CLASS_ANNOTATION,
-    CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CORNER_LABELS,
+    extract_points, points2line, CobbAux, ColorPalette, CommonComponent, DrawComponent,
+    HasCornerPoints, L2Norm, MeasureComponent, MeasureError, Named, Painter, ScolError,
+    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
+    CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -269,6 +270,7 @@ impl<'a> DrawComponent for Adi<'a> {
 }
 
 /// O-C2 Angle
+/// Angle between McGregor's line and C2 lower endplate
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct OC2<'a>(pub &'a LateralPoints);
@@ -284,14 +286,29 @@ impl<'a> DrawComponent for OC2<'a> {
         self.0.posterior_hard_palate.validate_length(1)?;
         let color = line_colors.get_or_new(self.name());
         let mut group = self.default_group().set("stroke", color);
-        let points = stack![
+        let mcgregor_points = stack![
             Axis(0),
+            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view(),
             self.0.occipital.index_axis(Axis(0), 0).view(),
-            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view()
         ];
-        let line = painter.line(points.view());
+        let line = painter.line(mcgregor_points.view());
         group = group.add(line);
-        unimplemented!("Draw angle");
+        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]);
+        let line = painter.line(c2_lower_endplate);
+        let c2_length = c2_lower_endplate.index_axis(Axis(0), 0).l2norm();
+        group = painter.cobb_from_plates(
+            group,
+            mcgregor_points,
+            c2_lower_endplate.to_owned(),
+            &CobbAux {
+                plate_scale: 0.5,
+                ..Default::default()
+            },
+            c2_length,
+            Some(self.name()),
+        );
+        group = group.add(line);
         Ok(group)
     }
 }
