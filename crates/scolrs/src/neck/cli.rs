@@ -14,6 +14,8 @@ pub enum Command {
     Svg(SvgArgs),
     /// Measure neck parameters
     Measure(MeasureArgs),
+    /// Compile SVGs into a catalog HTML
+    Catalog(CatalogArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -58,4 +60,16 @@ pub struct MeasureArgs {
     /// Measurements to draw. By default, all measurements are drawn
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
+}
+#[derive(Parser, Debug)]
+pub struct CatalogArgs {
+    /// Input svg containing directory
+    #[arg(value_hint = ValueHint::DirPath)]
+    pub input: PathBuf,
+    /// Output html file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// `title` tag in html
+    #[clap(short, long)]
+    pub title: Option<String>,
 }
