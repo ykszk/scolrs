@@ -80,12 +80,19 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
     for line in reader.lines() {
         let line = line?;
         let data: LabelMeDataLine = serde_json::from_str(&line)?;
-        let results = process_data(&data.content)?;
-        let results_line = MeasureLine {
-            filename: data.filename,
-            content: results,
-        };
-        writeln!(writer, "{}", serde_json::to_string(&results_line)?)?;
+        let results = process_data(&data.content);
+        match results {
+            Ok(results) => {
+                let results_line = MeasureLine {
+                    filename: data.filename,
+                    content: results,
+                };
+                writeln!(writer, "{}", serde_json::to_string(&results_line)?)?;
+            }
+            Err(e) => {
+                warn!("Skip {:?}: {:?}", data.filename, e);
+            }
+        }
     }
     Ok(())
 }

@@ -18,11 +18,11 @@ pub enum Command {
 
 #[derive(Parser, Debug)]
 pub struct SvgArgs {
-    /// Input labelme json filename
+    /// Input labelme json/ndjson filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
-    /// Output svg filename
-    #[arg(value_hint = ValueHint::FilePath)]
+    /// Output svg filename for json input or output directory for ndjson input
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub output: PathBuf,
     /// Config file in toml
     #[clap(long)]

@@ -1,36 +1,30 @@
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+
 use crate::neck::cli::SvgArgs;
 use anyhow::{Context, Result};
+use labelme_rs::LabelMeDataLine;
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::{debug, warn};
 use scolrs::head_neck::{
-    Adi, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints, Sacs,
-    VertebralLabels, WedgeAngle, OC2,
+    Adi, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints, Sacs, WedgeAngle,
+    OC2,
 };
 use scolrs::{ColorPalette, CommonComponent, DrawParam, Painter};
-use svg::node::element;
+use svg::node::element::{self, SVG};
 
-pub fn cmd(args: SvgArgs) -> Result<()> {
-    let draw_param = if let Some(filename) = args.config {
-        let s = std::fs::read_to_string(&filename)
-            .with_context(|| format!("Load config file {:?}", filename))?;
-        toml::from_str(&s)?
-    } else {
-        DrawParam::default()
-    };
-
-    debug!("Loading {:?}", args.input);
-
-    let mut data: LabelMeDataWImage = args
-        .input
-        .as_path()
-        .try_into()
-        .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
-
-    if let Some(resize) = args.resize {
+fn process_data(
+    mut data: LabelMeDataWImage,
+    args: &SvgArgs,
+    draw_param: &DrawParam,
+    label_colors: &mut ColorPalette,
+    line_colors: &mut ColorPalette,
+) -> Result<SVG> {
+    if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
     }
-    let svg_size = if let Some(size) = args.size {
+    let svg_size = if let Some(size) = args.size.as_ref() {
         let size_param = labelme_rs::ResizeParam::try_from(size.as_str())?;
         data.data
             .scale(size_param.scale(data.image.width(), data.image.height()));
@@ -39,22 +33,6 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         data.image.dimensions()
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
-
-    let mut label_colors = if let Some(filename) = args.label_colors {
-        ColorPalette::new(
-            labelme_rs::load_label_colors(&filename)
-                .with_context(|| format!("Load label color {:?}", filename))?,
-        )
-    } else {
-        ColorPalette::new(labelme_rs::LabelColorsHex::default())
-    };
-    let mut line_colors = if let Some(filename) = args.line_colors {
-        let reader = std::fs::File::open(&filename)
-            .with_context(|| format!("Load line color {:?}", filename))?;
-        ColorPalette::new(scolrs::load_line_colors(reader)?)
-    } else {
-        ColorPalette::new(scolrs::LineColors::default())
-    };
 
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image);
@@ -70,23 +48,23 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     for component in common_components {
         debug!("Draw {:?}", component.name());
-        let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
+        let g = component.draw(&painter, label_colors, line_colors)?;
         document = document.add(g);
     }
 
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = vec![
+        // Box::new(VertebralLabels(&cervical_points)),
         Box::new(LaminalPoints(&cervical_points.lamina)),
         Box::new(OptionalPoints(&cervical_points)),
         Box::new(Sacs(&cervical_points)),
         Box::new(Adi(&cervical_points)),
         Box::new(OC2(&cervical_points)),
         Box::new(WedgeAngle(&cervical_points)),
-        Box::new(VertebralLabels(&cervical_points)),
     ];
 
     for component in neck_sagittal_components {
         debug!("Draw {:?}", component.name());
-        match component.draw(&painter, &mut label_colors, &mut line_colors) {
+        match component.draw(&painter, label_colors, line_colors) {
             Ok(g) => document = document.add(g),
             Err(e) => match e {
                 scolrs::MeasureError::InvalidNumberOfPoints(err) => {
@@ -96,10 +74,83 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             },
         }
     }
+    Ok(document)
+}
 
-    debug!("Save to {:?}", args.output);
+pub fn cmd(args: SvgArgs) -> Result<()> {
+    let draw_param = if let Some(filename) = args.config.as_ref() {
+        let s = std::fs::read_to_string(filename)
+            .with_context(|| format!("Load config file {:?}", filename))?;
+        toml::from_str(&s)?
+    } else {
+        DrawParam::default()
+    };
 
-    std::fs::write(args.output, document.to_string())?;
+    let mut label_colors = if let Some(filename) = args.label_colors.as_ref() {
+        ColorPalette::new(
+            labelme_rs::load_label_colors(filename)
+                .with_context(|| format!("Load label color {:?}", filename))?,
+        )
+    } else {
+        ColorPalette::new(labelme_rs::LabelColorsHex::default())
+    };
+    let mut line_colors = if let Some(filename) = args.line_colors.as_ref() {
+        let reader = std::fs::File::open(filename)
+            .with_context(|| format!("Load line color {:?}", filename))?;
+        ColorPalette::new(scolrs::load_line_colors(reader)?)
+    } else {
+        ColorPalette::new(scolrs::LineColors::default())
+    };
+
+    if args.input.extension().unwrap_or_default() == "json" {
+        let data: LabelMeDataWImage = args
+            .input
+            .as_path()
+            .try_into()
+            .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
+        let document = process_data(
+            data,
+            &args,
+            &draw_param,
+            &mut label_colors,
+            &mut line_colors,
+        )?;
+        std::fs::write(&args.output, document.to_string())
+            .with_context(|| format!("Saving to {:?}", args.output))?;
+        return Ok(());
+    } else if args.input.as_os_str() == "-"
+        || args.input.extension().unwrap_or_default() == "ndjson"
+    {
+        let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
+            Box::new(BufReader::new(std::io::stdin()))
+        } else {
+            Box::new(BufReader::new(File::open(&args.input)?))
+        };
+        for line in reader.lines() {
+            let line = line?;
+            let data_line: LabelMeDataLine = serde_json::from_str(&line)?;
+            let data = LabelMeDataWImage::try_from(data_line.content)?;
+            let result = process_data(
+                data,
+                &args,
+                &draw_param,
+                &mut label_colors,
+                &mut line_colors,
+            );
+            let document = match result {
+                Ok(document) => document,
+                Err(e) => {
+                    warn!("Skip {:?}: {:?}", data_line.filename, e);
+                    continue;
+                }
+            };
+            let output = args.output.join(&data_line.filename).with_extension("svg");
+            std::fs::write(&output, document.to_string())
+                .with_context(|| format!("Saving to {:?}", args.output))?;
+        }
+    } else {
+        return Err(anyhow::anyhow!("Unsupported file format"));
+    }
 
     Ok(())
 }
