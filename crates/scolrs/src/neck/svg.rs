@@ -219,6 +219,7 @@ mod tests {
             config: config.clone(),
             label_colors: label_colors.clone(),
             line_colors: line_colors.clone(),
+            resize: Some("768x768".to_string()),
             ..Default::default()
         };
         cmd(args)?;
@@ -231,6 +232,7 @@ mod tests {
             config: config.clone(),
             label_colors: label_colors.clone(),
             line_colors: line_colors.clone(),
+            resize: Some("768x768".to_string()),
             ..Default::default()
         };
         cmd(args)

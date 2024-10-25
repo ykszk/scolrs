@@ -150,10 +150,9 @@ impl Painter {
     where
         S: ndarray::Data<Elem = f32>,
     {
-        let t = element::Text::new()
+        let t = element::Text::new(text)
             .set("x", coords[0])
-            .set("y", coords[1])
-            .add(svg::node::Text::new(text));
+            .set("y", coords[1]);
         if let Some(title) = title {
             t.add(self.title(title))
         } else {
@@ -162,7 +161,7 @@ impl Painter {
     }
 
     pub fn title(&self, text: &str) -> element::Title {
-        element::Title::new().add(svg::node::Text::new(text))
+        element::Title::new(text)
     }
 
     pub fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle

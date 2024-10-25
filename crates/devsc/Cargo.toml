@@ -15,7 +15,7 @@ env_logger.workspace = true
 log.workspace = true
 ndarray.workspace = true
 ndarray-ndimage = "0.4.0"
-ndarray-stats = "0.5.1"
+ndarray-stats = "0.6.0"
 scolrs = { path = "../scolrs" }
 serde.workspace = true
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -25,11 +25,11 @@ serde.workspace = true
 anyhow.workspace = true
 pretty_assertions.workspace = true
 walkdir = "2.4.0"
-dicom = "0.6.3"
-dicom-pixeldata = { version = "0.2.2", default-features = false, features = [
+dicom = "0.7.1"
+dicom-pixeldata = { version = "0.7.1", default-features = false, features = [
     "native",
     "image",
     "ndarray",
-    "gdcm",
+    # "gdcm",
 ] }
-dicom-transfer-syntax-registry = { version = "0.6.2" }
+dicom-transfer-syntax-registry = { version = "0.7.1" }
