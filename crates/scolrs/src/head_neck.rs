@@ -5,6 +5,7 @@ use crate::{
     CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
+use lyon_geom::point;
 use named_derive::Named;
 use serde::{Deserialize, Serialize};
 
@@ -81,17 +82,6 @@ pub struct LateralPoints {
     pub chin: Array2<f32>,
     pub manubrium: Array2<f32>,
 }
-
-// impl LateralPoints {
-//     fn extract_optional_point(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolError> {
-//         let points = extract_points(data, label)?;
-//         if points.is_empty() {
-//             Ok(Array1::zeros(0))
-//         } else {
-//             Ok(points.index_axis(Axis(0), 0).to_owned())
-//         }
-//     }
-// }
 
 impl TryFrom<&LabelMeData> for LateralPoints {
     type Error = ScolError;
@@ -412,6 +402,78 @@ impl<'a> NeckMeasureComponent for WedgeAngle<'a> {
     }
 }
 
+/// Modified Renawat Index
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ModifiedRenawatIndex<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for ModifiedRenawatIndex<'a> {}
+impl<'a> ModifiedRenawatIndex<'a> {
+    /// Array2 of [intersection, c2_lower_middle]
+    fn prep(&self) -> Result<Option<Array2<f32>>, MeasureError> {
+        self.0.anterior_c1_arch.validate_length(1)?;
+        // posterior_c2_arch?
+        self.0.posterior_dens.validate_length(1)?;
+        let c1_line = points2line(stack![
+            Axis(0),
+            self.0.anterior_c1_arch.index_axis(Axis(0), 0).view(),
+            self.0.posterior_dens.index_axis(Axis(0), 0).view()
+        ]);
+        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]);
+        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        // perpendicular direction to the line
+        let c2_normal = points2line(c2_lower_endplate).equation().normal();
+        let c2_perpendicular_line = lyon_geom::Line {
+            point: point(c2_lower_middle[0], c2_lower_middle[1]),
+            vector: c2_normal,
+        };
+        // intersection point
+        let intersection = c1_line.intersection(&c2_perpendicular_line);
+        if let Some(intersection) = intersection {
+            let intersection = Array::from(vec![intersection.x, intersection.y]);
+            Ok(Some(stack![Axis(0), intersection, c2_lower_middle]))
+        } else {
+            Ok(None)
+        }
+    }
+}
+impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let color = line_colors.get_or_new(self.name());
+        let mut group = self.default_group().set("stroke", color);
+        let intersection_c2_lower_middle = self.prep()?;
+        if let Some(intersection_c2_lower_middle) = intersection_c2_lower_middle {
+            let line = painter.line(intersection_c2_lower_middle.view());
+            group = group.add(line);
+            let (p1, p2) = distanced_pair3(
+                intersection_c2_lower_middle.index_axis(Axis(0), 0),
+                self.0.anterior_c1_arch.index_axis(Axis(0), 0),
+                self.0.posterior_dens.index_axis(Axis(0), 0),
+            );
+            let line = painter.line(stack![Axis(0), p1, p2].view());
+            group = group.add(line);
+        }
+
+        Ok(group)
+    }
+}
+impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        let intersection = self.prep()?;
+        if let Some(intersection) = intersection {
+            let diff = &intersection.index_axis(Axis(0), 0) - &intersection.index_axis(Axis(0), 1);
+            Ok(vec![diff.l2norm()])
+        } else {
+            Ok(vec![0.0])
+        }
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -531,6 +593,7 @@ pub enum NeckLateralMeasure {
     OC2,
     Sacs,
     WedgeAngle,
+    ModifiedRenawatIndex,
 }
 
 impl NeckLateralMeasure {
@@ -547,6 +610,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureC
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralMeasure::ModifiedRenawatIndex => {
+                Box::new(ModifiedRenawatIndex(lateral_points))
+            }
         }
     }
 }
@@ -560,6 +626,7 @@ pub enum NeckLateralDraw {
     OC2,
     Sacs,
     WedgeAngle,
+    ModifiedRenawatIndex,
 }
 
 impl NeckLateralDraw {
@@ -578,6 +645,7 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalCom
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralDraw::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralDraw::ModifiedRenawatIndex => Box::new(ModifiedRenawatIndex(lateral_points)),
         }
     }
 }
