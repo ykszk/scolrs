@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use labelme_rs::LabelMeData;
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
+use strum::VariantArray;
 use svg::node::element;
 
 #[derive(Debug, Clone)]
@@ -510,9 +511,73 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
         let c1t1_centroids =
             concatenate![Axis(0), c1_centroid.insert_axis(Axis(0)), c2t1_centroids];
         for (i, centroid) in c1t1_centroids.axis_iter(Axis(0)).enumerate() {
-            let text = painter.text(&format!("{}", i + 1), centroid, None);
+            let label = if i <= 6 {
+                // C1 to C7
+                format!("C{}", i + 1)
+            } else {
+                "T1".to_string()
+            };
+            let text = painter.text(&label, centroid, None);
             group = group.add(text);
         }
         Ok(group)
+    }
+}
+
+#[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
+#[clap(rename_all = "PascalCase")]
+pub enum NeckLateralMeasure {
+    Adi,
+    OC2,
+    Sacs,
+    WedgeAngle,
+}
+
+impl NeckLateralMeasure {
+    pub fn all() -> Vec<Self> {
+        NeckLateralMeasure::VARIANTS.to_vec()
+    }
+}
+
+impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureComponent + 'a> {
+    fn from(value: (&NeckLateralMeasure, &'a LateralPoints)) -> Self {
+        let (measure, lateral_points) = value;
+        match measure {
+            NeckLateralMeasure::Adi => Box::new(Adi(lateral_points)),
+            NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
+            NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
+            NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+        }
+    }
+}
+
+#[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
+#[clap(rename_all = "PascalCase")]
+pub enum NeckLateralDraw {
+    OptionalPoints,
+    VertebralLabels,
+    Adi,
+    OC2,
+    Sacs,
+    WedgeAngle,
+}
+
+impl NeckLateralDraw {
+    pub fn all() -> Vec<Self> {
+        NeckLateralDraw::VARIANTS.to_vec()
+    }
+}
+
+impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalComponent + 'a> {
+    fn from(value: (&NeckLateralDraw, &'a LateralPoints)) -> Self {
+        let (draw, lateral_points) = value;
+        match draw {
+            NeckLateralDraw::OptionalPoints => Box::new(OptionalPoints(lateral_points)),
+            NeckLateralDraw::VertebralLabels => Box::new(VertebralLabels(lateral_points)),
+            NeckLateralDraw::Adi => Box::new(Adi(lateral_points)),
+            NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
+            NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),
+            NeckLateralDraw::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+        }
     }
 }

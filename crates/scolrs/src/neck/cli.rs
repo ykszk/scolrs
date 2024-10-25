@@ -18,7 +18,7 @@ pub enum Command {
     Catalog(CatalogArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 pub struct SvgArgs {
     /// Input labelme json/ndjson filename
     #[arg(value_hint = ValueHint::FilePath)]
@@ -47,9 +47,12 @@ pub struct SvgArgs {
     /// Hide measurements. Use `--list` to see all measurements
     #[clap(long)]
     pub hide: Vec<String>,
+    /// List all available measurements
+    #[clap(long)]
+    pub list: bool,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 pub struct MeasureArgs {
     /// Input json/ndjson file
     #[arg(value_hint = ValueHint::FilePath)]
@@ -60,7 +63,11 @@ pub struct MeasureArgs {
     /// Measurements to draw. By default, all measurements are drawn
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
+    /// List all available measurements
+    #[clap(long)]
+    pub list: bool,
 }
+
 #[derive(Parser, Debug)]
 pub struct CatalogArgs {
     /// Input svg containing directory

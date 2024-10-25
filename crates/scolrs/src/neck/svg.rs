@@ -6,10 +6,8 @@ use anyhow::{Context, Result};
 use labelme_rs::LabelMeDataLine;
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::{debug, warn};
-use scolrs::head_neck::{
-    Adi, CervicalPoints, NeckSagittalComponent, OptionalPoints, Sacs, WedgeAngle, OC2,
-};
-use scolrs::{ColorPalette, CommonComponent, DrawParam, Painter};
+use scolrs::head_neck::{CervicalPoints, NeckLateralDraw, NeckSagittalComponent};
+use scolrs::{parse_measures, ColorPalette, CommonComponent, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
 fn process_data(
@@ -18,6 +16,7 @@ fn process_data(
     draw_param: &DrawParam,
     label_colors: &mut ColorPalette,
     line_colors: &mut ColorPalette,
+    neck_sagittal_draw: &[NeckLateralDraw],
 ) -> Result<SVG> {
     if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
@@ -51,14 +50,10 @@ fn process_data(
         document = document.add(g);
     }
 
-    let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = vec![
-        // Box::new(VertebralLabels(&cervical_points)),
-        Box::new(OptionalPoints(&cervical_points)),
-        Box::new(Sacs(&cervical_points)),
-        Box::new(Adi(&cervical_points)),
-        Box::new(OC2(&cervical_points)),
-        Box::new(WedgeAngle(&cervical_points)),
-    ];
+    let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = neck_sagittal_draw
+        .iter()
+        .map(|m| (m, &cervical_points).into())
+        .collect();
 
     for component in neck_sagittal_components {
         debug!("Draw {:?}", component.name());
@@ -76,6 +71,14 @@ fn process_data(
 }
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
+    if args.list {
+        let measures = NeckLateralDraw::all();
+        for measure in measures {
+            println!("{}", measure);
+        }
+        return Ok(());
+    }
+
     let draw_param = if let Some(filename) = args.config.as_ref() {
         let s = std::fs::read_to_string(filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
@@ -100,6 +103,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         ColorPalette::new(scolrs::LineColors::default())
     };
 
+    let neck_sagittal_draw: Vec<NeckLateralDraw> = if args.measures.is_empty() {
+        NeckLateralDraw::all()
+    } else {
+        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
+    };
+
     if args.input.extension().unwrap_or_default() == "json" {
         let data: LabelMeDataWImage = args
             .input
@@ -112,6 +121,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             &draw_param,
             &mut label_colors,
             &mut line_colors,
+            &neck_sagittal_draw,
         )?;
         std::fs::write(&args.output, document.to_string())
             .with_context(|| format!("Saving to {:?}", args.output))?;
@@ -134,6 +144,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 &draw_param,
                 &mut label_colors,
                 &mut line_colors,
+                &neck_sagittal_draw,
             );
             let document = match result {
                 Ok(document) => document,
@@ -191,10 +202,7 @@ mod tests {
             config: config.clone(),
             label_colors: label_colors.clone(),
             line_colors: line_colors.clone(),
-            resize: None,
-            size: None,
-            measures: vec![],
-            hide: vec![],
+            ..Default::default()
         };
         cmd(args)
     }
@@ -211,10 +219,7 @@ mod tests {
             config: config.clone(),
             label_colors: label_colors.clone(),
             line_colors: line_colors.clone(),
-            resize: None,
-            size: None,
-            measures: vec![],
-            hide: vec![],
+            ..Default::default()
         };
         cmd(args)?;
 
@@ -226,10 +231,7 @@ mod tests {
             config: config.clone(),
             label_colors: label_colors.clone(),
             line_colors: line_colors.clone(),
-            resize: None,
-            size: None,
-            measures: vec![],
-            hide: vec![],
+            ..Default::default()
         };
         cmd(args)
     }
