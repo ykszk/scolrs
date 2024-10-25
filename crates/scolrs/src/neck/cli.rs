@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand, ValueHint};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[clap(name=env!("CARGO_BIN_NAME"), author, version, about, long_about = None)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Command,
@@ -10,12 +11,20 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Generate shell completions
+    Complete(CompleteArgs),
     /// Create SVG
     Svg(SvgArgs),
     /// Measure neck parameters
     Measure(MeasureArgs),
     /// Compile SVGs into a catalog HTML
     Catalog(CatalogArgs),
+}
+
+#[derive(Parser)]
+pub struct CompleteArgs {
+    /// Shell to generate completions for
+    pub shell: Shell,
 }
 
 #[derive(Parser, Debug, Default)]
@@ -27,13 +36,13 @@ pub struct SvgArgs {
     #[arg(value_hint = ValueHint::AnyPath)]
     pub output: PathBuf,
     /// Config file in toml
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub config: Option<PathBuf>,
     /// Label colors in yaml
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub label_colors: Option<PathBuf>,
     /// Line colors in csv with `label` and `color` columns
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub line_colors: Option<PathBuf>,
     /// Resize x-ray image. Specify in imagemagick's `-resize`-like format
     #[clap(long)]

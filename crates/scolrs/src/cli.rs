@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[clap(name=env!("CARGO_CRATE_NAME"), author, version, about, long_about = None)]
+#[clap(name=env!("CARGO_BIN_NAME"), author, version, about, long_about = None)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Command,
@@ -10,6 +11,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Generate shell completions
+    Complete(CompleteArgs),
     /// Create SVG
     Svg(SvgArgs),
     /// Measure scoliotic parameters
@@ -20,6 +23,12 @@ pub enum Command {
     Lenke(LenkeArgs),
     /// List available measurements
     List(ListArgs),
+}
+
+#[derive(Parser)]
+pub struct CompleteArgs {
+    /// Shell to generate completions for
+    pub shell: Shell,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
