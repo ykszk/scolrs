@@ -1,8 +1,8 @@
 use crate::{
     angle_from_lines, distanced_pair3, extract_points, points2line, Centroids, CobbAux,
-    ColorPalette, CommonComponent, Corners, DrawComponent, HasCornerPoints, L2Norm, MeasureError,
-    Named, Painter, ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
-    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    ColorPalette, CommonComponent, Corners, DrawComponent, DrawCorners, HasCornerPoints, L2Norm,
+    MeasureError, Named, Painter, ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION,
+    CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use named_derive::Named;
@@ -430,6 +430,16 @@ impl HasCornerPoints for CervicalPoints<'_> {
     }
 }
 impl<'a> CommonComponent for CervicalPoints<'a> {}
+impl<'a> DrawComponent for CervicalPoints<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        self.draw_corners(painter, label_colors)
+    }
+}
 
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]

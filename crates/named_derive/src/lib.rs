@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Expr, ExprArray};
+use syn::{parse_macro_input, DeriveInput, Expr, ExprArray, LitStr};
 
 // #[macro_export]
 // macro_rules! impl_named_w_lifetime_for {
@@ -19,7 +19,7 @@ use syn::{parse_macro_input, DeriveInput, Expr, ExprArray};
 //
 // impl_named_w_lifetime_for!(VertebralLabels, &[CLASS_ANNOTATION, CLASS_TEXT]);
 
-#[proc_macro_derive(Named, attributes(draw_type))]
+#[proc_macro_derive(Named, attributes(draw_type, disp_name))]
 pub fn derive_named(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -54,10 +54,24 @@ pub fn derive_named(input: TokenStream) -> TokenStream {
             },
         );
 
+    let disp_name = input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("disp_name"))
+        .map_or_else(
+            || quote! { stringify!(#name) },
+            |attr| {
+                let lit: LitStr = attr
+                    .parse_args()
+                    .expect("disp_name attribute must be a string literal");
+                quote! { #lit }
+            },
+        );
+
     let expanded = quote! {
         impl<'a> Named for #name<'a> {
             fn name(&self) -> &'static str {
-                stringify!(#name)
+                #disp_name
             }
 
             fn draw_type(&self) -> &[&'static str] {

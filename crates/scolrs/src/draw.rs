@@ -594,17 +594,34 @@ impl HasCornerPoints for VertebralPoints<'_> {
     }
 }
 impl<'a> CommonComponent for VertebralPoints<'a> {}
-
-///  Defautl component for drawing the four corner points of each vertebra
-impl<T> DrawComponent for T
-where
-    T: HasCornerPoints + CommonComponent + Named,
-{
+impl<'a> DrawComponent for VertebralPoints<'a> {
     fn draw(
         &self,
         painter: &Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        self.draw_corners(painter, label_colors)
+    }
+}
+
+pub trait DrawCorners {
+    fn draw_corners(
+        &self,
+        painter: &Painter,
+        label_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError>;
+}
+
+///  Helper trait to provide default implementation for drawing corners
+impl<T> DrawCorners for T
+where
+    T: HasCornerPoints + CommonComponent + Named,
+{
+    fn draw_corners(
+        &self,
+        painter: &Painter,
+        label_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let mut g_corners = self.default_group();
         for (points, label) in [
@@ -1264,8 +1281,8 @@ fn draw_incidence_angle(
     g
 }
 
-macro_rules! _impl_kyophosis {
-    ($name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
+macro_rules! impl_kyophosis {
+    ($name:ident, $opposite:expr) => {
         impl<'a> DrawComponent for $name<'a> {
             fn draw(
                 &self,
@@ -1314,78 +1331,50 @@ macro_rules! _impl_kyophosis {
     };
 }
 
-/// Implement Kyphosis for each kyphosis type
-///
-/// Optionally, a display name can be provided as the second argument
-macro_rules! impl_kyphosis {
-    ($doc:expr, $name:ident, $sup:expr, $inf:expr, $opposite:expr) => {
-        #[doc = $doc]
-        #[derive(Named)]
-        #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-        pub struct $name<'a>(&'a SagittalPoints);
-        impl<'a> SagittalComponent for $name<'a> {}
-
-        impl<'a> $name<'a> {
-            const SUP: usize = $sup;
-            const INF: usize = $inf;
-        }
-        _impl_kyophosis!($name, $sup, $inf, $opposite);
-    };
-
-    ($doc:expr, $name:ident, $disp_name:expr, $sup:expr, $inf:expr, $opposite:expr) => {
-        #[doc = $doc]
-        struct $name<'a>(&'a SagittalPoints);
-
-        impl<'a> Named for $name<'a> {
-            fn name(&self) -> &'static str {
-                $disp_name
-            }
-            fn draw_type(&self) -> &[&'static str] {
-                &["Measure", "Angle"]
-            }
-        }
-        impl<'a> SagittalComponent for $name<'a> {}
-
-        impl<'a> $name<'a> {
-            const SUP: usize = $sup;
-            const INF: usize = $inf;
-        }
-        _impl_kyophosis!($name, $sup, $inf, $opposite);
-    };
+/// Proximal thoracic kyphosis (p.65)
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ProximalThoracicKyphosis<'a>(&'a SagittalPoints);
+impl<'a> ProximalThoracicKyphosis<'a> {
+    const SUP: usize = VertebralIndex::T2 as usize;
+    const INF: usize = VertebralIndex::T5 as usize;
 }
+impl<'a> SagittalComponent for ProximalThoracicKyphosis<'a> {}
+impl_kyophosis!(ProximalThoracicKyphosis, false);
 
-impl_kyphosis!(
-    "Proximal thoracic kyphosis (p.65)",
-    ProximalThoracicKyphosis,
-    VertebralIndex::T2 as usize,
-    VertebralIndex::T5 as usize,
-    false
-);
+/// Thoracic kyphosis (p.65)
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ThoracicKyphosis<'a>(&'a SagittalPoints);
+impl<'a> ThoracicKyphosis<'a> {
+    const SUP: usize = VertebralIndex::T2 as usize;
+    const INF: usize = VertebralIndex::T12 as usize;
+}
+impl<'a> SagittalComponent for ThoracicKyphosis<'a> {}
+impl_kyophosis!(ThoracicKyphosis, true);
 
-impl_kyphosis!(
-    "Thoracic kyphosis (p.65)",
-    ThoracicKyphosis,
-    VertebralIndex::T2 as usize,
-    VertebralIndex::T12 as usize,
-    true
-);
+/// Mid/Lower thoracic kyphosis (p.65)
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[disp_name("Mid/LowerThoracicKyphosis")]
+pub struct MidLowerThoracicKyphosis<'a>(&'a SagittalPoints);
+impl<'a> SagittalComponent for MidLowerThoracicKyphosis<'a> {}
+impl MidLowerThoracicKyphosis<'_> {
+    const SUP: usize = VertebralIndex::T5 as usize;
+    const INF: usize = VertebralIndex::T12 as usize;
+}
+impl_kyophosis!(MidLowerThoracicKyphosis, false);
 
-impl_kyphosis!(
-    "Mid/Lower thoracic kyphosis (p.65)",
-    MidLowerThoracicKyphosis,
-    "Mid/LowerThoracicKyphosis",
-    VertebralIndex::T5 as usize,
-    VertebralIndex::T12 as usize,
-    false
-);
-
-impl_kyphosis!(
-    "Thoracolumbar(T10/L2) sagittal alignment (p.66)",
-    ThoracolumbarSagittalAlignment,
-    VertebralIndex::T10 as usize,
-    VertebralIndex::L2 as usize,
-    false
-);
+/// Thoracolumbar(T10/L2) sagittal alignment (p.66)
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ThoracolumbarSagittalAlignment<'a>(&'a SagittalPoints);
+impl<'a> ThoracolumbarSagittalAlignment<'a> {
+    const SUP: usize = VertebralIndex::T10 as usize;
+    const INF: usize = VertebralIndex::L2 as usize;
+}
+impl<'a> SagittalComponent for ThoracolumbarSagittalAlignment<'a> {}
+impl_kyophosis!(ThoracolumbarSagittalAlignment, false);
 
 /// Lumbar sagittal alignment (T12/S1) (p.66)
 #[derive(Named)]
