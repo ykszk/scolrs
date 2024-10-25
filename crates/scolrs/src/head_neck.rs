@@ -98,12 +98,6 @@ impl TryFrom<&LabelMeData> for LateralPoints {
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let corners = VertebralCornerPoints::try_from(data)?;
         let lamina = extract_points(data, "Lamina")?;
-        if lamina.shape()[0] != 8 {
-            return Err(ScolError::InvalidPointCount(
-                "Lamina should have 8 points".into(),
-                lamina.shape()[0],
-            ));
-        }
         let brow = extract_points(data, "Brow")?;
         let sella = extract_points(data, "Sella")?;
         let orbit = extract_points(data, "Orbit")?;
@@ -181,6 +175,7 @@ impl<'a> DrawComponent for Sacs<'a> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         self.0.posterior_dens.validate_length(1)?;
+        self.0.lamina.validate_length(8)?;
         let color = line_colors.get_or_new(self.name());
         let mut group = self.default_group().set("stroke", color);
         // C1SAC
@@ -229,6 +224,7 @@ impl<'a> DrawComponent for Sacs<'a> {
 impl<'a> NeckMeasureComponent for Sacs<'a> {
     fn measure(&self) -> Result<Vec<f32>, MeasureError> {
         self.0.posterior_dens.validate_length(1)?;
+        self.0.lamina.validate_length(8)?;
         let mut lengths: Vec<f32> = Vec::new();
         // C1SAC
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
@@ -437,27 +433,6 @@ impl<'a> CommonComponent for CervicalPoints<'a> {}
 
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
-pub struct LaminalPoints<'a>(pub &'a Array2<f32>);
-impl<'a> NeckSagittalComponent for LaminalPoints<'a> {}
-impl<'a> DrawComponent for LaminalPoints<'a> {
-    fn draw(
-        &self,
-        painter: &Painter,
-        label_colors: &mut ColorPalette,
-        _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
-        let color = label_colors.get_or_new("Lamina");
-        let mut group = self.default_group().set("stroke", color).set("fill", color);
-        for point in self.0.rows() {
-            let p = painter.point(point);
-            group = group.add(p);
-        }
-        Ok(group)
-    }
-}
-
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct OptionalPoints<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for OptionalPoints<'a> {}
 impl<'a> DrawComponent for OptionalPoints<'a> {
@@ -469,6 +444,7 @@ impl<'a> DrawComponent for OptionalPoints<'a> {
     ) -> Result<element::Group, MeasureError> {
         let mut group = self.default_group();
         for (label, points) in [
+            ("Lamina", &self.0.lamina),
             ("Brow", &self.0.brow),
             ("Sella", &self.0.sella),
             ("Orbit", &self.0.orbit),
@@ -481,12 +457,10 @@ impl<'a> DrawComponent for OptionalPoints<'a> {
             ("Chin", &self.0.chin),
             ("Manubrium", &self.0.manubrium),
         ] {
-            if !points.is_empty() {
-                let color = label_colors.get_or_new(label);
-                for point in points.rows() {
-                    let p = painter.point(point);
-                    group = group.add(p.set("stroke", color).set("fill", color));
-                }
+            let color = label_colors.get_or_new(label);
+            for point in points.rows() {
+                let p = painter.point(point);
+                group = group.add(p.set("stroke", color).set("fill", color));
             }
         }
         Ok(group)

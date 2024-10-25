@@ -7,8 +7,7 @@ use labelme_rs::LabelMeDataLine;
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::{debug, warn};
 use scolrs::head_neck::{
-    Adi, CervicalPoints, LaminalPoints, NeckSagittalComponent, OptionalPoints, Sacs, WedgeAngle,
-    OC2,
+    Adi, CervicalPoints, NeckSagittalComponent, OptionalPoints, Sacs, WedgeAngle, OC2,
 };
 use scolrs::{ColorPalette, CommonComponent, DrawParam, Painter};
 use svg::node::element::{self, SVG};
@@ -54,7 +53,6 @@ fn process_data(
 
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = vec![
         // Box::new(VertebralLabels(&cervical_points)),
-        Box::new(LaminalPoints(&cervical_points.lamina)),
         Box::new(OptionalPoints(&cervical_points)),
         Box::new(Sacs(&cervical_points)),
         Box::new(Adi(&cervical_points)),
