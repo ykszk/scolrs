@@ -66,16 +66,26 @@ pub struct AtMost2<T>(pub T);
 
 trait ValidateLength {
     fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
+    fn validate_length_more_than(&self, min_len: usize) -> Result<(), MeasureError>;
 }
 
-impl<S> ValidateLength for ndarray::ArrayBase<S, ndarray::Ix2>
+impl<S, I> ValidateLength for ndarray::ArrayBase<S, I>
 where
     S: ndarray::Data<Elem = f32>,
+    I: ndarray::Dimension,
 {
     fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
         if self.len_of(Axis(0)) != expected_len {
             return Err(MeasureError::InvalidNumberOfPoints(
                 crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
+            ));
+        }
+        Ok(())
+    }
+    fn validate_length_more_than(&self, min_len: usize) -> Result<(), MeasureError> {
+        if self.len_of(Axis(0)) < min_len {
+            return Err(MeasureError::InvalidNumberOfPoints(
+                crate::InvalidNumberOfPoints::TooFewPoints(min_len, self.len()),
             ));
         }
         Ok(())

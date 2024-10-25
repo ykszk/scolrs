@@ -1,8 +1,9 @@
 use crate::{
-    angle_from_lines, distanced_pair3, extract_points, points2line, Centroids, CobbAux,
-    ColorPalette, CommonComponent, Corners, DrawComponent, DrawCorners, HasCornerPoints, L2Norm,
-    MeasureError, Named, Painter, ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION,
-    CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
+    femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, CommonComponent,
+    Corners, DrawComponent, DrawCorners, HasCornerPoints, L2Norm, MeasureError, Named, Painter,
+    ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
+    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -474,6 +475,107 @@ impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
     }
 }
 
+/// Thoracic Inlet Angle
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ThoracicInletAngle<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for ThoracicInletAngle<'a> {}
+impl<'a> ThoracicInletAngle<'a> {
+    fn prep(&self) -> Result<Array2<f32>, MeasureError> {
+        self.0.manubrium.validate_length(1)?;
+        self.0.corners.0.validate_length(7)?;
+        let t1 = self.0.corners.0.index_axis(Axis(0), 6);
+        let t1_top_plate = t1.slice(s![..2, ..]);
+        Ok(t1_top_plate.to_owned())
+    }
+}
+impl<'a> DrawComponent for ThoracicInletAngle<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let color = line_colors.get_or_new(self.name());
+        let group = self.default_group().set("stroke", color);
+        let t1_top_plate = self.prep()?;
+        let group = draw_incidence_angle(
+            group,
+            self.name(),
+            self.0.manubrium.view(),
+            t1_top_plate.view(),
+            painter,
+        );
+        Ok(group)
+    }
+}
+impl<'a> NeckMeasureComponent for ThoracicInletAngle<'a> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        let t1_top_plate = self.prep()?;
+        let angle = femoral_incidence_angle(
+            t1_top_plate.view(),
+            &crate::AtMost2(self.0.manubrium.to_owned()),
+        )?;
+        Ok(vec![angle])
+    }
+}
+
+/// Neck Tilt Angle
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct NeckTilt<'a>(pub &'a LateralPoints);
+impl<'a> NeckSagittalComponent for NeckTilt<'a> {}
+impl<'a> NeckTilt<'a> {
+    fn prep(&self) -> Result<(Array2<f32>, Array2<f32>, f32), MeasureError> {
+        self.0.manubrium.validate_length(1)?;
+        self.0.corners.0.validate_length(7)?;
+        let t1 = self.0.corners.0.index_axis(Axis(0), 6);
+        let t1_top_plate = t1.slice(s![..2, ..]);
+        let t1_top_middle = t1_top_plate.mean_axis(Axis(0)).unwrap();
+        let manubrium_to_t1 = stack![
+            Axis(0),
+            self.0.manubrium.index_axis(Axis(0), 0).view(),
+            t1_top_middle
+        ];
+        let mut v_line_from_manubrium = manubrium_to_t1.clone();
+        v_line_from_manubrium[[1, 0]] = manubrium_to_t1[[0, 0]];
+        let angle =
+            angle_between(v_line_from_manubrium.view(), manubrium_to_t1.view()).to_degrees();
+        Ok((manubrium_to_t1, v_line_from_manubrium, angle))
+    }
+}
+impl<'a> DrawComponent for NeckTilt<'a> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, MeasureError> {
+        let color = line_colors.get_or_new(self.name());
+        let mut group = self.default_group().set("stroke", color);
+        let (manubrium_to_t1, v_line_from_manubrium, angle) = self.prep()?;
+        let line = painter.line(manubrium_to_t1.view());
+        group = group.add(line);
+        let line = painter.line(v_line_from_manubrium.view());
+        group = group.add(line);
+
+        let text = format!("{:.1}°", angle);
+        let text = painter.text(
+            &text,
+            self.0.manubrium.index_axis(Axis(0), 0),
+            Some(self.name()),
+        );
+        group = group.add(text);
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for NeckTilt<'_> {
+    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+        let (_, _, angle) = self.prep()?;
+        Ok(vec![angle])
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -594,6 +696,8 @@ pub enum NeckLateralMeasure {
     Sacs,
     WedgeAngle,
     ModifiedRenawatIndex,
+    ThoracicInletAngle,
+    NeckTilt,
 }
 
 impl NeckLateralMeasure {
@@ -613,6 +717,8 @@ impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureC
             NeckLateralMeasure::ModifiedRenawatIndex => {
                 Box::new(ModifiedRenawatIndex(lateral_points))
             }
+            NeckLateralMeasure::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
+            NeckLateralMeasure::NeckTilt => Box::new(NeckTilt(lateral_points)),
         }
     }
 }
@@ -627,6 +733,8 @@ pub enum NeckLateralDraw {
     Sacs,
     WedgeAngle,
     ModifiedRenawatIndex,
+    ThoracicInletAngle,
+    NeckTilt,
 }
 
 impl NeckLateralDraw {
@@ -646,6 +754,8 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalCom
             NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralDraw::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
             NeckLateralDraw::ModifiedRenawatIndex => Box::new(ModifiedRenawatIndex(lateral_points)),
+            NeckLateralDraw::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
+            NeckLateralDraw::NeckTilt => Box::new(NeckTilt(lateral_points)),
         }
     }
 }

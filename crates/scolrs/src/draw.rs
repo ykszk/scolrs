@@ -1244,11 +1244,11 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
     }
 }
 
-fn draw_incidence_angle(
+pub fn draw_incidence_angle(
     group: element::Group,
     label: &str,
-    femoral_heads: Array2<f32>,
-    plate: Array2<f32>,
+    femoral_heads: ArrayView2<f32>,
+    plate: ArrayView2<f32>,
     painter: &Painter,
 ) -> element::Group {
     let mut g = group;
@@ -1517,22 +1517,12 @@ impl<'a> DrawComponent for PelvicIncidence<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        if self.0.femoral_head.0.is_empty() {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(1, 0),
-            ));
-        }
+        self.0.femoral_head.0.validate_length_more_than(1)?;
         let label = self.name();
         let sac_sup = self.0.spine.sacral_sup_plate();
         let color = line_colors.get_or_new(label);
         let g = self.default_group().set("fill", color).set("stroke", color);
-        let g = draw_incidence_angle(
-            g,
-            label,
-            self.0.femoral_head.0.to_owned(),
-            sac_sup.to_owned(),
-            painter,
-        );
+        let g = draw_incidence_angle(g, label, self.0.femoral_head.0.view(), sac_sup, painter);
         Ok(g)
     }
 }
@@ -1549,11 +1539,10 @@ impl<'a> MeasureComponent for PelvicIncidence<'a> {
 pub struct PelvicTilt<'a>(&'a SagittalPoints);
 impl<'a> PelvicTilt<'a> {
     fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
-        if sagittal_points.femoral_head.0.is_empty() {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(1, 0),
-            ));
-        }
+        sagittal_points
+            .femoral_head
+            .0
+            .validate_length_more_than(1)?;
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
         let femoral_head = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
@@ -1670,11 +1659,7 @@ impl<'a> DrawComponent for L5IncidenceAngle<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        if self.0.femoral_head.0.is_empty() {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(1, 0),
-            ));
-        }
+        self.0.femoral_head.0.validate_length_more_than(1)?;
         let label = self.name();
         let l5_sup = self
             .0
@@ -1686,8 +1671,8 @@ impl<'a> DrawComponent for L5IncidenceAngle<'a> {
         let g = draw_incidence_angle(
             g,
             label,
-            self.0.femoral_head.0.to_owned(),
-            l5_sup.to_owned(),
+            self.0.femoral_head.0.view(),
+            l5_sup.view(),
             painter,
         );
         Ok(g)
@@ -1726,11 +1711,10 @@ fn draw_femoral_center(
 pub struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
 impl<'a> PelvicRadiusAngle<'a> {
     fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
-        if sagittal_points.femoral_head.0.is_empty() {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                InvalidNumberOfPoints::TooFewPoints(1, 0),
-            ));
-        }
+        sagittal_points
+            .femoral_head
+            .0
+            .validate_length_more_than(1)?;
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let post_sac = sac_sup.index_axis(Axis(0), 1);
@@ -1771,15 +1755,11 @@ impl<'a> MeasureComponent for PelvicRadiusAngle<'a> {
     }
 }
 
-fn femoral_incidence_angle(
+pub fn femoral_incidence_angle(
     plate: ArrayView2<f32>,
     femoral_head: &crate::AtMost2<Array2<f32>>,
 ) -> Result<f32, MeasureError> {
-    if femoral_head.0.is_empty() {
-        return Err(MeasureError::InvalidNumberOfPoints(
-            InvalidNumberOfPoints::TooFewPoints(1, 0),
-        ));
-    }
+    femoral_head.0.validate_length_more_than(1)?;
     let mid_femoral_heads = femoral_head.0.mean_axis(Axis(0)).unwrap();
     let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
     let line_sac2fem = stack![Axis(0), sac_sup_mid, mid_femoral_heads];
