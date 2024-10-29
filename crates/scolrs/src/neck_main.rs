@@ -24,6 +24,7 @@ fn main() -> Result<()> {
         Command::Svg(args) => svg::cmd(args),
         Command::Measure(args) => measure::cmd(args),
         Command::Catalog(args) => catalog::cmd(args),
+        Command::Html(args) => neck::html::cmd(args),
         Command::List(args) => list::cmd(args),
     }
 }

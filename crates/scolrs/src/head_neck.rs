@@ -8,7 +8,6 @@ use crate::{
 use clap::{self, ValueEnum};
 use lyon_geom::point;
 use named_derive::Named;
-use serde::{Deserialize, Serialize};
 
 use labelme_rs::LabelMeData;
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
@@ -118,29 +117,6 @@ impl TryFrom<&LabelMeData> for LateralPoints {
             manubrium,
         })
     }
-}
-
-#[derive(
-    strum::EnumString,
-    strum::Display,
-    strum::VariantArray,
-    ValueEnum,
-    Serialize,
-    Deserialize,
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-)]
-#[serde(rename_all = "PascalCase")]
-#[clap(rename_all = "PascalCase")]
-pub enum NeckSagittalMeasure {
-    C1Sac,
-    C2Sac,
 }
 
 const NEKC_SAGITTAL_COMPONENT_CLASS: &str = "NeckSagittalComponent";

@@ -173,60 +173,77 @@ mod tests {
         }
     }
 
-    fn test_vars() -> (PathBuf, Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
+    fn gen_svg_args() -> SvgArgs {
         let data_dir = PathBuf::from("../../tests/data/");
         let config = Some(data_dir.join("config.toml"));
         let label_colors = Some(data_dir.join("colors.yaml"));
         let line_colors = Some(data_dir.join("line_colors.csv"));
-        (data_dir, config, label_colors, line_colors)
+        SvgArgs {
+            input: Default::default(),
+            output: Default::default(),
+            config,
+            label_colors,
+            line_colors,
+            ..Default::default()
+        }
     }
 
     /// Entry point for debugging
     #[test]
     fn test_svg_cmd_neck_case1() -> Result<()> {
-        let (data_dir, config, label_colors, line_colors) = test_vars();
+        let mut svg_args = gen_svg_args();
 
-        let input = data_dir.join("neck_case1/lateral.json");
-        let output = output_path("neck_case1_lateral.svg");
-        let args = SvgArgs {
-            input,
-            output,
-            config: config.clone(),
-            label_colors: label_colors.clone(),
-            line_colors: line_colors.clone(),
-            ..Default::default()
+        let data_dir = PathBuf::from("../../tests/data/");
+        svg_args.input = data_dir.join("neck_case1/lateral.json");
+        svg_args.output = output_path("neck_case1_lateral.svg");
+        cmd(svg_args.clone())?;
+
+        let html_args = crate::neck::cli::HtmlArgs {
+            input: svg_args.output,
+            output: output_path("neck_case1_lateral.html"),
+            selector: vec![
+                "g.CommonComponent".to_string(),
+                "g.NeckSagittalComponent".to_string(),
+            ],
+            title: None,
         };
-        cmd(args)
+        crate::neck::html::cmd(html_args)?;
+
+        Ok(())
     }
 
     #[test]
     fn test_svg_cmd_neck_case2() -> Result<()> {
-        let (data_dir, config, label_colors, line_colors) = test_vars();
+        let mut svg_args = gen_svg_args();
+        svg_args.resize = Some("768x768".to_string());
 
-        let input = data_dir.join("neck_case2/extension_lateral.json");
-        let output = output_path("neck_case2_extension_lateral.svg");
-        let args = SvgArgs {
-            input,
-            output,
-            config: config.clone(),
-            label_colors: label_colors.clone(),
-            line_colors: line_colors.clone(),
-            resize: Some("768x768".to_string()),
-            ..Default::default()
-        };
-        cmd(args)?;
+        let data_dir = PathBuf::from("../../tests/data/");
 
-        let input = data_dir.join("neck_case2/flexion_lateral.json");
-        let output = output_path("neck_case2_flexion_lateral.svg");
-        let args = SvgArgs {
-            input,
-            output,
-            config: config.clone(),
-            label_colors: label_colors.clone(),
-            line_colors: line_colors.clone(),
-            resize: Some("768x768".to_string()),
-            ..Default::default()
+        // extension
+        svg_args.input = data_dir.join("neck_case2/extension_lateral.json");
+        svg_args.output = output_path("neck_case2_extension_lateral.svg");
+        cmd(svg_args.clone())?;
+
+        let mut html_args = crate::neck::cli::HtmlArgs {
+            input: svg_args.output,
+            output: output_path("neck_case2_extension_lateral.html"),
+            selector: vec![
+                "g.CommonComponent".to_string(),
+                "g.NeckSagittalComponent".to_string(),
+            ],
+            title: None,
         };
-        cmd(args)
+        crate::neck::html::cmd(html_args.clone())?;
+
+        // flexion
+        svg_args.input = data_dir.join("neck_case2/flexion_lateral.json");
+        svg_args.output = output_path("neck_case2_flexion_lateral.svg");
+        cmd(svg_args.clone())?;
+
+        html_args.input = svg_args.output;
+        html_args.output = output_path("neck_case2_flexion_lateral.html");
+        crate::neck::html::cmd(html_args)?;
+
+        Ok(())
     }
 }

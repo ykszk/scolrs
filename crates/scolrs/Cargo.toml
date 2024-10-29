@@ -40,7 +40,8 @@ toml = "0.8.2"
 serde_json = "1.0.132"
 glob = "0.3.1"
 clap_complete = "4.5.35"
-num-traits = "0.2.19"
+scraper = { version = "0.20.0", default-features = false }
+tera = { version = "1.20.0", default-features = false }
 
 [dev-dependencies]
 pretty_assertions.workspace = true

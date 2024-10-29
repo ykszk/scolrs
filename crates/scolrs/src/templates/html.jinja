@@ -1,0 +1,69 @@
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>{{title}}</title>
+    <style>
+        body {
+            background: black;
+            color: white;
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: start;
+        }
+
+        svg {
+            max-height: 95%;
+            /* not using vh to allow zooming*/
+        }
+
+        #controls {
+            margin: 5em;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0.5em;
+        }
+    </style>
+    <script>
+        function toggle_visibility(cb) {
+            let svg_id = cb.dataset.id;
+            let visibility = cb.checked ? "visible" : "hidden";
+            const elm = document.getElementById(svg_id);
+            if (elm) {
+                elm.style.visibility = visibility;
+            } else {
+                console.error(`Element with id ${svg_id} not found`);
+            }
+        }
+
+        function change_all(visibility) {
+            let elms = document.querySelectorAll("input[type='checkbox']");
+            console.log(visibility);
+            for (elm of elms) {
+                elm.checked = visibility == "visible";
+                toggle_visibility(elm);
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="image">
+        {{svg}}
+    </div>
+    <div id="controls">
+        <h2>Show / Hide</h2>
+        <form>
+            <ul>
+                {{checkboxes}}
+            </ul>
+        </form>
+        <button onclick="change_all('visible')">Show All</button>
+        <button onclick="change_all('hidden')">Hide All</button>
+    </div>
+</body>
+
+</html>

@@ -21,6 +21,8 @@ pub enum Command {
     Catalog(CatalogArgs),
     /// List available measurements
     List(ListArgs),
+    /// Convert SVGs to HTML
+    Html(HtmlArgs),
 }
 
 #[derive(Parser)]
@@ -29,7 +31,7 @@ pub struct CompleteArgs {
     pub shell: Shell,
 }
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 pub struct SvgArgs {
     /// Input labelme json/ndjson filename
     #[arg(value_hint = ValueHint::FilePath)]
@@ -88,3 +90,19 @@ pub struct CatalogArgs {
 
 #[derive(Parser, Debug)]
 pub struct ListArgs {}
+
+#[derive(Parser, Debug, Clone)]
+pub struct HtmlArgs {
+    /// Input svg file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Output html file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// Selector(s) for the svg elements
+    #[clap(long, value_delimiter = ',', default_value = "g.CommonComponent,g.NeckSagittalComponent", value_hint = ValueHint::Other)]
+    pub selector: Vec<String>,
+    /// Title of the html
+    #[clap(short, long)]
+    pub title: Option<String>,
+}
