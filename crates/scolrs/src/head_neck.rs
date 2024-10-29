@@ -133,6 +133,7 @@ pub trait NeckMeasureComponent: Named {
 /// All sacral available spaces
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
+#[disp_name("SACs")]
 pub struct Sacs<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for Sacs<'a> {}
 impl<'a> DrawComponent for Sacs<'a> {
@@ -232,6 +233,7 @@ impl<'a> NeckMeasureComponent for Sacs<'a> {
 /// Atlanto-dental interval
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
+#[disp_name("ADI")]
 pub struct Adi<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for Adi<'a> {}
 impl Adi<'_> {
@@ -578,22 +580,8 @@ impl<'a> DrawComponent for CervicalPoints<'a> {
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        self.draw_corners(painter, label_colors)
-    }
-}
+        let mut group = self.draw_corners(painter, label_colors)?;
 
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
-pub struct OptionalPoints<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for OptionalPoints<'a> {}
-impl<'a> DrawComponent for OptionalPoints<'a> {
-    fn draw(
-        &self,
-        painter: &Painter,
-        label_colors: &mut ColorPalette,
-        _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
-        let mut group = self.default_group();
         for (label, points) in [
             ("Lamina", &self.0.lamina),
             ("Brow", &self.0.brow),
@@ -611,6 +599,7 @@ impl<'a> DrawComponent for OptionalPoints<'a> {
             let color = label_colors.get_or_new(label);
             for point in points.rows() {
                 let p = painter.point(point);
+                let p = p.add(painter.title(label));
                 group = group.add(p.set("stroke", color).set("fill", color));
             }
         }
@@ -702,7 +691,6 @@ impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureC
 #[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
 #[clap(rename_all = "PascalCase")]
 pub enum NeckLateralDraw {
-    OptionalPoints,
     VertebralLabels,
     Adi,
     OC2,
@@ -723,7 +711,6 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalCom
     fn from(value: (&NeckLateralDraw, &'a LateralPoints)) -> Self {
         let (draw, lateral_points) = value;
         match draw {
-            NeckLateralDraw::OptionalPoints => Box::new(OptionalPoints(lateral_points)),
             NeckLateralDraw::VertebralLabels => Box::new(VertebralLabels(lateral_points)),
             NeckLateralDraw::Adi => Box::new(Adi(lateral_points)),
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
