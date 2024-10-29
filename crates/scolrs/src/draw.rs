@@ -532,21 +532,21 @@ pub trait MeasureComponent: Named {
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: DrawComponent {
     fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&[COMMON_COMPONENT_CLASS])
+        self.default_group_w_classes(&["Component", COMMON_COMPONENT_CLASS])
     }
 }
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
 pub trait CoronalComponent: DrawComponent + MeasureComponent {
     fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&[CORONAL_COMPONENT_CLASS])
+        self.default_group_w_classes(&["Component", CORONAL_COMPONENT_CLASS])
     }
 }
 
 const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
 pub trait SagittalComponent: DrawComponent + MeasureComponent {
     fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&[SAGITTAL_COMPONENT_CLASS])
+        self.default_group_w_classes(&["Component", SAGITTAL_COMPONENT_CLASS])
     }
 }
 
@@ -600,13 +600,15 @@ impl<'a> DrawComponent for VertebralPoints<'a> {
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        self.draw_corners(painter, label_colors)
+        let g = self.default_group();
+        self.draw_corners(g, painter, label_colors)
     }
 }
 
 pub trait DrawCorners {
     fn draw_corners(
         &self,
+        group: element::Group,
         painter: &Painter,
         label_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError>;
@@ -615,14 +617,15 @@ pub trait DrawCorners {
 ///  Helper trait to provide default implementation for drawing corners
 impl<T> DrawCorners for T
 where
-    T: HasCornerPoints + CommonComponent + Named,
+    T: HasCornerPoints + Named,
 {
     fn draw_corners(
         &self,
+        group: element::Group,
         painter: &Painter,
         label_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let mut g_corners = self.default_group();
+        let mut g_corners = group;
         for (points, label) in [
             self.top_left(),
             self.top_right(),

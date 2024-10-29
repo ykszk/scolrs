@@ -1,9 +1,9 @@
 use crate::{
     angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
-    femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, CommonComponent,
-    Corners, DrawComponent, DrawCorners, HasCornerPoints, L2Norm, MeasureError, Named, Painter,
-    ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
-    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, Corners, DrawComponent,
+    DrawCorners, HasCornerPoints, L2Norm, MeasureError, Named, Painter, ScolError, ValidateLength,
+    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
+    CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -122,7 +122,7 @@ impl TryFrom<&LabelMeData> for LateralPoints {
 const NEKC_SAGITTAL_COMPONENT_CLASS: &str = "NeckSagittalComponent";
 pub trait NeckSagittalComponent: DrawComponent {
     fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&[NEKC_SAGITTAL_COMPONENT_CLASS])
+        self.default_group_w_classes(&["Component", NEKC_SAGITTAL_COMPONENT_CLASS])
     }
 }
 
@@ -572,7 +572,7 @@ impl HasCornerPoints for CervicalPoints<'_> {
         self.0.corners.0.slice(s![.., 3, ..])
     }
 }
-impl<'a> CommonComponent for CervicalPoints<'a> {}
+impl<'a> NeckSagittalComponent for CervicalPoints<'a> {}
 impl<'a> DrawComponent for CervicalPoints<'a> {
     fn draw(
         &self,
@@ -580,7 +580,8 @@ impl<'a> DrawComponent for CervicalPoints<'a> {
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let mut group = self.draw_corners(painter, label_colors)?;
+        let mut group = self.default_group();
+        group = self.draw_corners(group, painter, label_colors)?;
 
         for (label, points) in [
             ("Lamina", &self.0.lamina),
@@ -691,6 +692,7 @@ impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureC
 #[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
 #[clap(rename_all = "PascalCase")]
 pub enum NeckLateralDraw {
+    CervicalPoints,
     VertebralLabels,
     Adi,
     OC2,
@@ -711,6 +713,7 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalCom
     fn from(value: (&NeckLateralDraw, &'a LateralPoints)) -> Self {
         let (draw, lateral_points) = value;
         match draw {
+            NeckLateralDraw::CervicalPoints => Box::new(CervicalPoints(lateral_points)),
             NeckLateralDraw::VertebralLabels => Box::new(VertebralLabels(lateral_points)),
             NeckLateralDraw::Adi => Box::new(Adi(lateral_points)),
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),

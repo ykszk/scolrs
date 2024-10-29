@@ -89,7 +89,11 @@ pub struct CatalogArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct ListArgs {}
+pub struct ListArgs {
+    /// List drawings instead of measurements
+    #[clap(long)]
+    pub drawings: bool,
+}
 
 #[derive(Parser, Debug, Clone)]
 pub struct HtmlArgs {
@@ -100,7 +104,7 @@ pub struct HtmlArgs {
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
     /// Selector(s) for the svg elements
-    #[clap(long, value_delimiter = ',', default_value = "g.CommonComponent,g.NeckSagittalComponent", value_hint = ValueHint::Other)]
+    #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
     pub selector: Vec<String>,
     /// Title of the html
     #[clap(short, long)]

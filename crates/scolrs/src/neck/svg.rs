@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use labelme_rs::LabelMeDataLine;
 use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
 use log::{debug, warn};
-use scolrs::head_neck::{CervicalPoints, NeckLateralDraw, NeckSagittalComponent};
-use scolrs::{parse_measures, ColorPalette, CommonComponent, DrawParam, Painter};
+use scolrs::head_neck::{NeckLateralDraw, NeckSagittalComponent};
+use scolrs::{parse_measures, ColorPalette, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
 fn process_data(
@@ -40,15 +40,6 @@ fn process_data(
     let cervical_points = scolrs::head_neck::LateralPoints::try_from(&data.data)?;
 
     debug!("Drawing");
-
-    let common_components: Vec<Box<dyn CommonComponent>> =
-        vec![Box::new(CervicalPoints(&cervical_points))];
-
-    for component in common_components {
-        debug!("Draw {:?}", component.name());
-        let g = component.draw(&painter, label_colors, line_colors)?;
-        document = document.add(g);
-    }
 
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = neck_sagittal_draw
         .iter()
@@ -201,10 +192,7 @@ mod tests {
         let html_args = crate::neck::cli::HtmlArgs {
             input: svg_args.output,
             output: output_path("neck_case1_lateral.html"),
-            selector: vec![
-                "g.CommonComponent".to_string(),
-                "g.NeckSagittalComponent".to_string(),
-            ],
+            selector: vec!["g.Component".to_string()],
             title: None,
         };
         crate::neck::html::cmd(html_args)?;
@@ -227,10 +215,7 @@ mod tests {
         let mut html_args = crate::neck::cli::HtmlArgs {
             input: svg_args.output,
             output: output_path("neck_case2_extension_lateral.html"),
-            selector: vec![
-                "g.CommonComponent".to_string(),
-                "g.NeckSagittalComponent".to_string(),
-            ],
+            selector: vec!["g.Component".to_string()],
             title: None,
         };
         crate::neck::html::cmd(html_args.clone())?;
