@@ -114,12 +114,6 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
 }
 
 pub fn cmd(args: MeasureArgs) -> Result<()> {
-    if args.list {
-        for measure in NeckLateralMeasure::all() {
-            println!("{}", measure);
-        }
-        return Ok(());
-    }
     if args.input.extension().unwrap_or_default() == "json" {
         process_json(args)
     } else if args.input.as_os_str() == "-"

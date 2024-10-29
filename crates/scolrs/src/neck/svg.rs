@@ -71,14 +71,6 @@ fn process_data(
 }
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
-    if args.list {
-        let measures = NeckLateralDraw::all();
-        for measure in measures {
-            println!("{}", measure);
-        }
-        return Ok(());
-    }
-
     let draw_param = if let Some(filename) = args.config.as_ref() {
         let s = std::fs::read_to_string(filename)
             .with_context(|| format!("Load config file {:?}", filename))?;

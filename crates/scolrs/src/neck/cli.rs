@@ -19,6 +19,8 @@ pub enum Command {
     Measure(MeasureArgs),
     /// Compile SVGs into a catalog HTML
     Catalog(CatalogArgs),
+    /// List available measurements
+    List(ListArgs),
 }
 
 #[derive(Parser)]
@@ -50,15 +52,12 @@ pub struct SvgArgs {
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
-    /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements
+    /// Measurements to draw. By default, all measurements are drawn. Run `list` command to see all measurements
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
     /// Hide measurements. Use `--list` to see all measurements
     #[clap(long)]
     pub hide: Vec<String>,
-    /// List all available measurements
-    #[clap(long)]
-    pub list: bool,
 }
 
 #[derive(Parser, Debug, Default)]
@@ -69,12 +68,9 @@ pub struct MeasureArgs {
     /// Output json/ndjson file
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
-    /// Measurements to draw. By default, all measurements are drawn
+    /// Measurements to draw. By default, all measurements are drawn. Run `list` command to see all measurements
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
-    /// List all available measurements
-    #[clap(long)]
-    pub list: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -89,3 +85,6 @@ pub struct CatalogArgs {
     #[clap(short, long)]
     pub title: Option<String>,
 }
+
+#[derive(Parser, Debug)]
+pub struct ListArgs {}
