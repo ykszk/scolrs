@@ -19,6 +19,7 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
             include_str!("../templates/checkbox.jinja"),
         ),
     ])?;
+    let javascript = include_str!("../templates/capture.js");
     let mut elements: Vec<_> = Vec::new();
     for selector in args.selector {
         let selector = Selector::parse(&selector).unwrap_or_else(|_| {
@@ -63,6 +64,7 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
     context.insert("svg", &svg);
     context.insert("checkboxes", &checkboxes.join("\n"));
     context.insert("title", &title);
+    context.insert("javascript", &javascript);
 
     let html = templates.render("html.jinja", &context)?;
     let mut writer = BufWriter::new(File::create(args.output)?);

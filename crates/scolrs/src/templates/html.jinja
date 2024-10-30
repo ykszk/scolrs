@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <title>{{title}}</title>
+    <script>
+        {{javascript}}
+    </script>
     <style>
         body {
             background: black;
@@ -63,6 +66,24 @@
         </form>
         <button onclick="change_all('visible')">Show All</button>
         <button onclick="change_all('hidden')">Hide All</button>
+        </form>
+        <form>
+        <details>
+        <summary>Save📷</summary>
+            <select id="format" title="format">
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG</option>
+            </select>
+            <select id="scale" title="scale">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+                <option value="4">4x</option>
+            </select>
+            <button onclick="convertSvg()" title="Save image as png/jpg">Save</button>
+        </details>
+        </form>
     </div>
 </body>
 
