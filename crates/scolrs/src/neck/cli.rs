@@ -102,7 +102,7 @@ pub struct HtmlArgs {
     pub input: PathBuf,
     /// Output html file
     #[arg(value_hint = ValueHint::FilePath)]
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
     /// Selector(s) for the svg elements
     #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
     pub selector: Vec<String>,

@@ -191,7 +191,7 @@ mod tests {
 
         let html_args = crate::neck::cli::HtmlArgs {
             input: svg_args.output,
-            output: output_path("neck_case1_lateral.html"),
+            output: None,
             selector: vec!["g.Component".to_string()],
             title: None,
         };
@@ -214,7 +214,7 @@ mod tests {
 
         let mut html_args = crate::neck::cli::HtmlArgs {
             input: svg_args.output,
-            output: output_path("neck_case2_extension_lateral.html"),
+            output: None,
             selector: vec!["g.Component".to_string()],
             title: None,
         };
@@ -226,7 +226,7 @@ mod tests {
         cmd(svg_args.clone())?;
 
         html_args.input = svg_args.output;
-        html_args.output = output_path("neck_case2_flexion_lateral.html");
+        html_args.output = None;
         crate::neck::html::cmd(html_args)?;
 
         Ok(())

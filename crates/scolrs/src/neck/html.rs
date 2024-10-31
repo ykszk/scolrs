@@ -66,7 +66,10 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
     context.insert("javascript", &javascript);
 
     let html = templates.render("html.jinja", &context)?;
-    let mut writer = BufWriter::new(File::create(args.output)?);
+    let mut writer = BufWriter::new(File::create(
+        args.output
+            .unwrap_or_else(|| args.input.with_extension("html")),
+    )?);
     writer.write_all(html.as_bytes())?;
 
     Ok(())
