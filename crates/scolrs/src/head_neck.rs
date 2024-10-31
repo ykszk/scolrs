@@ -11,6 +11,7 @@ use named_derive::Named;
 
 use labelme_rs::LabelMeData;
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
+use ndarray_stats::DeviationExt;
 use strum::VariantArray;
 use svg::node::element;
 
@@ -305,13 +306,16 @@ impl<'a> DrawComponent for OC2<'a> {
         let line = painter.line(mcgregor_points.view());
         group = group.add(line);
         let line = painter.line(c2_lower_endplate.view());
-        let c2_length = c2_lower_endplate.index_axis(Axis(0), 0).l2norm();
+        let c2_length = c2_lower_endplate
+            .index_axis(Axis(0), 0)
+            .l2_dist(&c2_lower_endplate.index_axis(Axis(0), 1))
+            .unwrap() as f32;
         group = painter.cobb_from_plates(
             group,
             mcgregor_points,
             c2_lower_endplate.to_owned(),
             &CobbAux {
-                plate_scale: 0.5,
+                plate_scale: 5.0,
                 ..Default::default()
             },
             c2_length,
@@ -345,21 +349,33 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
     ) -> Result<element::Group, MeasureError> {
         let mut group = self.default_group();
         group = group.set("stroke", line_colors.get_or_new(self.name()));
+        let wedge_lengths: Vec<_> = self
+            .0
+            .corners
+            .0
+            .axis_iter(Axis(0))
+            .map(|c| {
+                c.index_axis(Axis(0), 0)
+                    .l2_dist(&c.index_axis(Axis(0), 1))
+                    .unwrap()
+            })
+            .collect();
+        let mean_wedge_length =
+            (wedge_lengths.iter().sum::<f64>() / wedge_lengths.len() as f64) as f32;
         for i in 0..6 {
             let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
             let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
             let wedge_lower = wedge_lower.slice(s![..2, ..]);
-            let wedge_length = wedge_upper.index_axis(Axis(0), 0).l2norm();
             group = painter.cobb_from_plates(
                 group,
                 wedge_upper.to_owned(),
                 wedge_lower.to_owned(),
                 &CobbAux {
-                    plate_scale: 0.25,
+                    plate_scale: 1.5,
                     ..Default::default()
                 },
-                wedge_length,
+                mean_wedge_length,
                 Some(self.name()),
             );
         }
@@ -475,7 +491,7 @@ impl<'a> DrawComponent for ThoracicInletAngle<'a> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let color = line_colors.get_or_new(self.name());
-        let group = self.default_group().set("stroke", color);
+        let group = self.default_group().set("stroke", color).set("fill", color);
         let t1_top_plate = self.prep()?;
         let group = draw_incidence_angle(
             group,
