@@ -31,11 +31,11 @@ fn measure_all(
         let result = measure.measure();
         match result {
             Ok(result) => {
-                results.insert(measure.name(), result);
+                results.insert(measure.id(), result);
             }
             Err(e) => match e {
                 scolrs::MeasureError::InvalidNumberOfPoints(err) => {
-                    warn!("Skip point count error for {}: {:?}", measure.name(), err);
+                    warn!("Skip point count error for {}: {:?}", measure.id(), err);
                 }
                 e => return Err(e.into()),
             },

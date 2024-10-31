@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Expr, ExprArray, LitStr};
+use syn::{parse_macro_input, Attribute, DeriveInput, Expr, ExprArray, ExprLit, Lit, LitStr, Meta};
 
 // #[macro_export]
 // macro_rules! impl_named_w_lifetime_for {
@@ -19,7 +19,32 @@ use syn::{parse_macro_input, DeriveInput, Expr, ExprArray, LitStr};
 //
 // impl_named_w_lifetime_for!(VertebralLabels, &[CLASS_ANNOTATION, CLASS_TEXT]);
 
-#[proc_macro_derive(Named, attributes(draw_type, disp_name))]
+fn first_doc_line(attrs: &[Attribute]) -> proc_macro2::TokenStream {
+    let doc_strings: Vec<String> = attrs
+        .iter()
+        .filter_map(|attr| match attr.meta {
+            Meta::NameValue(ref name_value) if name_value.path.is_ident("doc") => {
+                Some(&name_value.value)
+            }
+            _ => None,
+        })
+        .filter_map(|expr| match expr {
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(s), ..
+            }) => Some(s.value()),
+            _ => None,
+        })
+        .collect();
+
+    if doc_strings.is_empty() {
+        quote! { None }
+    } else {
+        let first_line = doc_strings.first().unwrap().trim();
+        quote! { Some(#first_line) }
+    }
+}
+
+#[proc_macro_derive(Named, attributes(draw_type, label))]
 pub fn derive_named(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -54,24 +79,34 @@ pub fn derive_named(input: TokenStream) -> TokenStream {
             },
         );
 
-    let disp_name = input
+    let label = input
         .attrs
         .iter()
-        .find(|attr| attr.path().is_ident("disp_name"))
+        .find(|attr| attr.path().is_ident("label"))
         .map_or_else(
             || quote! { stringify!(#name) },
             |attr| {
                 let lit: LitStr = attr
                     .parse_args()
-                    .expect("disp_name attribute must be a string literal");
+                    .expect("label attribute must be a string literal");
                 quote! { #lit }
             },
         );
 
+    let first_doc_line = first_doc_line(&input.attrs);
+
     let expanded = quote! {
         impl<'a> Named for #name<'a> {
-            fn name(&self) -> &'static str {
-                #disp_name
+            fn id(&self) -> &'static str {
+                stringify!(#name)
+            }
+
+            fn label(&self) -> &'static str {
+                #label
+            }
+
+            fn description(&self) -> Option<&'static str> {
+                #first_doc_line
             }
 
             fn draw_type(&self) -> &[&'static str] {

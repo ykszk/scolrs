@@ -131,10 +131,10 @@ pub trait NeckMeasureComponent: Named {
     fn measure(&self) -> Result<Vec<f32>, MeasureError>;
 }
 
-/// All sacral available spaces
+/// Sacral Avaialble Spaces
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
-#[disp_name("SACs")]
+#[label("SACs")]
 pub struct Sacs<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for Sacs<'a> {}
 impl<'a> DrawComponent for Sacs<'a> {
@@ -146,7 +146,7 @@ impl<'a> DrawComponent for Sacs<'a> {
     ) -> Result<element::Group, MeasureError> {
         self.0.posterior_dens.validate_length(1)?;
         self.0.lamina.validate_length(8)?;
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         // C1SAC
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
@@ -234,7 +234,7 @@ impl<'a> NeckMeasureComponent for Sacs<'a> {
 /// Atlanto-dental interval
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
-#[disp_name("ADI")]
+#[label("ADI")]
 pub struct Adi<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for Adi<'a> {}
 impl Adi<'_> {
@@ -251,7 +251,7 @@ impl<'a> DrawComponent for Adi<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         self.prep()?;
         let points = stack![
@@ -273,7 +273,7 @@ impl<'a> NeckMeasureComponent for Adi<'a> {
     }
 }
 
-/// O-C2 Angle
+/// Occiput-C2 Angle
 /// Angle between McGregor's line and C2 lower endplate
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
@@ -300,7 +300,7 @@ impl<'a> DrawComponent for OC2<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
         let line = painter.line(mcgregor_points.view());
@@ -319,7 +319,7 @@ impl<'a> DrawComponent for OC2<'a> {
                 ..Default::default()
             },
             c2_length,
-            Some(self.name()),
+            Some(self.id()),
         );
         group = group.add(line);
         Ok(group)
@@ -334,8 +334,7 @@ impl<'a> NeckMeasureComponent for OC2<'a> {
     }
 }
 
-/// Wedge (intervertebral) angles
-/// C2-C3 to C7-T1
+/// Wedge (C2-C3 to C7-T1 intervertebral) angles
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct WedgeAngle<'a>(pub &'a LateralPoints);
@@ -348,7 +347,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
         let mut group = self.default_group();
-        group = group.set("stroke", line_colors.get_or_new(self.name()));
+        group = group.set("stroke", line_colors.get_or_new(self.id()));
         let wedge_lengths: Vec<_> = self
             .0
             .corners
@@ -376,7 +375,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
                     ..Default::default()
                 },
                 mean_wedge_length,
-                Some(self.name()),
+                Some(self.id()),
             );
         }
         Ok(group)
@@ -439,7 +438,7 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let intersection_c2_lower_middle = self.prep()?;
         if let Some(intersection_c2_lower_middle) = intersection_c2_lower_middle {
@@ -490,12 +489,12 @@ impl<'a> DrawComponent for ThoracicInletAngle<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let group = self.default_group().set("stroke", color).set("fill", color);
         let t1_top_plate = self.prep()?;
         let group = draw_incidence_angle(
             group,
-            self.name(),
+            self.id(),
             self.0.manubrium.view(),
             t1_top_plate.view(),
             painter,
@@ -545,7 +544,7 @@ impl<'a> DrawComponent for NeckTilt<'a> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, MeasureError> {
-        let color = line_colors.get_or_new(self.name());
+        let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (manubrium_to_t1, v_line_from_manubrium, angle) = self.prep()?;
         let line = painter.line(manubrium_to_t1.view());
@@ -557,7 +556,7 @@ impl<'a> DrawComponent for NeckTilt<'a> {
         let text = painter.text(
             &text,
             self.0.manubrium.index_axis(Axis(0), 0),
-            Some(self.name()),
+            Some(self.id()),
         );
         group = group.add(text);
         Ok(group)
@@ -739,5 +738,30 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalCom
             NeckLateralDraw::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralDraw::NeckTilt => Box::new(NeckTilt(lateral_points)),
         }
+    }
+}
+
+/// Test struct for Named derive
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_LINE])]
+#[label("Label")]
+pub struct TestNamed<'a>(pub &'a str);
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use crate::{CLASS_LINE, CLASS_MEASURE};
+
+    use super::Named;
+
+    #[test]
+    fn test_derive_name() {
+        let test_named = super::TestNamed("Test");
+        assert_eq!(test_named.id(), "TestNamed");
+        assert_eq!(test_named.label(), "Label");
+        assert_eq!(test_named.draw_type(), &[CLASS_MEASURE, CLASS_LINE]);
+        assert_eq!(
+            test_named.description().unwrap(),
+            "Test struct for Named derive"
+        );
     }
 }

@@ -47,7 +47,7 @@ fn process_data(
         .collect();
 
     for component in neck_sagittal_components {
-        debug!("Draw {:?}", component.name());
+        debug!("Draw {:?}", component.id());
         match component.draw(&painter, label_colors, line_colors) {
             Ok(g) => document = document.add(g),
             Err(e) => match e {

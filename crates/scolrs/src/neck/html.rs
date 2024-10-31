@@ -31,13 +31,12 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
     let mut checkboxes = vec![];
     for element in elements {
         let mut context = tera::Context::new();
+        let id = element.value().attr("id").context("`id` not defined")?;
+        context.insert("id", &id);
+        context.insert("label", &element.value().attr("data-label").unwrap_or(id));
         context.insert(
-            "id",
-            &element.value().attr("id").context("`id` not defined")?,
-        );
-        context.insert(
-            "label",
-            &element.value().attr("id").context("`id` not defined")?,
+            "description",
+            &element.value().attr("data-description").unwrap_or(""),
         );
         let visibility = element.value().attr("visibility").unwrap_or("visible");
         let checked = if visibility == "visible" {
