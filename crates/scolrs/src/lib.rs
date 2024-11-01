@@ -714,7 +714,9 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
         })
     }
 }
+
 /// Corner points of all C7, thoracic, and lumbar vertebrae and sacrum top plate.
+///
 /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
 #[derive(Debug, Clone)]
 pub struct C7TLS(pub Array3<f32>);
@@ -734,6 +736,7 @@ impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
 }
 
 /// Corner points of structures.
+///
 /// Points are in [tl, tr, bl, br] order
 pub struct Corners<S: Data<Elem = f32>>(pub ArrayBase<S, ndarray::Ix3>);
 

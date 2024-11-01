@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
@@ -23,6 +23,8 @@ pub enum Command {
     List(ListArgs),
     /// Convert SVGs to HTML
     Html(HtmlArgs),
+    /// Convert data format in ndjson
+    Ndconv(NdconvArgs),
 }
 
 #[derive(Parser)]
@@ -112,4 +114,27 @@ pub struct HtmlArgs {
     /// Title of the html
     #[clap(short, long)]
     pub title: Option<String>,
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone, PartialEq)]
+#[clap(rename_all = "PascalCase")]
+pub enum NdConvFormat {
+    Labelme,
+    LateralPoints,
+}
+
+#[derive(Parser, Debug)]
+pub struct NdconvArgs {
+    /// Input ndjson file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: Option<PathBuf>,
+    /// Output ndjson file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
+    /// From format
+    #[clap(short, long, default_value = "Labelme")]
+    pub from: NdConvFormat,
+    /// To format
+    #[clap(short, long, default_value = "LateralPoints")]
+    pub to: NdConvFormat,
 }

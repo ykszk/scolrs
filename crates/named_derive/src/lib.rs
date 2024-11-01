@@ -1,6 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Attribute, DeriveInput, Expr, ExprArray, ExprLit, Lit, LitStr, Meta};
+use syn::{
+    parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprArray, ExprLit, Lit, LitStr, Meta,
+};
 
 // #[macro_export]
 // macro_rules! impl_named_w_lifetime_for {
@@ -111,6 +113,57 @@ pub fn derive_named(input: TokenStream) -> TokenStream {
 
             fn draw_type(&self) -> &[&'static str] {
                 #draw_type
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+#[proc_macro_derive(ContentFilename)]
+pub fn content_filename_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let (content_field, filename_field, content_type) = match &input.data {
+        Data::Struct(data_struct) => {
+            let mut content_field = None;
+            let mut filename_field = None;
+            let mut content_type = None;
+
+            for field in &data_struct.fields {
+                if let Some(ident) = &field.ident {
+                    if ident == "content" {
+                        content_field = Some(ident);
+                        content_type = Some(&field.ty);
+                    } else if ident == "filename" {
+                        filename_field = Some(ident);
+                    }
+                }
+            }
+
+            (content_field, filename_field, content_type)
+        }
+        _ => panic!("ContentFilename can only be derived for structs"),
+    };
+
+    let content_field = content_field.expect("Struct must have a field named 'content'");
+    let filename_field = filename_field.expect("Struct must have a field named 'filename'");
+    let content_type = content_type.expect("Struct must have a field named 'content'");
+
+    let expanded = quote! {
+        impl ContentFilename for #name {
+            type ContentType = #content_type;
+
+            fn content_filename(self) -> (Self::ContentType, String) {
+                (self.#content_field, self.#filename_field)
+            }
+
+            fn new(content: Self::ContentType, filename: String) -> Self {
+                Self {
+                    #content_field: content,
+                    #filename_field: filename,
+                }
             }
         }
     };

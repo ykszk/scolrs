@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::{
     angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
     femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, Corners, DrawComponent,
@@ -12,6 +14,7 @@ use named_derive::Named;
 use labelme_rs::LabelMeData;
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 use svg::node::element;
 
@@ -42,6 +45,14 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
                 corners[3].shape()[0],
             ));
         }
+        // check BL count before subtracting 1 (potential underflow)
+        if corners[2].shape()[0] == 0 {
+            return Err(ScolError::InvalidPointCount(
+                "BL should be at least 1".into(),
+                corners[2].shape()[0],
+            ));
+        }
+
         if corners[0].shape()[0] != corners[2].shape()[0] - 1 {
             return Err(ScolError::InvalidPointCombo(
                 "TL".into(),
@@ -66,6 +77,29 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ImageData {
+    pub path: String,
+    pub height: usize,
+    pub width: usize,
+    pub spacing_xy: (f32, f32),
+    pub unit: String,
+}
+
+impl Default for ImageData {
+    fn default() -> Self {
+        let spacing_xy = (1.0, 1.0);
+        let unit = "px".to_string();
+        Self {
+            path: String::default(),
+            height: 0,
+            width: 0,
+            spacing_xy,
+            unit,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
@@ -82,6 +116,8 @@ pub struct LateralPoints {
     pub posterior_hard_palate: Array2<f32>,
     pub chin: Array2<f32>,
     pub manubrium: Array2<f32>,
+
+    pub image_data: ImageData,
 }
 
 impl TryFrom<&LabelMeData> for LateralPoints {
@@ -102,6 +138,13 @@ impl TryFrom<&LabelMeData> for LateralPoints {
         let chin = extract_points(data, "Chin")?;
         let manubrium = extract_points(data, "Manubrium")?;
 
+        let image_data = ImageData {
+            path: data.imagePath.clone(),
+            height: data.imageHeight,
+            width: data.imageWidth,
+            ..Default::default()
+        };
+
         Ok(LateralPoints {
             corners,
             lamina,
@@ -116,7 +159,256 @@ impl TryFrom<&LabelMeData> for LateralPoints {
             posterior_hard_palate,
             chin,
             manubrium,
+            image_data,
         })
+    }
+}
+
+fn nested_vec_to_array2(nested_vec: &[Vec<f32>]) -> Result<Array2<f32>, ndarray::ShapeError> {
+    if nested_vec.is_empty() {
+        return Ok(Array::zeros((0, 0)));
+    }
+    Array::from_shape_vec((nested_vec.len(), nested_vec[0].len()), nested_vec.concat())
+}
+
+fn nested_vec_to_array3(nested_vec: &[Vec<Vec<f32>>]) -> Result<Array3<f32>, ndarray::ShapeError> {
+    if nested_vec.is_empty() {
+        return Ok(Array::zeros((0, 0, 0)));
+    }
+    if nested_vec[0].is_empty() {
+        return Ok(Array::zeros((nested_vec.len(), 0, 0)));
+    }
+    Array::from_shape_vec(
+        (
+            nested_vec.len(),
+            nested_vec[0].len(),
+            nested_vec[0][0].len(),
+        ),
+        nested_vec.concat().concat(),
+    )
+}
+
+impl TryFrom<&LateralPointsIR> for LateralPoints {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(ir: &LateralPointsIR) -> Result<Self, Self::Error> {
+        Ok(LateralPoints {
+            corners: VertebralCornerPoints(nested_vec_to_array3(&ir.corners)?),
+            lamina: nested_vec_to_array2(&ir.lamina)?,
+            brow: nested_vec_to_array2(&ir.brow)?,
+            sella: nested_vec_to_array2(&ir.sella)?,
+            orbit: nested_vec_to_array2(&ir.orbit)?,
+            external_auditory_canal: nested_vec_to_array2(&ir.external_auditory_canal)?,
+            occipital: nested_vec_to_array2(&ir.occipital)?,
+            anterior_c1_arch: nested_vec_to_array2(&ir.anterior_c1_arch)?,
+            anterior_dens: nested_vec_to_array2(&ir.anterior_dens)?,
+            posterior_dens: nested_vec_to_array2(&ir.posterior_dens)?,
+            posterior_hard_palate: nested_vec_to_array2(&ir.posterior_hard_palate)?,
+            chin: nested_vec_to_array2(&ir.chin)?,
+            manubrium: nested_vec_to_array2(&ir.manubrium)?,
+            image_data: ir.image_data.clone(),
+        })
+    }
+}
+
+fn array2_to_nested_vec(array: Array2<f32>) -> Vec<Vec<f32>> {
+    array.axis_iter(Axis(0)).map(|a| a.to_vec()).collect()
+}
+
+fn array3_to_nested_vec(array: Array3<f32>) -> Vec<Vec<Vec<f32>>> {
+    array
+        .axis_iter(Axis(0))
+        .map(|a| array2_to_nested_vec(a.to_owned()))
+        .collect()
+}
+
+/// Intermediate representation for lateral neck points for serialization and deserialization
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct LateralPointsIR {
+    pub corners: Vec<Vec<Vec<f32>>>,
+    pub lamina: Vec<Vec<f32>>,
+    pub brow: Vec<Vec<f32>>,
+    pub sella: Vec<Vec<f32>>,
+    pub orbit: Vec<Vec<f32>>,
+    pub external_auditory_canal: Vec<Vec<f32>>,
+    pub occipital: Vec<Vec<f32>>,
+    pub anterior_c1_arch: Vec<Vec<f32>>,
+    pub anterior_dens: Vec<Vec<f32>>,
+    pub posterior_dens: Vec<Vec<f32>>,
+    pub posterior_hard_palate: Vec<Vec<f32>>,
+    pub chin: Vec<Vec<f32>>,
+    pub manubrium: Vec<Vec<f32>>,
+    pub image_data: ImageData,
+}
+
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, named_derive::ContentFilename,
+)]
+pub struct LateralPointsIRLine {
+    pub content: LateralPointsIR,
+    pub filename: String,
+}
+
+/// Trait for converting between different content filename types
+pub trait ContentFilename {
+    type ContentType;
+    fn content_filename(self) -> (Self::ContentType, String);
+    fn new(content: Self::ContentType, filename: String) -> Self;
+}
+
+/// Trait facilitating conversion between different content filename types
+///
+/// To use blanket implementation, the target type must implement `TryFrom` for the source type.
+/// For example, to convert from `DataLineA` to `DataLineB`, `DataLineB::ContentType` must implement `TryFrom<DataLineA::ContentType>`.
+pub trait TryConvertContentFilename<T>: ContentFilename
+where
+    T: ContentFilename,
+{
+    type Error;
+
+    fn try_convert_from(other: T) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized;
+}
+
+impl<T, U> TryConvertContentFilename<U> for T
+where
+    T: ContentFilename,
+    U: ContentFilename,
+    T::ContentType: TryFrom<U::ContentType>,
+    <T::ContentType as TryFrom<U::ContentType>>::Error: std::fmt::Debug,
+{
+    type Error = <T::ContentType as TryFrom<U::ContentType>>::Error;
+
+    fn try_convert_from(other: U) -> Result<Self, Self::Error> {
+        let (from_content, filename) = other.content_filename();
+        let content = T::ContentType::try_from(from_content)?;
+        Ok(Self::new(content, filename))
+    }
+}
+
+impl ContentFilename for labelme_rs::LabelMeDataLine {
+    type ContentType = labelme_rs::LabelMeData;
+
+    fn content_filename(self) -> (Self::ContentType, String) {
+        (self.content, self.filename)
+    }
+
+    fn new(content: Self::ContentType, filename: String) -> Self {
+        Self { content, filename }
+    }
+}
+
+impl TryFrom<&str> for LateralPointsIRLine {
+    type Error = serde_json::Error;
+
+    fn try_from(json: &str) -> Result<Self, Self::Error> {
+        serde_json::from_str(json)
+    }
+}
+
+impl From<&LateralPoints> for LateralPointsIR {
+    fn from(lateral_points: &LateralPoints) -> Self {
+        LateralPointsIR {
+            corners: array3_to_nested_vec(lateral_points.corners.0.to_owned()),
+            lamina: array2_to_nested_vec(lateral_points.lamina.to_owned()),
+            brow: array2_to_nested_vec(lateral_points.brow.to_owned()),
+            sella: array2_to_nested_vec(lateral_points.sella.to_owned()),
+            orbit: array2_to_nested_vec(lateral_points.orbit.to_owned()),
+            external_auditory_canal: array2_to_nested_vec(
+                lateral_points.external_auditory_canal.to_owned(),
+            ),
+            occipital: array2_to_nested_vec(lateral_points.occipital.to_owned()),
+            anterior_c1_arch: array2_to_nested_vec(lateral_points.anterior_c1_arch.to_owned()),
+            anterior_dens: array2_to_nested_vec(lateral_points.anterior_dens.to_owned()),
+            posterior_dens: array2_to_nested_vec(lateral_points.posterior_dens.to_owned()),
+            posterior_hard_palate: array2_to_nested_vec(
+                lateral_points.posterior_hard_palate.to_owned(),
+            ),
+            chin: array2_to_nested_vec(lateral_points.chin.to_owned()),
+            manubrium: array2_to_nested_vec(lateral_points.manubrium.to_owned()),
+            image_data: lateral_points.image_data.clone(),
+        }
+    }
+}
+
+impl TryFrom<LabelMeData> for LateralPointsIR {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let lateral_points = LateralPoints::try_from(&data)?;
+        let lateral_points_ir = LateralPointsIR::from(&lateral_points);
+        Ok(lateral_points_ir)
+    }
+}
+
+impl TryFrom<LateralPointsIR> for LabelMeData {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(lateral_points_ir: LateralPointsIR) -> Result<Self, Self::Error> {
+        let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
+        let mut data = LabelMeData {
+            imagePath: lateral_points_ir.image_data.path,
+            imageHeight: lateral_points_ir.image_data.height,
+            imageWidth: lateral_points_ir.image_data.width,
+            ..Default::default()
+        };
+        // First poitns of TL and TR are discarded because they are dummy points
+        let tl_points = array2_to_nested_vec(
+            lateral_points
+                .corners
+                .0
+                .index_axis(Axis(1), 0)
+                .slice(s![1.., ..])
+                .to_owned(),
+        );
+        let tr_points = array2_to_nested_vec(
+            lateral_points
+                .corners
+                .0
+                .index_axis(Axis(1), 1)
+                .slice(s![1.., ..])
+                .to_owned(),
+        );
+        let bl_points =
+            array2_to_nested_vec(lateral_points.corners.0.index_axis(Axis(1), 2).to_owned());
+        let br_points =
+            array2_to_nested_vec(lateral_points.corners.0.index_axis(Axis(1), 3).to_owned());
+        for (label, points) in [
+            ("TL", tl_points),
+            ("TR", tr_points),
+            ("BL", bl_points),
+            ("BR", br_points),
+            ("Lamina", lateral_points_ir.lamina.clone()),
+            ("Brow", lateral_points_ir.brow.clone()),
+            ("Sella", lateral_points_ir.sella.clone()),
+            ("Orbit", lateral_points_ir.orbit.clone()),
+            (
+                "ExternalAuditoryCanal",
+                lateral_points_ir.external_auditory_canal.clone(),
+            ),
+            ("Occipital", lateral_points_ir.occipital.clone()),
+            ("AnteriorC1Arch", lateral_points_ir.anterior_c1_arch.clone()),
+            ("AnteriorDens", lateral_points_ir.anterior_dens.clone()),
+            ("PosteriorDens", lateral_points_ir.posterior_dens.clone()),
+            (
+                "PosteriorHardPalate",
+                lateral_points_ir.posterior_hard_palate.clone(),
+            ),
+            ("Chin", lateral_points_ir.chin.clone()),
+            ("Manubrium", lateral_points_ir.manubrium.clone()),
+        ] {
+            for point in points {
+                let shape = labelme_rs::Shape {
+                    label: label.to_string(),
+                    points: vec![(point[0], point[1])],
+                    shape_type: "point".to_string(),
+                    ..Default::default()
+                };
+                data.shapes.push(shape);
+            }
+        }
+        Ok(data)
     }
 }
 
@@ -749,9 +1041,13 @@ pub struct TestNamed<'a>(pub &'a str);
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::{CLASS_LINE, CLASS_MEASURE};
+    use super::*;
+    use anyhow::Result;
+    use labelme_rs::LabelMeDataLine;
+    use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
 
-    use super::Named;
+    use crate::{CLASS_LINE, CLASS_MEASURE};
 
     #[test]
     fn test_derive_name() {
@@ -763,5 +1059,30 @@ pub(crate) mod tests {
             test_named.description().unwrap(),
             "Test struct for Named derive"
         );
+    }
+
+    #[test]
+    fn test_conversion() -> Result<()> {
+        let data_dir = PathBuf::from("../../tests/data/");
+        for filename in [
+            "neck_case1/lateral.json",
+            "neck_case2/extension_lateral.json",
+            "neck_case2/flexion_lateral.json",
+        ]
+        .iter()
+        {
+            let json = std::fs::read_to_string(data_dir.join(filename))?;
+            let original_data = LabelMeData::try_from(json.as_str())?;
+            let original_data_line =
+                LabelMeDataLine::new(original_data.clone(), filename.to_string());
+            let lateral_points_line =
+                LateralPointsIRLine::try_convert_from(original_data_line.clone())?;
+            let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
+            let lateral_point_line2 = LateralPointsIRLine::try_convert_from(data_line2.clone())?;
+            assert_eq!(lateral_points_line, lateral_point_line2);
+            let data_line3 = LabelMeDataLine::try_convert_from(lateral_point_line2.clone())?;
+            assert_eq!(data_line2, data_line3);
+        }
+        Ok(())
     }
 }
