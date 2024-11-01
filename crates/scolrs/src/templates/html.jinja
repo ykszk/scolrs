@@ -66,22 +66,19 @@
         </form>
         <button onclick="change_all('visible')">Show All</button>
         <button onclick="change_all('hidden')">Hide All</button>
-        <details>
-            <summary>Save📷</summary>
-            <select id="format" title="format">
-                <option value="png">PNG</option>
-                <option value="jpeg">JPEG</option>
-            </select>
-            <select id="scale" title="scale">
-                <option value="0.5">0.5x</option>
-                <option value="1" selected>1x</option>
-                <option value="2">2x</option>
-                <option value="3">3x</option>
-                <option value="4">4x</option>
-            </select>
-            <button onclick="convertSvg()" title="Save image as png/jpg">Save</button>
-        </details>
+        {{save_module}}
     </div>
 </body>
+
+<script>
+    const captureBtn = document.querySelector('#capture-btn');
+    captureBtn.addEventListener('click', () => {
+        const svgElement = document.querySelector('svg');
+        const format = document.getElementById('select-format').value;
+        const scale = parseFloat(document.getElementById('select-scale').value);
+        const stem_name = document.title;
+        convertSvg(svgElement, format, scale, stem_name);
+    });
+</script>
 
 </html>

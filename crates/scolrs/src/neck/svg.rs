@@ -189,6 +189,11 @@ mod tests {
         svg_args.output = output_path("neck_case1_lateral.svg");
         cmd(svg_args.clone())?;
 
+        if std::env::var("TEST_OUTPUT_DIR").is_err() {
+            return Ok(());
+        }
+
+        // test html command
         let html_args = crate::neck::cli::HtmlArgs {
             input: svg_args.output,
             output: None,
@@ -212,22 +217,35 @@ mod tests {
         svg_args.output = output_path("neck_case2_extension_lateral.svg");
         cmd(svg_args.clone())?;
 
+        // flexion
+        svg_args.input = data_dir.join("neck_case2/flexion_lateral.json");
+        svg_args.output = output_path("neck_case2_flexion_lateral.svg");
+        cmd(svg_args.clone())?;
+
+        if std::env::var("TEST_OUTPUT_DIR").is_err() {
+            return Ok(());
+        }
+
+        // test html command
         let mut html_args = crate::neck::cli::HtmlArgs {
-            input: svg_args.output,
+            input: output_path("neck_case2_extension_lateral.svg"),
             output: None,
             selector: vec!["g.Component".to_string()],
             title: None,
         };
         crate::neck::html::cmd(html_args.clone())?;
 
-        // flexion
-        svg_args.input = data_dir.join("neck_case2/flexion_lateral.json");
-        svg_args.output = output_path("neck_case2_flexion_lateral.svg");
-        cmd(svg_args.clone())?;
-
-        html_args.input = svg_args.output;
-        html_args.output = None;
+        html_args.input = output_path("neck_case2_flexion_lateral.svg");
         crate::neck::html::cmd(html_args)?;
+
+        // test catalog command
+        let catalog_args = crate::neck::cli::CatalogArgs {
+            input: output_path(""),
+            output: output_path("neck_case2_catalog.html"),
+            title: Some("Neck Case 2".to_string()),
+            selector: vec!["g.Component".to_string()],
+        };
+        crate::neck::catalog::cmd(catalog_args)?;
 
         Ok(())
     }

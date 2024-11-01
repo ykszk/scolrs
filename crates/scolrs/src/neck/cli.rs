@@ -86,6 +86,9 @@ pub struct CatalogArgs {
     /// `title` tag in html
     #[clap(short, long)]
     pub title: Option<String>,
+    /// Selector(s) for the svg elements
+    #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
+    pub selector: Vec<String>,
 }
 
 #[derive(Parser, Debug)]

@@ -64,6 +64,10 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
     context.insert("checkboxes", &checkboxes.join("\n"));
     context.insert("title", &title);
     context.insert("javascript", &javascript);
+    context.insert(
+        "save_module",
+        &include_str!("../templates/save_module.html"),
+    );
 
     let html = templates.render("html.jinja", &context)?;
     let mut writer = BufWriter::new(File::create(

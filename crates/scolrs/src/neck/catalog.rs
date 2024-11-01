@@ -5,38 +5,114 @@ use std::{
 
 use crate::neck::cli::CatalogArgs;
 use anyhow::{Context, Result};
+use indexmap::IndexMap;
+use scraper::{Html, Selector};
 
-const STYLE: &str = r#"
-<style>
-body {
-	display: flex;
-	flex-direction: row;
-	flex-wrap: wrap;
+/// Shorthand for writing a string to a file
+trait WriteString {
+    fn ws(&mut self, s: &str) -> std::io::Result<()>;
 }
-    </style>
-"#;
+
+impl WriteString for BufWriter<File> {
+    fn ws(&mut self, s: &str) -> std::io::Result<()> {
+        self.write_all(s.as_bytes())
+    }
+}
 
 pub fn cmd(args: CatalogArgs) -> Result<()> {
     let glob_pattern = args.input.join("*.svg");
     let mut writer = BufWriter::new(File::create(&args.output)?);
-    writer.write_all("<html>\n".as_bytes())?;
+    writer.ws("<html>\n")?;
+    writer.ws("<head>")?;
     if let Some(title) = args.title {
-        writer.write_all(format!("<head><title>{}</title></head>\n", title).as_bytes())?;
+        writer.ws(&format!("<title>{}</title>\n", title))?;
     }
-    writer.write_all(STYLE.as_bytes())?;
-    writer.write_all("<body>\n".as_bytes())?;
+    let style = include_str!("../templates/catalog.css");
+    writer.ws("<style>\n")?;
+    writer.ws(style)?;
+    writer.ws("</style>\n")?;
+    writer.ws("</head>\n")?;
+    writer.ws("<body>\n")?;
+
+    writer.ws("<script>\n")?;
+    let javascript = include_str!("../templates/catalog.js");
+    writer.ws(javascript)?;
+    let javascript = include_str!("../templates/capture.js");
+    writer.ws(javascript)?;
+    writer.ws("</script>\n")?;
+
+    let mut templates = tera::Tera::default();
+    templates.autoescape_on(vec![]);
+    templates.add_raw_templates(vec![
+        (
+            "image_container.jinja",
+            include_str!("../templates/catalog_image_container.jinja"),
+        ),
+        (
+            "checkbox.jinja",
+            include_str!("../templates/checkbox.jinja"),
+        ),
+        (
+            "catalog_popup.jinja",
+            include_str!("../templates/catalog_popup.jinja"),
+        ),
+    ])?;
+
+    let mut checkboxes: IndexMap<String, String> = IndexMap::new();
+    let selectors: Result<Vec<_>, _> = args
+        .selector
+        .iter()
+        .map(|s| Selector::parse(s.as_str()))
+        .collect();
+
     let mut paths: Vec<_> =
         glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
     paths.sort();
     for path in paths {
         let filename = path.file_stem().unwrap().to_string_lossy();
-
         let svg = std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?;
-        writer.write_all(format!("<div id=\"{}\">\n", filename).as_bytes())?;
-        writer.write_all(format!("<h2>{}</h2>\n", filename).as_bytes())?;
-        writer.write_all(svg.as_bytes())?;
-        writer.write_all("</div>\n".as_bytes())?;
+        let document = Html::parse_document(&svg);
+        let mut elements: Vec<_> = Vec::new();
+        for selector in selectors.as_ref().unwrap() {
+            elements.extend(document.select(selector));
+        }
+        for element in elements {
+            let id = element.value().attr("id").context("`id` not defined")?;
+            if checkboxes.contains_key(id) {
+                continue;
+            }
+            let label = element.value().attr("data-label").unwrap_or(id);
+            let description = element.value().attr("data-description").unwrap_or("");
+            let checked = "checked";
+            let mut context = tera::Context::new();
+            context.insert("id", &id);
+            context.insert("label", &label);
+            context.insert("description", &description);
+            context.insert("checked", checked);
+            checkboxes.insert(
+                id.to_string(),
+                templates.render("checkbox.jinja", &context)?,
+            );
+        }
+
+        let mut context = tera::Context::new();
+        context.insert("img", &svg);
+        context.insert("id", &filename);
+        writer.ws(&templates.render("image_container.jinja", &context)?)?;
+        writer.ws("</div>\n")?;
     }
-    writer.write_all("</body></html>\n".as_bytes())?;
+
+    let mut context = tera::Context::new();
+    context.insert(
+        "checkboxes",
+        &checkboxes.into_iter().map(|(_, v)| v).collect::<String>(),
+    );
+    context.insert(
+        "save_module",
+        &include_str!("../templates/save_module.html"),
+    );
+    let div_popup = templates.render("catalog_popup.jinja", &context)?;
+    writer.ws(&div_popup)?;
+    writer.ws("</body></html>\n")?;
     Ok(())
 }

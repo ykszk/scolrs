@@ -1,4 +1,4 @@
-function svgToImage(svgElement, format = 'png', scale = 1, quality = 0.85) {
+function svgToImage(svgElement, format, scale, name_stem, quality = 0.85) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -31,7 +31,7 @@ function svgToImage(svgElement, format = 'png', scale = 1, quality = 0.85) {
 
                 const downloadLink = document.createElement('a');
                 downloadLink.href = imageData;
-                downloadLink.download = document.title + '.' + format;
+                downloadLink.download = name_stem + '.' + format;
                 downloadLink.click();
 
                 resolve(imageData);
@@ -49,12 +49,8 @@ function svgToImage(svgElement, format = 'png', scale = 1, quality = 0.85) {
     });
 }
 
-function convertSvg() {
-    const svgElement = document.querySelector('svg');
-    const format = document.getElementById('format').value;
-    const scale = parseFloat(document.getElementById('scale').value);
-
-    svgToImage(svgElement, format, scale)
+function convertSvg(svgElement, format, scale, name_stem = 'image') {
+    svgToImage(svgElement, format, scale, name_stem)
         .then(() => {
             console.log('Converted SVG to PNG');
         })
