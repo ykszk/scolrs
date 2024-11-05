@@ -33,7 +33,7 @@ fn process_data(
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image);
+    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 

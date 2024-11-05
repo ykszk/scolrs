@@ -405,7 +405,10 @@ impl Painter {
         )
     }
 
-    pub fn doc_w_background(&self, image: &labelme_rs::image::DynamicImage) -> svg::Document {
+    pub fn doc_w_background(
+        &self,
+        image: &labelme_rs::image::DynamicImage,
+    ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
         let (w, h) = self.size;
         let mut document = svg::Document::new()
             .set("width", w)
@@ -414,7 +417,7 @@ impl Painter {
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
-            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)
+            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
         );
         let bg = element::Image::new()
             .set("x", 0i64)
@@ -423,7 +426,7 @@ impl Painter {
             .set("height", h)
             .set("xlink:href", b64);
         document = document.add(bg);
-        document
+        Ok(document)
     }
 }
 
@@ -502,6 +505,15 @@ pub enum MeasureError {
     // No curve is found
     #[error("No curve is found")]
     NoCurveFound,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DrawError {
+    #[error("Measure error: {0}")]
+    MeasureError(#[from] MeasureError),
+
+    #[error("LabelMe data error: {0}")]
+    LabelMeDataError(#[from] labelme_rs::LabelMeDataError),
 }
 
 /// Trait for drawing and measuring components
@@ -1852,13 +1864,13 @@ pub fn draw_sagittal(
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
-) -> Result<element::SVG, MeasureError> {
+) -> Result<element::SVG, DrawError> {
     let ColorPalettes {
         mut label_colors,
         mut line_colors,
     } = palettes;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image);
+    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
@@ -1899,7 +1911,7 @@ pub fn draw_coronal(
     svg_size: (usize, usize),
     palettes: ColorPalettes,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
-) -> Result<element::SVG, MeasureError> {
+) -> Result<element::SVG, DrawError> {
     let ColorPalettes {
         mut label_colors,
         mut line_colors,
@@ -1908,7 +1920,7 @@ pub fn draw_coronal(
 
     let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image);
+    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);
