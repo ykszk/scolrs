@@ -33,7 +33,7 @@ pub enum ScolError {
     Linalg(#[from] rulinalg::error::Error),
 }
 
-fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f32>, ScolError> {
+fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f64>, ScolError> {
     let tuples: Result<Vec<_>, _> = data
         .shapes
         .iter()
@@ -71,7 +71,7 @@ trait ValidateLength {
 
 impl<S, I> ValidateLength for ndarray::ArrayBase<S, I>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
     I: ndarray::Dimension,
 {
     fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
@@ -98,7 +98,7 @@ trait LeftFirst {
     fn left_first(self) -> Self;
 }
 
-impl LeftFirst for Array2<f32> {
+impl LeftFirst for Array2<f64> {
     fn left_first(mut self) -> Self {
         if self.len_of(Axis(0)) == 2 && self[[0, 0]] > self[[1, 0]] {
             self.swap([0, 0], [1, 0]);
@@ -112,10 +112,10 @@ impl LeftFirst for Array2<f32> {
 }
 
 trait HasCornerPoints {
-    fn top_left(&self) -> ArrayView2<f32>;
-    fn top_right(&self) -> ArrayView2<f32>;
-    fn bottom_left(&self) -> ArrayView2<f32>;
-    fn bottom_right(&self) -> ArrayView2<f32>;
+    fn top_left(&self) -> ArrayView2<f64>;
+    fn top_right(&self) -> ArrayView2<f64>;
+    fn bottom_left(&self) -> ArrayView2<f64>;
+    fn bottom_right(&self) -> ArrayView2<f64>;
 }
 
 /// Polynomial fitting of `deg` degrees
@@ -123,15 +123,15 @@ pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     ys: ndarray::ArrayBase<S, ndarray::Ix1>,
     deg: usize,
-) -> Result<ndarray::Array1<f32>, rulinalg::error::Error>
+) -> Result<ndarray::Array1<f64>, rulinalg::error::Error>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
     let mut vander = Array2::zeros([xs.len(), deg + 1]);
 
     // f64 is required for higher degrees
-    let xs = xs.mapv(|x| x as f64);
-    let ys = ys.mapv(|x| x as f64);
+    let xs = xs.mapv(|x| x);
+    let ys = ys.mapv(|x| x);
 
     for d in 0..=deg {
         vander
@@ -151,25 +151,23 @@ where
 
     let b = &vander.transpose() * &ys;
     a.solve(b)
-        .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e as f32))
+        .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e))
 }
 
 /// Calculate polynomial curve points
 pub fn polynomial<S, T>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     coef: ndarray::ArrayBase<T, ndarray::Ix1>,
-) -> Array1<f32>
+) -> Array1<f64>
 where
-    S: ndarray::Data<Elem = f32>,
-    T: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
+    T: ndarray::Data<Elem = f64>,
 {
-    let xs = xs.mapv(|x| x as f64);
-    let coef = coef.mapv(|x| x as f64);
     let mut ys: Array1<f64> = ndarray::Array::zeros(xs.len());
     for (i, c) in coef.iter().enumerate() {
         ys.add_assign(&xs.mapv(|x| c * x.powi(i as i32)));
     }
-    ys.mapv(|e| e as f32)
+    ys
 }
 
 /// Point sets representing a spine
@@ -182,22 +180,22 @@ pub struct Spine {
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
     /// Coefficients of the polynomial curve of the spine
-    pub c_coefs: Array1<f32>,
+    pub c_coefs: Array1<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
-    pub clavicle: AtMost2<Array2<f32>>,
-    pub shoulder: AtMost2<Array2<f32>>,
-    pub pelvis: AtMost2<Array2<f32>>,
-    pub femoral_head: AtMost2<Array2<f32>>,
+    pub clavicle: AtMost2<Array2<f64>>,
+    pub shoulder: AtMost2<Array2<f64>>,
+    pub pelvis: AtMost2<Array2<f64>>,
+    pub femoral_head: AtMost2<Array2<f64>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SagittalPoints {
     pub spine: Spine,
-    pub femoral_head: AtMost2<Array2<f32>>,
+    pub femoral_head: AtMost2<Array2<f64>>,
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae
@@ -241,9 +239,9 @@ impl Display for Curve {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub struct CurveSet {
-    pub pt: Option<(Curve, f32)>,
-    pub mt: Option<(Curve, f32)>,
-    pub tll: Option<(Curve, f32)>,
+    pub pt: Option<(Curve, f64)>,
+    pub mt: Option<(Curve, f64)>,
+    pub tll: Option<(Curve, f64)>,
 }
 
 impl CurveSet {
@@ -318,11 +316,11 @@ pub trait L2Norm<T> {
     fn l2norm(&self) -> T;
 }
 
-impl<S> L2Norm<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
+impl<S> L2Norm<f64> for ndarray::ArrayBase<S, ndarray::Ix1>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
-    fn l2norm(&self) -> f32 {
+    fn l2norm(&self) -> f64 {
         self.mapv(|a| a * a).sum().sqrt()
     }
 }
@@ -336,9 +334,9 @@ pub trait LineCharacteristic<T> {
     fn have_same_signs(&self) -> bool;
 }
 
-impl<S> LineCharacteristic<f32> for ndarray::ArrayBase<S, ndarray::Ix1>
+impl<S> LineCharacteristic<f64> for ndarray::ArrayBase<S, ndarray::Ix1>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
     fn is_monotonic(&self) -> bool {
         if self.len() < 2 {
@@ -372,7 +370,7 @@ where
 
 /// Angle between two lines in degrees
 /// TODO: Check the difference from [`angle_between`]?
-pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Option<f32> {
+pub fn angle_from_lines(line1: ArrayView2<f64>, line2: ArrayView2<f64>) -> Option<f64> {
     let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
     let v_inf = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
     let len_sup = v_sup.l2norm();
@@ -394,15 +392,15 @@ pub fn angle_from_lines(line1: ArrayView2<f32>, line2: ArrayView2<f32>) -> Optio
 
 impl Spine {
     /// Corner points of thoracic and lumbar vertebrae
-    pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f32>> {
+    pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f64>> {
         let tl = self.v_c7tl.0.slice(s![1.., .., ..]);
         Corners(tl)
     }
 
-    pub fn tl_vert_disc_corners(&self) -> Corners<ndarray::OwnedRepr<f32>> {
+    pub fn tl_vert_disc_corners(&self) -> Corners<ndarray::OwnedRepr<f64>> {
         let vert_corners = self.tl_corners();
         let disc_corners = vert_corners.between();
-        let mut vert_disc_corners: Array3<f32> = ndarray::Array::zeros((
+        let mut vert_disc_corners: Array3<f64> = ndarray::Array::zeros((
             vert_corners.0.len_of(Axis(0)) + disc_corners.len_of(Axis(0)),
             4,
             2,
@@ -417,31 +415,31 @@ impl Spine {
         }
         Corners(vert_disc_corners)
     }
-    pub fn tl_sup_lines(&self) -> ArrayView3<'_, f32> {
+    pub fn tl_sup_lines(&self) -> ArrayView3<'_, f64> {
         self.v_c7tl.0.slice(s![1.., ..2, ..])
     }
-    pub fn tl_inf_lines(&self) -> ArrayView3<'_, f32> {
+    pub fn tl_inf_lines(&self) -> ArrayView3<'_, f64> {
         self.v_c7tl.0.slice(s![1.., 2.., ..])
     }
-    pub fn tl_centroids(&self) -> ArrayView2<'_, f32> {
+    pub fn tl_centroids(&self) -> ArrayView2<'_, f64> {
         self.c_c7tl.slice(s![1.., ..])
     }
 
-    pub fn sup_plate(&self, index: usize) -> ArrayView2<'_, f32> {
+    pub fn sup_plate(&self, index: usize) -> ArrayView2<'_, f64> {
         self.c7tls.0.slice(s![index + 1, ..2, ..])
     }
-    pub fn inf_plate(&self, index: usize) -> ArrayView2<'_, f32> {
+    pub fn inf_plate(&self, index: usize) -> ArrayView2<'_, f64> {
         self.c7tls.0.slice(s![index + 1, 2.., ..])
     }
 
-    pub fn sacral_sup_plate(&self) -> ArrayView2<f32> {
+    pub fn sacral_sup_plate(&self) -> ArrayView2<f64> {
         self.c7tls
             .0
             .slice(s![self.c7tls.0.len_of(Axis(0)) - 1, 0..2, ..])
     }
 
     // mean point of sacral TL and TR
-    pub fn sacral_center(&self) -> Array1<f32> {
+    pub fn sacral_center(&self) -> Array1<f64> {
         self.sacral_sup_plate().mean_axis(Axis(0)).unwrap()
     }
 
@@ -461,11 +459,11 @@ impl Spine {
         }
     }
 
-    pub fn spinal_poly(&self, xs: ArrayView1<f32>) -> Array1<f32> {
+    pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
         polynomial(xs, self.c_coefs.view())
     }
 
-    fn find_largest_curve(&self) -> Option<(Curve, f32)> {
+    fn find_largest_curve(&self) -> Option<(Curve, f64)> {
         let n = self.tl_corners().0.len_of(ndarray::Axis(0));
         let mut curves = Vec::new();
         for sup in 0..n - 2 {
@@ -480,7 +478,7 @@ impl Spine {
         self._find_largest_curve(curves)
     }
 
-    fn find_largest_up(&self, inf: usize) -> Option<(Curve, f32)> {
+    fn find_largest_up(&self, inf: usize) -> Option<(Curve, f64)> {
         let mut curves = Vec::new();
         if inf <= 1 {
             return None;
@@ -497,7 +495,7 @@ impl Spine {
         self._find_largest_curve(curves)
     }
 
-    fn find_largest_down(&self, sup: usize) -> Option<(Curve, f32)> {
+    fn find_largest_down(&self, sup: usize) -> Option<(Curve, f64)> {
         let n = self.tl_corners().0.len_of(ndarray::Axis(0));
         let mut curves = Vec::new();
         let start = (sup + 2).min(n);
@@ -522,12 +520,12 @@ impl Spine {
         let xs = polynomial(ys, self.c_coefs.view());
 
         // coefficients of the second derivative
-        let coefs2: Array1<f32> = self
+        let coefs2: Array1<f64> = self
             .c_coefs
             .slice(s![2..])
             .iter()
             .enumerate()
-            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f32)
+            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f64)
             .collect();
 
         let ddxs = polynomial(ys, coefs2.view());
@@ -540,7 +538,7 @@ impl Spine {
         ddxs.have_same_signs()
     }
 
-    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f32)> {
+    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f64)> {
         let angles: Vec<_> = curves
             .iter()
             .filter_map(|c| self.angle(c).map(|a| (c, a)))
@@ -577,7 +575,7 @@ impl Spine {
         }
     }
 
-    fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f32)> {
+    fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f64)> {
         let mut curves = Vec::new();
         while let Some(largest_curve) = self.find_largest_down(sup) {
             sup = largest_curve.0.inf;
@@ -586,7 +584,7 @@ impl Spine {
         curves
     }
 
-    fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f32)> {
+    fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f64)> {
         let mut curves = Vec::new();
         while let Some(largest_curve) = self.find_largest_up(inf) {
             inf = largest_curve.0.sup;
@@ -595,7 +593,7 @@ impl Spine {
         curves
     }
 
-    pub fn find_all_curves(&self) -> Vec<(Curve, f32)> {
+    pub fn find_all_curves(&self) -> Vec<(Curve, f64)> {
         if let Some(largest_curve) = self.find_largest_curve() {
             let mut downs = self.find_all_down(largest_curve.0.inf);
             let ups = self.find_all_up(largest_curve.0.sup);
@@ -644,7 +642,7 @@ impl Spine {
     }
 
     /// Calculate Cobb angle in degrees
-    pub fn angle(&self, curve: &Curve) -> Option<f32> {
+    pub fn angle(&self, curve: &Curve) -> Option<f64> {
         let sup_line = self.sup_plate(curve.sup);
         let inf_line = self.inf_plate(curve.inf);
         angle_from_lines(sup_line, inf_line)
@@ -669,7 +667,7 @@ impl TryFrom<&LabelMeData> for Spine {
     }
 }
 
-fn _new_at_most2(data: &LabelMeData, label: &str) -> Result<AtMost2<Array2<f32>>, ScolError> {
+fn _new_at_most2(data: &LabelMeData, label: &str) -> Result<AtMost2<Array2<f64>>, ScolError> {
     let points = extract_points(data, label)?;
     if points.len_of(Axis(0)) > 2 {
         return Err(ScolError::InvalidPointCount(
@@ -719,14 +717,14 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
 ///
 /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
 #[derive(Debug, Clone)]
-pub struct C7TLS(pub Array3<f32>);
+pub struct C7TLS(pub Array3<f64>);
 
 /// C7, thoracic and lumber vertebrae
 #[derive(Debug, Clone)]
-pub struct VertebraeC7TL(pub Array3<f32>);
+pub struct VertebraeC7TL(pub Array3<f64>);
 
 /// Thoracic and lumber vertebrae
-pub struct VertebraeTL<'a>(pub ArrayView3<'a, f32>);
+pub struct VertebraeTL<'a>(pub ArrayView3<'a, f64>);
 
 impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
     fn from(c7tl: &'a VertebraeC7TL) -> Self {
@@ -738,10 +736,10 @@ impl<'a> From<&'a VertebraeC7TL> for VertebraeTL<'a> {
 /// Corner points of structures.
 ///
 /// Points are in [tl, tr, bl, br] order
-pub struct Corners<S: Data<Elem = f32>>(pub ArrayBase<S, ndarray::Ix3>);
+pub struct Corners<S: Data<Elem = f64>>(pub ArrayBase<S, ndarray::Ix3>);
 
-impl<S: Data<Elem = f32>> Corners<S> {
-    pub fn between(&self) -> Array3<f32> {
+impl<S: Data<Elem = f64>> Corners<S> {
+    pub fn between(&self) -> Array3<f64> {
         let bottom = self.0.slice(s![1.., ..2, ..]);
         let top = self.0.slice(s![..(self.0.shape()[0] - 1), 2.., ..]);
         let between = ndarray::concatenate![Axis(1), top, bottom];
@@ -749,8 +747,8 @@ impl<S: Data<Elem = f32>> Corners<S> {
     }
 }
 
-type Centroids = Array2<f32>;
-impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
+type Centroids = Array2<f64>;
+impl<S: Data<Elem = f64>> From<Corners<S>> for Centroids {
     /// Calculate centroids from list of four corners.
     /// Centroids are not geometric centers but the intersections of mid-lines
     fn from(corners: Corners<S>) -> Self {
@@ -796,9 +794,9 @@ impl<S: Data<Elem = f32>> From<Corners<S>> for Centroids {
     }
 }
 
-const FRONTAL_ANGLE_THRESH: f32 = 25.0_f32;
-const BEND_ANGLE_THRESH: f32 = 25.0_f32;
-const LATERAL_ANGLE_THRESH: f32 = 20.0_f32;
+const FRONTAL_ANGLE_THRESH: f64 = 25.0_f64;
+const BEND_ANGLE_THRESH: f64 = 25.0_f64;
+const LATERAL_ANGLE_THRESH: f64 = 20.0_f64;
 
 /// Set of `Spine`s required for Lenke classification
 pub struct Study {
@@ -837,7 +835,7 @@ impl Study {
 
     pub fn minor_param(
         &self,
-        coronal: f32,
+        coronal: f64,
         coronal_curve: &Curve,
         sagittal_curve: &Curve,
     ) -> MinorStructuralParam {
@@ -977,8 +975,8 @@ pub enum SagittalModifier {
     Hyperkyphosis,
 }
 
-impl From<f32> for SagittalModifier {
-    fn from(angle: f32) -> Self {
+impl From<f64> for SagittalModifier {
+    fn from(angle: f64) -> Self {
         if angle.abs() < 10.0 {
             SagittalModifier::Hypokyphosis
         } else if angle.abs() < 40.0 {
@@ -1119,13 +1117,13 @@ impl Chart {
 #[derive(Debug, PartialEq)]
 pub struct BendReasonAngles {
     /// angle in normal coronal image
-    coronal: f32,
+    coronal: f64,
     /// angle in bending image
-    bend: f32,
+    bend: f64,
 }
 
 impl BendReasonAngles {
-    pub fn new(coronal: f32, bend: f32) -> BendReasonAngles {
+    pub fn new(coronal: f64, bend: f64) -> BendReasonAngles {
         BendReasonAngles { coronal, bend }
     }
 }
@@ -1165,9 +1163,9 @@ pub struct BendReason {
 
 #[derive(Debug, PartialEq)]
 pub struct MinorReason {
-    pub coronal: (IsStructural, f32),
+    pub coronal: (IsStructural, f64),
     pub bend: BendReason,
-    pub sagittal: Option<(IsStructural, (Curve, f32))>,
+    pub sagittal: Option<(IsStructural, (Curve, f64))>,
 }
 
 trait StructuralValue {
@@ -1185,7 +1183,7 @@ impl<T> StructuralValue for (IsStructural, T) {
 }
 
 impl MinorReason {
-    pub fn with_coronal(coronal: (IsStructural, f32)) -> MinorReason {
+    pub fn with_coronal(coronal: (IsStructural, f64)) -> MinorReason {
         MinorReason {
             coronal,
             bend: BendReason::default(),
@@ -1266,10 +1264,10 @@ impl MinorReason {
 /// Parameters that explain why it's structural or non-structural
 #[derive(Debug, PartialEq)]
 pub struct MinorStructuralParam {
-    coronal: f32,
-    right_bend: Option<f32>,
-    left_bend: Option<f32>,
-    sagittal: Option<(Curve, f32)>,
+    coronal: f64,
+    right_bend: Option<f64>,
+    left_bend: Option<f64>,
+    sagittal: Option<(Curve, f64)>,
 }
 
 trait CertainlyStructural {
@@ -1444,14 +1442,14 @@ pub(crate) mod tests {
     use ndarray::{arr3, array, Array3};
     #[test]
     fn test_corners() -> Result<()> {
-        let arr: Array3<f32> = arr3(&[
+        let arr: Array3<f64> = arr3(&[
             [[1.0, 1.0], [2.0, 1.0], [1.0, 2.0], [2.0, 2.0]],
             [[1.0, 3.0], [2.0, 3.0], [1.0, 4.0], [2.0, 4.0]],
         ]);
         let corners = Corners(arr);
         let bet = corners.between();
 
-        let expected: Array3<f32> =
+        let expected: Array3<f64> =
             ndarray::arr3(&[[[1.0, 2.0], [2.0, 2.0], [1.0, 3.0], [2.0, 3.0]]]);
         assert_eq!(bet, expected);
         Ok(())

@@ -14,7 +14,7 @@ use scolrs::{
 };
 use serde::{Deserialize, Serialize};
 
-type MeasureResult = std::result::Result<f32, MeasureError>;
+type MeasureResult = std::result::Result<f64, MeasureError>;
 
 #[derive(Serialize, Deserialize)]
 pub struct MeasureLine<V>

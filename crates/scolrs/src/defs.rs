@@ -99,10 +99,10 @@ impl From<u8> for VertebraDiscIndex {
     }
 }
 
-fn default_radius() -> f32 {
+fn default_radius() -> f64 {
     1.5
 }
-fn default_line_width() -> f32 {
+fn default_line_width() -> f64 {
     1.0
 }
 fn default_font_size() -> String {
@@ -111,7 +111,7 @@ fn default_font_size() -> String {
 fn default_text_stroke() -> String {
     "black".into()
 }
-fn default_text_stroke_width() -> f32 {
+fn default_text_stroke_width() -> f64 {
     1.0
 }
 fn default_text_fill() -> String {
@@ -127,10 +127,10 @@ fn default_len_unit() -> String {
 pub struct DrawParam {
     /// Point radius
     #[serde(default = "default_radius")]
-    pub radius: f32,
+    pub radius: f64,
     /// Line width
     #[serde(default = "default_line_width")]
-    pub line_width: f32,
+    pub line_width: f64,
 
     /// `stroke` for texts
     #[serde(default = "default_font_size")]
@@ -140,7 +140,7 @@ pub struct DrawParam {
     pub text_stroke: String,
     /// `stroke-width` for texts
     #[serde(default = "default_text_stroke_width")]
-    pub text_stroke_width: f32,
+    pub text_stroke_width: f64,
     /// `fill` for texts
     #[serde(default = "default_text_fill")]
     pub text_fill: String,

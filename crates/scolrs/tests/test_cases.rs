@@ -124,17 +124,17 @@ fn load_study(
 /// Fascilitator for tests
 trait Wild<T> {
     /// Short hand for `as_ref().unwrap().angle(curve).unwrap()`
-    fn angle_wild(&self, curve: T) -> f32;
+    fn angle_wild(&self, curve: T) -> f64;
 }
 
-impl Wild<&Option<(Curve, f32)>> for Option<Spine> {
-    fn angle_wild(&self, curve: &Option<(Curve, f32)>) -> f32 {
+impl Wild<&Option<(Curve, f64)>> for Option<Spine> {
+    fn angle_wild(&self, curve: &Option<(Curve, f64)>) -> f64 {
         self.as_ref().unwrap().angle(&curve.ref_unwrap().0).unwrap()
     }
 }
 
 impl Wild<&Curve> for Option<Spine> {
-    fn angle_wild(&self, curve: &Curve) -> f32 {
+    fn angle_wild(&self, curve: &Curve) -> f64 {
         self.ref_unwrap().angle(curve).unwrap()
     }
 }

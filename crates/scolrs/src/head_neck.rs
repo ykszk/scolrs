@@ -19,7 +19,7 @@ use strum::VariantArray;
 use svg::node::element;
 
 #[derive(Debug, Clone)]
-pub struct VertebralCornerPoints(pub Array3<f32>);
+pub struct VertebralCornerPoints(pub Array3<f64>);
 
 impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     type Error = ScolError;
@@ -82,7 +82,7 @@ pub struct ImageData {
     pub path: String,
     pub height: usize,
     pub width: usize,
-    pub spacing_xy: (f32, f32),
+    pub spacing_xy: (f64, f64),
     pub unit: String,
 }
 
@@ -103,19 +103,19 @@ impl Default for ImageData {
 #[derive(Debug, Clone)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
-    pub lamina: Array2<f32>,
+    pub lamina: Array2<f64>,
 
-    pub brow: Array2<f32>,
-    pub sella: Array2<f32>,
-    pub orbit: Array2<f32>,
-    pub external_auditory_canal: Array2<f32>,
-    pub occipital: Array2<f32>,
-    pub anterior_c1_arch: Array2<f32>,
-    pub anterior_dens: Array2<f32>,
-    pub posterior_dens: Array2<f32>,
-    pub posterior_hard_palate: Array2<f32>,
-    pub chin: Array2<f32>,
-    pub manubrium: Array2<f32>,
+    pub brow: Array2<f64>,
+    pub sella: Array2<f64>,
+    pub orbit: Array2<f64>,
+    pub external_auditory_canal: Array2<f64>,
+    pub occipital: Array2<f64>,
+    pub anterior_c1_arch: Array2<f64>,
+    pub anterior_dens: Array2<f64>,
+    pub posterior_dens: Array2<f64>,
+    pub posterior_hard_palate: Array2<f64>,
+    pub chin: Array2<f64>,
+    pub manubrium: Array2<f64>,
 
     pub image_data: ImageData,
 }
@@ -184,14 +184,14 @@ impl TryFrom<&LabelMeData> for LateralPoints {
     }
 }
 
-fn nested_vec_to_array2(nested_vec: &[Vec<f32>]) -> Result<Array2<f32>, ndarray::ShapeError> {
+fn nested_vec_to_array2(nested_vec: &[Vec<f64>]) -> Result<Array2<f64>, ndarray::ShapeError> {
     if nested_vec.is_empty() {
         return Ok(Array::zeros((0, 0)));
     }
     Array::from_shape_vec((nested_vec.len(), nested_vec[0].len()), nested_vec.concat())
 }
 
-fn nested_vec_to_array3(nested_vec: &[Vec<Vec<f32>>]) -> Result<Array3<f32>, ndarray::ShapeError> {
+fn nested_vec_to_array3(nested_vec: &[Vec<Vec<f64>>]) -> Result<Array3<f64>, ndarray::ShapeError> {
     if nested_vec.is_empty() {
         return Ok(Array::zeros((0, 0, 0)));
     }
@@ -231,11 +231,11 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
     }
 }
 
-fn array2_to_nested_vec(array: Array2<f32>) -> Vec<Vec<f32>> {
+fn array2_to_nested_vec(array: Array2<f64>) -> Vec<Vec<f64>> {
     array.axis_iter(Axis(0)).map(|a| a.to_vec()).collect()
 }
 
-fn array3_to_nested_vec(array: Array3<f32>) -> Vec<Vec<Vec<f32>>> {
+fn array3_to_nested_vec(array: Array3<f64>) -> Vec<Vec<Vec<f64>>> {
     array
         .axis_iter(Axis(0))
         .map(|a| array2_to_nested_vec(a.to_owned()))
@@ -245,19 +245,19 @@ fn array3_to_nested_vec(array: Array3<f32>) -> Vec<Vec<Vec<f32>>> {
 /// Intermediate representation for lateral neck points for serialization and deserialization
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct LateralPointsIR {
-    pub corners: Vec<Vec<Vec<f32>>>,
-    pub lamina: Vec<Vec<f32>>,
-    pub brow: Vec<Vec<f32>>,
-    pub sella: Vec<Vec<f32>>,
-    pub orbit: Vec<Vec<f32>>,
-    pub external_auditory_canal: Vec<Vec<f32>>,
-    pub occipital: Vec<Vec<f32>>,
-    pub anterior_c1_arch: Vec<Vec<f32>>,
-    pub anterior_dens: Vec<Vec<f32>>,
-    pub posterior_dens: Vec<Vec<f32>>,
-    pub posterior_hard_palate: Vec<Vec<f32>>,
-    pub chin: Vec<Vec<f32>>,
-    pub manubrium: Vec<Vec<f32>>,
+    pub corners: Vec<Vec<Vec<f64>>>,
+    pub lamina: Vec<Vec<f64>>,
+    pub brow: Vec<Vec<f64>>,
+    pub sella: Vec<Vec<f64>>,
+    pub orbit: Vec<Vec<f64>>,
+    pub external_auditory_canal: Vec<Vec<f64>>,
+    pub occipital: Vec<Vec<f64>>,
+    pub anterior_c1_arch: Vec<Vec<f64>>,
+    pub anterior_dens: Vec<Vec<f64>>,
+    pub posterior_dens: Vec<Vec<f64>>,
+    pub posterior_hard_palate: Vec<Vec<f64>>,
+    pub chin: Vec<Vec<f64>>,
+    pub manubrium: Vec<Vec<f64>>,
     pub image_data: ImageData,
 }
 
@@ -328,11 +328,11 @@ impl TryFrom<&str> for LateralPointsIRLine {
 }
 
 pub trait Scale2DPoints {
-    fn scale(&mut self, scale_xy: ArrayView1<f32>);
+    fn scale(&mut self, scale_xy: ArrayView1<f64>);
 }
 
-impl Scale2DPoints for Array2<f32> {
-    fn scale(&mut self, scale_xy: ArrayView1<f32>) {
+impl Scale2DPoints for Array2<f64> {
+    fn scale(&mut self, scale_xy: ArrayView1<f64>) {
         if self.len_of(Axis(0)) == 0 {
             return;
         }
@@ -341,8 +341,8 @@ impl Scale2DPoints for Array2<f32> {
     }
 }
 
-impl Scale2DPoints for Array3<f32> {
-    fn scale(&mut self, scale_xy: ArrayView1<f32>) {
+impl Scale2DPoints for Array3<f64> {
+    fn scale(&mut self, scale_xy: ArrayView1<f64>) {
         if self.len_of(Axis(0)) == 0 {
             return;
         }
@@ -479,7 +479,7 @@ pub trait NeckSagittalComponent: DrawComponent {
 }
 
 pub trait NeckMeasureComponent: Named {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError>;
+    fn measure(&self) -> Result<Vec<f64>, MeasureError>;
 }
 
 /// Sacral Avaialble Spaces
@@ -543,10 +543,10 @@ impl<'a> DrawComponent for Sacs<'a> {
 }
 
 impl<'a> NeckMeasureComponent for Sacs<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         self.0.posterior_dens.validate_length(1)?;
         self.0.lamina.validate_length(8)?;
-        let mut lengths: Vec<f32> = Vec::new();
+        let mut lengths: Vec<f64> = Vec::new();
         // C1SAC
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
         let points = stack![
@@ -616,7 +616,7 @@ impl<'a> DrawComponent for Adi<'a> {
     }
 }
 impl<'a> NeckMeasureComponent for Adi<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         self.prep()?;
         let diff = &self.0.anterior_dens.index_axis(Axis(0), 0)
             - &self.0.anterior_c1_arch.index_axis(Axis(0), 0);
@@ -631,7 +631,7 @@ impl<'a> NeckMeasureComponent for Adi<'a> {
 pub struct OC2<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for OC2<'a> {}
 impl OC2<'_> {
-    fn prep(&self) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         self.0.occipital.validate_length(1)?;
         self.0.posterior_hard_palate.validate_length(1)?;
         let mcgregor_points = stack![
@@ -660,7 +660,7 @@ impl<'a> DrawComponent for OC2<'a> {
         let c2_length = c2_lower_endplate
             .index_axis(Axis(0), 0)
             .l2_dist(&c2_lower_endplate.index_axis(Axis(0), 1))
-            .unwrap() as f32;
+            .unwrap();
         group = painter.cobb_from_plates(
             group,
             mcgregor_points,
@@ -677,7 +677,7 @@ impl<'a> DrawComponent for OC2<'a> {
     }
 }
 impl<'a> NeckMeasureComponent for OC2<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
         let angle =
             angle_from_lines(mcgregor_points.view(), c2_lower_endplate.view()).unwrap_or_default();
@@ -711,7 +711,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
             })
             .collect();
         let mean_wedge_length =
-            (wedge_lengths.iter().sum::<f64>() / wedge_lengths.len() as f64) as f32;
+            wedge_lengths.iter().sum::<f64>() / wedge_lengths.len() as f64;
         for i in 0..6 {
             let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
@@ -733,7 +733,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
     }
 }
 impl<'a> NeckMeasureComponent for WedgeAngle<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let mut angles = Vec::new();
         for i in 0..6 {
             let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
@@ -754,7 +754,7 @@ pub struct ModifiedRenawatIndex<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for ModifiedRenawatIndex<'a> {}
 impl<'a> ModifiedRenawatIndex<'a> {
     /// Array2 of [intersection, c2_lower_middle]
-    fn prep(&self) -> Result<Option<Array2<f32>>, MeasureError> {
+    fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
         self.0.anterior_c1_arch.validate_length(1)?;
         // posterior_c2_arch?
         self.0.posterior_dens.validate_length(1)?;
@@ -808,7 +808,7 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
     }
 }
 impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let intersection = self.prep()?;
         if let Some(intersection) = intersection {
             let diff = &intersection.index_axis(Axis(0), 0) - &intersection.index_axis(Axis(0), 1);
@@ -825,7 +825,7 @@ impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
 pub struct ThoracicInletAngle<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for ThoracicInletAngle<'a> {}
 impl<'a> ThoracicInletAngle<'a> {
-    fn prep(&self) -> Result<Array2<f32>, MeasureError> {
+    fn prep(&self) -> Result<Array2<f64>, MeasureError> {
         self.0.manubrium.validate_length(1)?;
         self.0.corners.0.validate_length(7)?;
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
@@ -854,7 +854,7 @@ impl<'a> DrawComponent for ThoracicInletAngle<'a> {
     }
 }
 impl<'a> NeckMeasureComponent for ThoracicInletAngle<'a> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let t1_top_plate = self.prep()?;
         let angle = femoral_incidence_angle(
             t1_top_plate.view(),
@@ -870,7 +870,7 @@ impl<'a> NeckMeasureComponent for ThoracicInletAngle<'a> {
 pub struct NeckTilt<'a>(pub &'a LateralPoints);
 impl<'a> NeckSagittalComponent for NeckTilt<'a> {}
 impl<'a> NeckTilt<'a> {
-    fn prep(&self) -> Result<(Array2<f32>, Array2<f32>, f32), MeasureError> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>, f64), MeasureError> {
         self.0.manubrium.validate_length(1)?;
         self.0.corners.0.validate_length(7)?;
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
@@ -914,7 +914,7 @@ impl<'a> DrawComponent for NeckTilt<'a> {
     }
 }
 impl NeckMeasureComponent for NeckTilt<'_> {
-    fn measure(&self) -> Result<Vec<f32>, MeasureError> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let (_, _, angle) = self.prep()?;
         Ok(vec![angle])
     }
@@ -925,16 +925,16 @@ impl NeckMeasureComponent for NeckTilt<'_> {
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct CervicalPoints<'a>(pub &'a LateralPoints);
 impl HasCornerPoints for CervicalPoints<'_> {
-    fn top_left(&self) -> ArrayView2<f32> {
+    fn top_left(&self) -> ArrayView2<f64> {
         self.0.corners.0.slice(s![1.., 0, ..])
     }
-    fn top_right(&self) -> ArrayView2<f32> {
+    fn top_right(&self) -> ArrayView2<f64> {
         self.0.corners.0.slice(s![1.., 1, ..])
     }
-    fn bottom_left(&self) -> ArrayView2<f32> {
+    fn bottom_left(&self) -> ArrayView2<f64> {
         self.0.corners.0.slice(s![.., 2, ..])
     }
-    fn bottom_right(&self) -> ArrayView2<f32> {
+    fn bottom_right(&self) -> ArrayView2<f64> {
         self.0.corners.0.slice(s![.., 3, ..])
     }
 }

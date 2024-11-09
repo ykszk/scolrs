@@ -38,19 +38,19 @@ pub struct Painter {
 }
 
 /// Squared distance between vectors. i.e. `(p1 - p2)^2`
-fn squared_distance<S>(p1: ArrayBase<S, Ix1>, p2: ArrayBase<S, Ix1>) -> f32
+fn squared_distance<S>(p1: ArrayBase<S, Ix1>, p2: ArrayBase<S, Ix1>) -> f64
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
     (&p1 - &p2).mapv(|a| a * a).sum()
 }
 
 /// Signed angle from line1 to line2 in radians
 /// TODO: Check the difference from [`angle_from_lines`]?
-pub fn angle_between<S, T>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<T, Ix2>) -> f32
+pub fn angle_between<S, T>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<T, Ix2>) -> f64
 where
-    S: ndarray::Data<Elem = f32>,
-    T: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
+    T: ndarray::Data<Elem = f64>,
 {
     let v = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
     let w = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
@@ -64,7 +64,7 @@ pub fn distanced_pair3<S>(
     p3: ArrayBase<S, Ix1>,
 ) -> (ArrayBase<S, Ix1>, ArrayBase<S, Ix1>)
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
     let d1 = squared_distance(p1.view(), p2.view());
     let d2 = squared_distance(p2.view(), p3.view());
@@ -84,7 +84,7 @@ trait JoinWith {
 
 impl<S, D> JoinWith for ArrayBase<S, D>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
     D: ndarray::Dimension,
 {
     fn join(&self, delim: &str) -> String {
@@ -97,8 +97,8 @@ where
 
 #[derive(Debug, Clone, Copy)]
 pub struct CobbAux {
-    pub plate_scale: f32,
-    pub perpendicular_scale: f32,
+    pub plate_scale: f64,
+    pub perpendicular_scale: f64,
 }
 
 impl Default for CobbAux {
@@ -121,11 +121,11 @@ impl CobbAux {
 fn rotate_around<S, T>(
     point: ArrayBase<S, Ix1>,
     origin: ArrayBase<T, Ix1>,
-    rad_angle: f32,
-) -> ndarray::Array1<f32>
+    rad_angle: f64,
+) -> ndarray::Array1<f64>
 where
-    S: ndarray::Data<Elem = f32>,
-    T: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
+    T: ndarray::Data<Elem = f64>,
 {
     let point = &point - &origin;
     let s = rad_angle.sin();
@@ -148,7 +148,7 @@ impl Painter {
         title: Option<&str>,
     ) -> element::Text
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         let t = element::Text::new(text)
             .set("x", coords[0])
@@ -166,7 +166,7 @@ impl Painter {
 
     pub fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         element::Circle::new()
             .set("cx", point[0])
@@ -176,7 +176,7 @@ impl Painter {
 
     pub fn line<S>(&self, start_end: ArrayBase<S, Ix2>) -> element::Line
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         element::Line::new()
             .set("x1", start_end[[0, 0]])
@@ -185,7 +185,7 @@ impl Painter {
             .set("y2", start_end[[1, 1]])
     }
 
-    pub fn horizontal_line(&self, y: f32) -> element::Line {
+    pub fn horizontal_line(&self, y: f64) -> element::Line {
         element::Line::new()
             .set("x1", 0)
             .set("y1", y)
@@ -194,7 +194,7 @@ impl Painter {
     }
 
     #[allow(dead_code)]
-    pub fn vertical_line(&self, x: f32) -> element::Line {
+    pub fn vertical_line(&self, x: f64) -> element::Line {
         element::Line::new()
             .set("x1", x)
             .set("y1", 0)
@@ -204,7 +204,7 @@ impl Painter {
 
     pub fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         let s = points.join(" ");
         element::Polyline::new().set("points", s)
@@ -212,7 +212,7 @@ impl Painter {
 
     pub fn polygon<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polygon
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         let s = points.join(" ");
         element::Polygon::new().set("points", s)
@@ -224,11 +224,11 @@ impl Painter {
         line1: ArrayBase<S, Ix2>,
         line2: ArrayBase<S, Ix2>,
         cross: ArrayBase<S, Ix1>,
-        arc_radius: f32,
+        arc_radius: f64,
         title: Option<&str>,
-    ) -> (element::Group, f32)
+    ) -> (element::Group, f64)
     where
-        S: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
     {
         group = group.add(self.line(line1.view()));
         group = group.add(self.line(line2.view()));
@@ -265,8 +265,8 @@ impl Painter {
 
     pub fn plate_end<S, T>(plate: ArrayBase<S, Ix2>, point: ArrayBase<T, Ix1>) -> usize
     where
-        S: ndarray::Data<Elem = f32>,
-        T: ndarray::Data<Elem = f32>,
+        S: ndarray::Data<Elem = f64>,
+        T: ndarray::Data<Elem = f64>,
     {
         let p0_p1: ndarray::Array1<_> = &plate.slice(s![1, ..]) - &plate.slice(s![0, ..]);
         let p0_pts: ndarray::Array1<_> = &point - &plate.slice(s![0, ..]);
@@ -281,10 +281,10 @@ impl Painter {
     pub fn cobb_from_plates(
         &self,
         mut group: element::Group,
-        sup_plate: Array2<f32>,
-        inf_plate: Array2<f32>,
+        sup_plate: Array2<f64>,
+        inf_plate: Array2<f64>,
         aux_param: &CobbAux,
-        base_length: f32,
+        base_length: f64,
         title: Option<&str>,
     ) -> element::Group {
         let sup_line = points2line(sup_plate.view());
@@ -293,9 +293,9 @@ impl Painter {
         let linter = sup_line.intersection(&inf_line);
         if let Some(intersection) = linter {
             let is_inside = intersection.x > 0.0
-                && intersection.x < self.size.0 as f32
+                && intersection.x < self.size.0 as f64
                 && intersection.y > 0.0
-                && intersection.y < self.size.1 as f32;
+                && intersection.y < self.size.1 as f64;
             let angle = angle_from_lines(sup_plate.view(), inf_plate.view()).unwrap(); // lines can't be parallel if there is an intersection point
 
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
@@ -373,8 +373,8 @@ impl Painter {
                 let unit_d = &d / d.l2norm();
                 let len = self.param.line_width * 8.0;
                 let p1 = plate.mean_axis(Axis(0)).unwrap();
-                let p2 = rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f32.to_radians());
-                let p3 = rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f32.to_radians());
+                let p2 = rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f64.to_radians());
+                let p3 = rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f64.to_radians());
                 let arrow = ndarray::stack![Axis(0), p1, p2, p3];
                 let arrow = self.polygon(arrow);
 
@@ -390,7 +390,7 @@ impl Painter {
         spine: &Spine,
         curve: &Curve,
         aux_param: &CobbAux,
-        base_length: f32,
+        base_length: f64,
         title: Option<&str>,
     ) -> element::Group {
         let sup_plate = spine.sup_plate(curve.sup);
@@ -430,9 +430,9 @@ impl Painter {
     }
 }
 
-pub fn points2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f32>
+pub fn points2line<S>(plate: ArrayBase<S, Ix2>) -> lyon_geom::Line<f64>
 where
-    S: ndarray::Data<Elem = f32>,
+    S: ndarray::Data<Elem = f64>,
 {
     let point = lyon_geom::Point::new(plate[[0, 0]], plate[[0, 1]]);
     let p2 = lyon_geom::Point::new(plate[[1, 0]], plate[[1, 1]]);
@@ -552,7 +552,7 @@ pub trait DrawComponent: Named {
     ) -> Result<element::Group, MeasureError>;
 }
 pub trait MeasureComponent: Named {
-    fn measure(&self) -> Result<f32, MeasureError>;
+    fn measure(&self) -> Result<f64, MeasureError>;
 }
 
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
@@ -605,16 +605,16 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct VertebralPoints<'a>(&'a Spine);
 impl HasCornerPoints for VertebralPoints<'_> {
-    fn top_left(&self) -> ArrayView2<f32> {
+    fn top_left(&self) -> ArrayView2<f64> {
         self.0.c7tls.0.slice(s![.., 0, ..])
     }
-    fn top_right(&self) -> ArrayView2<f32> {
+    fn top_right(&self) -> ArrayView2<f64> {
         self.0.c7tls.0.slice(s![.., 1, ..])
     }
-    fn bottom_left(&self) -> ArrayView2<f32> {
+    fn bottom_left(&self) -> ArrayView2<f64> {
         self.0.c7tls.0.slice(s![..-1, 2, ..])
     }
-    fn bottom_right(&self) -> ArrayView2<f32> {
+    fn bottom_right(&self) -> ArrayView2<f64> {
         self.0.c7tls.0.slice(s![..-1, 3, ..])
     }
 }
@@ -710,7 +710,7 @@ impl<'a> DrawComponent for Centroids<'a> {
     }
 }
 
-fn mean_plate_length(scol: &Spine) -> f32 {
+fn mean_plate_length(scol: &Spine) -> f64 {
     let corners = scol.tl_corners().0;
     let sup_inf_shape = (corners.len_of(Axis(0)) * 2, 2, 2); // [n * sup_inf, lr, xy]
 
@@ -750,7 +750,7 @@ macro_rules! impl_cobb_angle {
             }
         }
         impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f32, MeasureError> {
+            fn measure(&self) -> Result<f64, MeasureError> {
                 if let Some((_curve, angle)) = self.1.as_ref() {
                     Ok(*angle)
                 } else {
@@ -764,21 +764,21 @@ macro_rules! impl_cobb_angle {
 /// Cobb angle for PT curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl<'a> CoronalComponent for CobbPT<'a> {}
 impl_cobb_angle!(CobbPT);
 
 /// Cobb angle for MT curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl<'a> CoronalComponent for CobbMT<'a> {}
 impl_cobb_angle!(CobbMT);
 
 /// Cobb angle for TLL curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f32)>);
+struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl<'a> CoronalComponent for CobbTLL<'a> {}
 impl_cobb_angle!(CobbTLL);
 
@@ -818,7 +818,7 @@ impl<'a> DrawComponent for CurveApex<'a> {
     }
 }
 impl MeasureComponent for CurveApex<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         Err(MeasureError::NoMeasurementDefined)
     }
 }
@@ -886,7 +886,7 @@ impl<'a> DrawComponent for Csvl<'a> {
     }
 }
 impl MeasureComponent for Csvl<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         Err(MeasureError::NoMeasurementDefined)
     }
 }
@@ -951,7 +951,7 @@ impl DrawComponent for T1TiltAngle<'_> {
     }
 }
 impl MeasureComponent for T1TiltAngle<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle(t1sup)
@@ -964,7 +964,7 @@ impl MeasureComponent for T1TiltAngle<'_> {
 pub struct CoronalBalance<'a>(&'a CoronalPoints);
 impl<'a> CoronalComponent for CoronalBalance<'a> {}
 impl CoronalBalance<'_> {
-    fn prep(&self, spine: &Spine) -> Array2<f32> {
+    fn prep(&self, spine: &Spine) -> Array2<f64> {
         let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
@@ -989,7 +989,7 @@ impl DrawComponent for CoronalBalance<'_> {
     }
 }
 impl MeasureComponent for CoronalBalance<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let points = self.prep(&self.0.spine);
         let dx = points.index_axis(Axis(0), 0)[0] - points.index_axis(Axis(0), 1)[0];
         Ok(dx)
@@ -1019,28 +1019,28 @@ impl DrawComponent for ClavicleAngle<'_> {
     }
 }
 impl MeasureComponent for ClavicleAngle<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         tilt_angle(self.0.clavicle.0.view())
     }
 }
 
-fn difference_in_index(points: ArrayView2<f32>, index: usize) -> Result<f32, MeasureError> {
+fn difference_in_index(points: ArrayView2<f64>, index: usize) -> Result<f64, MeasureError> {
     points.validate_length(2)?;
     Ok(points.index_axis(Axis(0), 0)[index] - points.index_axis(Axis(0), 1)[index])
 }
 
-fn difference_in_x(points: ArrayView2<f32>) -> Result<f32, MeasureError> {
+fn difference_in_x(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     difference_in_index(points, 0)
 }
 
-fn difference_in_y(points: ArrayView2<f32>) -> Result<f32, MeasureError> {
+fn difference_in_y(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     difference_in_index(points, 1)
 }
 
 fn draw_difference_in_x(
     group: element::Group,
     label: &str,
-    points: ArrayView2<f32>,
+    points: ArrayView2<f64>,
     painter: &Painter,
 ) -> Result<element::Group, MeasureError> {
     let dx = difference_in_x(points)?;
@@ -1080,7 +1080,7 @@ fn draw_difference_in_x(
 fn draw_difference_in_y(
     label: &str,
     group: element::Group,
-    points: ArrayView2<f32>,
+    points: ArrayView2<f64>,
     painter: &Painter,
 ) -> Result<element::Group, MeasureError> {
     let dy = difference_in_y(points)?;
@@ -1120,7 +1120,7 @@ impl DrawComponent for ShoulderHeight<'_> {
     }
 }
 impl MeasureComponent for ShoulderHeight<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let coronal_points = self.0;
         coronal_points.shoulder.0.validate_length(2)?;
         let points = coronal_points.shoulder.0.view();
@@ -1129,7 +1129,7 @@ impl MeasureComponent for ShoulderHeight<'_> {
     }
 }
 
-fn tilt_angle(points: ArrayView2<f32>) -> Result<f32, MeasureError> {
+fn tilt_angle(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     points.validate_length(2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];
@@ -1140,7 +1140,7 @@ fn tilt_angle(points: ArrayView2<f32>) -> Result<f32, MeasureError> {
 fn draw_tilt_angle(
     group: element::Group,
     painter: &Painter,
-    points: &ndarray::Array2<f32>,
+    points: &ndarray::Array2<f64>,
     title: Option<&str>,
 ) -> element::Group {
     let mut g = group;
@@ -1187,7 +1187,7 @@ impl DrawComponent for PelvicObliquity<'_> {
     }
 }
 impl MeasureComponent for PelvicObliquity<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         tilt_angle(self.0.pelvis.0.view())
     }
 }
@@ -1232,7 +1232,7 @@ impl DrawComponent for SacralObliquity<'_> {
                 0.8 * sac_seg
                     .index_axis(Axis(0), 0)
                     .l2_dist(&sac_seg.index_axis(Axis(0), 1))
-                    .unwrap() as f32,
+                    .unwrap(),
                 Some(label),
             )
             .0;
@@ -1240,7 +1240,7 @@ impl DrawComponent for SacralObliquity<'_> {
     }
 }
 impl MeasureComponent for SacralObliquity<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         tilt_angle(self.0.femoral_head.0.view())
     }
 }
@@ -1263,7 +1263,7 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
     }
 }
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let coronal_points = self.0;
         coronal_points.femoral_head.0.validate_length(2)?;
         let points = coronal_points.femoral_head.0.view();
@@ -1275,8 +1275,8 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
 pub fn draw_incidence_angle(
     group: element::Group,
     label: &str,
-    femoral_heads: ArrayView2<f32>,
-    plate: ArrayView2<f32>,
+    femoral_heads: ArrayView2<f64>,
+    plate: ArrayView2<f64>,
     painter: &Painter,
 ) -> element::Group {
     let mut g = group;
@@ -1297,7 +1297,7 @@ pub fn draw_incidence_angle(
     let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
     let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
     perp_sac /= perp_sac.l2norm();
-    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
+    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() * perp_sac;
     perp_sac += &sac_sup_mid;
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
     g = g.add(painter.line(perp_line.view()));
@@ -1344,7 +1344,7 @@ macro_rules! impl_kyophosis {
             }
         }
         impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f32, MeasureError> {
+            fn measure(&self) -> Result<f64, MeasureError> {
                 let angle = self
                     .0
                     .spine
@@ -1443,7 +1443,7 @@ impl<'a> DrawComponent for LumbarLordosis<'a> {
     }
 }
 impl<'a> MeasureComponent for LumbarLordosis<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
         let angle = spine.angle(&Curve { sup, inf }).unwrap();
@@ -1456,7 +1456,7 @@ impl<'a> MeasureComponent for LumbarLordosis<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct SagittalBalance<'a>(&'a SagittalPoints);
 impl<'a> SagittalBalance<'a> {
-    fn prep(sagittal_points: &SagittalPoints) -> Array2<f32> {
+    fn prep(sagittal_points: &SagittalPoints) -> Array2<f64> {
         let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let pos_sac = sac_sup.index_axis(Axis(0), 1);
@@ -1480,7 +1480,7 @@ impl<'a> DrawComponent for SagittalBalance<'a> {
     }
 }
 impl<'a> MeasureComponent for SagittalBalance<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let points = Self::prep(self.0);
         let p1 = points.index_axis(Axis(0), 0);
         let p2 = points.index_axis(Axis(0), 1);
@@ -1494,7 +1494,7 @@ impl<'a> MeasureComponent for SagittalBalance<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct LumbosacralAngle<'a>(&'a SagittalPoints);
 impl<'a> LumbosacralAngle<'a> {
-    fn prep(spine: &Spine) -> (Array2<f32>, Array2<f32>) {
+    fn prep(spine: &Spine) -> (Array2<f64>, Array2<f64>) {
         let sup = spine
             .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
             .to_owned();
@@ -1526,7 +1526,7 @@ impl<'a> DrawComponent for LumbosacralAngle<'a> {
     }
 }
 impl<'a> MeasureComponent for LumbosacralAngle<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let (sup, inf) = Self::prep(&self.0.spine);
         let angle = angle_between(sup.view(), inf.view()).to_degrees();
         Ok(angle)
@@ -1555,7 +1555,7 @@ impl<'a> DrawComponent for PelvicIncidence<'a> {
     }
 }
 impl<'a> MeasureComponent for PelvicIncidence<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let plate = self.0.spine.sacral_sup_plate();
         femoral_incidence_angle(plate, &self.0.femoral_head)
     }
@@ -1566,7 +1566,7 @@ impl<'a> MeasureComponent for PelvicIncidence<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct PelvicTilt<'a>(&'a SagittalPoints);
 impl<'a> PelvicTilt<'a> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         sagittal_points
             .femoral_head
             .0
@@ -1608,7 +1608,7 @@ impl<'a> DrawComponent for PelvicTilt<'a> {
     }
 }
 impl<'a> MeasureComponent for PelvicTilt<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let sagittal_points = self.0;
         let (sac2fem, v_line) = Self::prep(sagittal_points)?;
         let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
@@ -1622,12 +1622,12 @@ impl<'a> MeasureComponent for PelvicTilt<'a> {
 pub struct SacralSlope<'a>(&'a SagittalPoints);
 impl<'a> SagittalComponent for SacralSlope<'a> {}
 impl<'a> SacralSlope<'a> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         let sac_sup = sagittal_points.spine.sacral_sup_plate().to_owned();
         let h_len = sac_sup
             .index_axis(Axis(0), 0)
             .l2_dist(&sac_sup.index_axis(Axis(0), 1))
-            .unwrap() as f32;
+            .unwrap();
         let mut h_line_sac = sac_sup.clone();
         h_line_sac[[1, 1]] = h_line_sac[[0, 1]];
         h_line_sac[[1, 0]] = h_line_sac[[0, 0]] + h_len;
@@ -1652,7 +1652,7 @@ impl<'a> DrawComponent for SacralSlope<'a> {
             * sac_sup
                 .index_axis(Axis(0), 0)
                 .l2_dist(&sac_sup.index_axis(Axis(0), 1))
-                .unwrap() as f32;
+                .unwrap();
         g = painter
             .angle_between(
                 g,
@@ -1667,7 +1667,7 @@ impl<'a> DrawComponent for SacralSlope<'a> {
     }
 }
 impl<'a> MeasureComponent for SacralSlope<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let sagittal_points = self.0;
         let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
         let angle = angle_between(sac_sup.view(), h_line_sac.view()).to_degrees();
@@ -1707,7 +1707,7 @@ impl<'a> DrawComponent for L5IncidenceAngle<'a> {
     }
 }
 impl<'a> MeasureComponent for L5IncidenceAngle<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let sagittal_points = self.0;
         let plate = sagittal_points
             .spine
@@ -1718,7 +1718,7 @@ impl<'a> MeasureComponent for L5IncidenceAngle<'a> {
 
 fn draw_femoral_center(
     group: element::Group,
-    femoral_head: ArrayView2<f32>,
+    femoral_head: ArrayView2<f64>,
     painter: &Painter,
 ) -> element::Group {
     let mut g = group;
@@ -1738,7 +1738,7 @@ fn draw_femoral_center(
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
 impl<'a> PelvicRadiusAngle<'a> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f32>, Array2<f32>), MeasureError> {
+    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         sagittal_points
             .femoral_head
             .0
@@ -1776,7 +1776,7 @@ impl<'a> DrawComponent for PelvicRadiusAngle<'a> {
 }
 
 impl<'a> MeasureComponent for PelvicRadiusAngle<'a> {
-    fn measure(&self) -> Result<f32, MeasureError> {
+    fn measure(&self) -> Result<f64, MeasureError> {
         let (sac_sup, line_fem2post_sac) = Self::prep(self.0)?;
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
         Ok(angle)
@@ -1784,9 +1784,9 @@ impl<'a> MeasureComponent for PelvicRadiusAngle<'a> {
 }
 
 pub fn femoral_incidence_angle(
-    plate: ArrayView2<f32>,
-    femoral_head: &crate::AtMost2<Array2<f32>>,
-) -> Result<f32, MeasureError> {
+    plate: ArrayView2<f64>,
+    femoral_head: &crate::AtMost2<Array2<f64>>,
+) -> Result<f64, MeasureError> {
     femoral_head.0.validate_length_more_than(1)?;
     let mid_femoral_heads = femoral_head.0.mean_axis(Axis(0)).unwrap();
     let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
@@ -1794,7 +1794,7 @@ pub fn femoral_incidence_angle(
     let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
     let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
     perp_sac /= perp_sac.l2norm();
-    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() as f32 * perp_sac;
+    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() * perp_sac;
     perp_sac += &sac_sup_mid;
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
     let angle_deg = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();

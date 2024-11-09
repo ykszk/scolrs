@@ -18,7 +18,7 @@ pub struct CurveInfoLine {
 pub struct CurveInfoAll {
     #[serde(flatten)]
     pub info: ScolDesc,
-    pub all_curves: Vec<(Curve, f32, VertebraDiscIndex)>,
+    pub all_curves: Vec<(Curve, f64, VertebraDiscIndex)>,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoAllLine {

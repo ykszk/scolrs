@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Measurements {
-    pub measurements: IndexMap<String, Vec<f32>>,
+    pub measurements: IndexMap<String, Vec<f64>>,
     pub unit: String,
 }
 
@@ -30,8 +30,8 @@ pub struct MeasurementsLine {
 
 fn measure_all(
     measures: Vec<Box<dyn NeckMeasureComponent + '_>>,
-) -> Result<IndexMap<String, Vec<f32>>> {
-    let mut results: IndexMap<String, Vec<f32>> = Default::default();
+) -> Result<IndexMap<String, Vec<f64>>> {
+    let mut results: IndexMap<String, Vec<f64>> = Default::default();
     for measure in measures {
         let result = measure.measure();
         match result {
