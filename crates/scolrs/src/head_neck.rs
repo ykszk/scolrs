@@ -1,5 +1,3 @@
-use std::vec;
-
 use crate::{
     angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
     femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, Corners, DrawComponent,
@@ -339,6 +337,14 @@ impl TryFrom<LabelMeData> for LateralPointsIR {
         let lateral_points = LateralPoints::try_from(&data)?;
         let lateral_points_ir = LateralPointsIR::from(&lateral_points);
         Ok(lateral_points_ir)
+    }
+}
+
+impl TryFrom<&str> for LateralPointsIR {
+    type Error = serde_json::Error;
+
+    fn try_from(json: &str) -> Result<Self, Self::Error> {
+        serde_json::from_str(json)
     }
 }
 

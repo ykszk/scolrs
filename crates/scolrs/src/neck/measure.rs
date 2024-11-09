@@ -6,32 +6,37 @@ use std::{
 use crate::neck::cli::MeasureArgs;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
-use labelme_rs::{LabelMeData, LabelMeDataLine};
 use log::warn;
 use scolrs::{
-    head_neck::{LateralPoints, NeckLateralMeasure, NeckMeasureComponent},
+    head_neck::{
+        LateralPoints, LateralPointsIR, LateralPointsIRLine, NeckLateralMeasure,
+        NeckMeasureComponent,
+    },
     parse_measures,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct MeasureLine<V>
-where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
-{
+pub struct Measurements {
+    pub measurements: IndexMap<String, Vec<f32>>,
+    pub unit: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MeasurementsLine {
     pub filename: String,
-    pub content: IndexMap<V, Vec<f32>>,
+    pub content: Measurements,
 }
 
 fn measure_all(
     measures: Vec<Box<dyn NeckMeasureComponent + '_>>,
-) -> Result<IndexMap<&'static str, Vec<f32>>> {
-    let mut results: IndexMap<&str, Vec<f32>> = Default::default();
+) -> Result<IndexMap<String, Vec<f32>>> {
+    let mut results: IndexMap<String, Vec<f32>> = Default::default();
     for measure in measures {
         let result = measure.measure();
         match result {
             Ok(result) => {
-                results.insert(measure.id(), result);
+                results.insert(measure.id().to_string(), result);
             }
             Err(e) => match e {
                 scolrs::MeasureError::InvalidNumberOfPoints(err) => {
@@ -45,20 +50,24 @@ fn measure_all(
 }
 
 fn process_data<'a>(
-    data: &'a LabelMeData,
+    lateral_points: &'a LateralPoints,
     measures: &'a [NeckLateralMeasure],
-) -> Result<IndexMap<&'a str, Vec<f32>>> {
-    let lateral_points = LateralPoints::try_from(data)?;
+) -> Result<Measurements> {
     let measures: Vec<Box<dyn NeckMeasureComponent>> = measures
         .iter()
-        .map(|m| (m, &lateral_points).into())
+        .map(|m| (m, lateral_points).into())
         .collect();
-    measure_all(measures)
+    let measures = measure_all(measures)?;
+    Ok(Measurements {
+        measurements: measures,
+        unit: lateral_points.image_data.unit.clone(),
+    })
 }
 
 fn process_json(args: MeasureArgs) -> Result<()> {
-    let data = LabelMeData::try_from(args.input.as_path())
+    let data_ir = LateralPointsIR::try_from(std::fs::read_to_string(&args.input)?.as_str())
         .with_context(|| format!("Loading {:?}", args.input))?;
+    let data = LateralPoints::try_from(&data_ir)?;
     let measures = handle_measures_arg(&args.measures)?;
     let results = process_data(&data, &measures)?;
     if let Some(output) = args.output {
@@ -95,18 +104,19 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        let data: LabelMeDataLine = serde_json::from_str(&line)?;
-        let results = process_data(&data.content, &measures);
+        let data_line: LateralPointsIRLine = serde_json::from_str(&line)?;
+        let data = LateralPoints::try_from(&data_line.content)?;
+        let results = process_data(&data, &measures);
         match results {
             Ok(results) => {
-                let results_line = MeasureLine {
-                    filename: data.filename,
+                let results_line = MeasurementsLine {
+                    filename: data_line.filename,
                     content: results,
                 };
                 writeln!(writer, "{}", serde_json::to_string(&results_line)?)?;
             }
             Err(e) => {
-                warn!("Skip {:?}: {:?}", data.filename, e);
+                warn!("Skip {:?}: {:?}", data_line.filename, e);
             }
         }
     }
@@ -134,7 +144,7 @@ mod tests {
     fn test_measure_cmd_case1() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
-        let input = data_dir.join("neck_case1/lateral.json");
+        let input = data_dir.join("neck_case1/lateral_lateral_points.json");
         let args = MeasureArgs {
             input,
             ..Default::default()
@@ -146,14 +156,14 @@ mod tests {
     fn test_measure_cmd_case2() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
-        let input = data_dir.join("neck_case2/extension_lateral.json");
+        let input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");
         let args = MeasureArgs {
             input,
             ..Default::default()
         };
         cmd(args)?;
 
-        let input = data_dir.join("neck_case2/flexion_lateral.json");
+        let input = data_dir.join("neck_case2/flexion_lateral_lateral_points.json");
         let args = MeasureArgs {
             input,
             ..Default::default()
