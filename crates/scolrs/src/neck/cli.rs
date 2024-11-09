@@ -23,8 +23,8 @@ pub enum Command {
     List(ListArgs),
     /// Convert SVGs to HTML
     Html(HtmlArgs),
-    /// Convert data format in ndjson
-    Ndconv(NdconvArgs),
+    /// Convert data format
+    Conv(ConvArgs),
 }
 
 #[derive(Parser)]
@@ -118,23 +118,26 @@ pub struct HtmlArgs {
 
 #[derive(ValueEnum, Debug, Copy, Clone, PartialEq)]
 #[clap(rename_all = "PascalCase")]
-pub enum NdConvFormat {
+pub enum ConvFormat {
     Labelme,
     LateralPoints,
 }
 
 #[derive(Parser, Debug)]
-pub struct NdconvArgs {
-    /// Input ndjson file
+pub struct ConvArgs {
+    /// Input file
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: Option<PathBuf>,
-    /// Output ndjson file
+    /// Output file
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
+    /// Input and output in ndjson instead of json
+    #[clap(long)]
+    pub ndjson: bool,
     /// From format
     #[clap(short, long, default_value = "Labelme")]
-    pub from: NdConvFormat,
+    pub from: ConvFormat,
     /// To format
     #[clap(short, long, default_value = "LateralPoints")]
-    pub to: NdConvFormat,
+    pub to: ConvFormat,
 }
