@@ -1,3 +1,5 @@
+use std::ops::MulAssign;
+
 use crate::{
     angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
     femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, Corners, DrawComponent,
@@ -10,7 +12,7 @@ use lyon_geom::point;
 use named_derive::Named;
 
 use labelme_rs::LabelMeData;
-use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView2, Axis};
+use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
@@ -116,6 +118,26 @@ pub struct LateralPoints {
     pub manubrium: Array2<f32>,
 
     pub image_data: ImageData,
+}
+
+impl LateralPoints {
+    // Scale point coordinates using image_data.spacing_xy
+    pub fn scale(&mut self) {
+        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+        self.corners.0.scale(scale_xy.view());
+        self.lamina.scale(scale_xy.view());
+        self.brow.scale(scale_xy.view());
+        self.sella.scale(scale_xy.view());
+        self.orbit.scale(scale_xy.view());
+        self.external_auditory_canal.scale(scale_xy.view());
+        self.occipital.scale(scale_xy.view());
+        self.anterior_c1_arch.scale(scale_xy.view());
+        self.anterior_dens.scale(scale_xy.view());
+        self.posterior_dens.scale(scale_xy.view());
+        self.posterior_hard_palate.scale(scale_xy.view());
+        self.chin.scale(scale_xy.view());
+        self.manubrium.scale(scale_xy.view());
+    }
 }
 
 impl TryFrom<&LabelMeData> for LateralPoints {
@@ -302,6 +324,37 @@ impl TryFrom<&str> for LateralPointsIRLine {
 
     fn try_from(json: &str) -> Result<Self, Self::Error> {
         serde_json::from_str(json)
+    }
+}
+
+pub trait Scale2DPoints {
+    fn scale(&mut self, scale_xy: ArrayView1<f32>);
+}
+
+impl Scale2DPoints for Array2<f32> {
+    fn scale(&mut self, scale_xy: ArrayView1<f32>) {
+        if self.len_of(Axis(0)) == 0 {
+            return;
+        }
+        let scale_xy = scale_xy.insert_axis(Axis(0)).to_owned();
+        self.mul_assign(&scale_xy);
+    }
+}
+
+impl Scale2DPoints for Array3<f32> {
+    fn scale(&mut self, scale_xy: ArrayView1<f32>) {
+        if self.len_of(Axis(0)) == 0 {
+            return;
+        }
+        if self.len_of(Axis(1)) == 0 {
+            return;
+        }
+
+        let scale_xy = scale_xy
+            .insert_axis(Axis(0))
+            .insert_axis(Axis(0))
+            .to_owned();
+        self.mul_assign(&scale_xy);
     }
 }
 
