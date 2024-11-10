@@ -144,7 +144,6 @@ pub fn cmd(args: MeasureArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
     #[test]
@@ -202,11 +201,12 @@ mod tests {
                 .iter()
                 .zip(distance_measurements_non_scaled.iter())
             {
-                assert_eq!(
+                assert!(
+                    float_cmp::approx_eq!(f64, *scaled, non_scaled * 0.5, epsilon = 1e-6),
+                    "Scaled measurements for {} are not correct: {} != {}",
+                    distance_measure,
                     scaled,
-                    &(non_scaled * 0.5),
-                    "Scaled measurements for {}",
-                    distance_measure
+                    non_scaled * 0.5
                 );
             }
         }

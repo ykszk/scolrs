@@ -45,3 +45,4 @@ tera = { version = "1.20.0", default-features = false }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+float-cmp = "0.10.0"
