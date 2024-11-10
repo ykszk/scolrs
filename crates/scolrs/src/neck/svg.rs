@@ -3,25 +3,46 @@ use std::io::{BufRead, BufReader};
 
 use crate::neck::cli::SvgArgs;
 use anyhow::{Context, Result};
-use labelme_rs::LabelMeDataLine;
-use labelme_rs::{image::GenericImageView, LabelMeDataWImage};
+use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use log::{debug, warn};
-use scolrs::head_neck::{NeckLateralDraw, NeckSagittalComponent};
+use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckSagittalComponent};
 use scolrs::{parse_measures, ColorPalette, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
+fn resolve_image_path(
+    lateral_points: &LateralPoints,
+    json_path: &std::path::Path,
+) -> Result<String> {
+    let mut image_path = lateral_points.image_data.path.replace('\\', "/");
+    if let Some(parent) = json_path.parent() {
+        let path = parent.canonicalize()?;
+        image_path = path.join(image_path).to_string_lossy().to_string();
+    }
+    Ok(image_path)
+}
+
 fn process_data(
-    mut data: LabelMeDataWImage,
+    mut lateral_points: LateralPoints,
     args: &SvgArgs,
     draw_param: &DrawParam,
     label_colors: &mut ColorPalette,
     line_colors: &mut ColorPalette,
     neck_sagittal_draw: &[NeckLateralDraw],
 ) -> Result<SVG> {
+    // use LabelMeDataWImage for resizing
+    let mut data = LabelMeDataWImage::try_from(LabelMeData::try_from(&lateral_points)?)
+        .with_context(|| format!("Failed to read {}", lateral_points.image_data.path))?;
     if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
     }
+    // Return scaled points to lateral_points while keeping the original image data
+    let original_image_data = lateral_points.image_data.clone();
+    lateral_points = LateralPoints::try_from(&data.data)?;
+    lateral_points.image_data = original_image_data;
+
+    lateral_points.scale();
+
     let svg_size = if let Some(size) = args.size.as_ref() {
         let size_param = labelme_rs::ResizeParam::try_from(size.as_str())?;
         data.data
@@ -32,18 +53,21 @@ fn process_data(
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
+    let draw_scale =
+        (lateral_points.image_data.spacing_xy.0 + lateral_points.image_data.spacing_xy.1) / 2.0;
+    let mut draw_param = draw_param.clone();
+    draw_param
+        .scale(draw_scale)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let style = element::Style::new(draw_param.style());
+    let painter = Painter::new(draw_param, svg_size);
+    let mut document =
+        painter.doc_w_background(&data.image, &lateral_points.image_data.spacing_xy)?;
     document = document.add(style);
-
-    let cervical_points = scolrs::head_neck::LateralPoints::try_from(&data.data)?;
-
-    debug!("Drawing");
 
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = neck_sagittal_draw
         .iter()
-        .map(|m| (m, &cervical_points).into())
+        .map(|m| (m, &lateral_points).into())
         .collect();
 
     for component in neck_sagittal_components {
@@ -93,13 +117,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     };
 
     if args.input.extension().unwrap_or_default() == "json" {
-        let data: LabelMeDataWImage = args
-            .input
-            .as_path()
-            .try_into()
-            .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
+        let lateral_points_ir: scolrs::head_neck::LateralPointsIR =
+            serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
+        let mut lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
+        lateral_points.image_data.path = resolve_image_path(&lateral_points, &args.input)?;
         let document = process_data(
-            data,
+            lateral_points,
             &args,
             &draw_param,
             &mut label_colors,
@@ -119,10 +142,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         };
         for line in reader.lines() {
             let line = line?;
-            let data_line: LabelMeDataLine = serde_json::from_str(&line)?;
-            let data = LabelMeDataWImage::try_from(data_line.content)?;
+            let lateral_points_ir_line: scolrs::head_neck::LateralPointsIRLine =
+                serde_json::from_str(&line)?;
+            let mut lateral_points =
+                scolrs::head_neck::LateralPoints::try_from(&lateral_points_ir_line.content)?;
+            lateral_points.image_data.path = resolve_image_path(&lateral_points, &args.input)?;
             let result = process_data(
-                data,
+                lateral_points,
                 &args,
                 &draw_param,
                 &mut label_colors,
@@ -132,11 +158,14 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let document = match result {
                 Ok(document) => document,
                 Err(e) => {
-                    warn!("Skip {:?}: {:?}", data_line.filename, e);
+                    warn!("Skip {:?}: {:?}", lateral_points_ir_line.filename, e);
                     continue;
                 }
             };
-            let output = args.output.join(&data_line.filename).with_extension("svg");
+            let output = args
+                .output
+                .join(&lateral_points_ir_line.filename)
+                .with_extension("svg");
             std::fs::write(&output, document.to_string())
                 .with_context(|| format!("Saving to {:?}", args.output))?;
         }
@@ -188,7 +217,7 @@ mod tests {
         let mut svg_args = gen_svg_args();
 
         let data_dir = PathBuf::from("../../tests/data/");
-        svg_args.input = data_dir.join("neck_case1/lateral.json");
+        svg_args.input = data_dir.join("neck_case1/lateral_lateral_points.json");
         svg_args.output = output_path("neck_case1_lateral.svg")?;
         cmd(svg_args.clone())?;
 
@@ -216,12 +245,12 @@ mod tests {
         let data_dir = PathBuf::from("../../tests/data/");
 
         // extension
-        svg_args.input = data_dir.join("neck_case2/extension_lateral.json");
+        svg_args.input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");
         svg_args.output = output_path("neck_case2_extension_lateral.svg")?;
         cmd(svg_args.clone())?;
 
         // flexion
-        svg_args.input = data_dir.join("neck_case2/flexion_lateral.json");
+        svg_args.input = data_dir.join("neck_case2/flexion_lateral_lateral_points.json");
         svg_args.output = output_path("neck_case2_flexion_lateral.svg")?;
         cmd(svg_args.clone())?;
 

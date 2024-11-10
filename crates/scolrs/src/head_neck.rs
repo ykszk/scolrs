@@ -123,6 +123,9 @@ pub struct LateralPoints {
 impl LateralPoints {
     // Scale point coordinates using image_data.spacing_xy
     pub fn scale(&mut self) {
+        if self.image_data.spacing_xy == (1.0, 1.0) {
+            return;
+        }
         let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
         self.corners.0.scale(scale_xy.view());
         self.lamina.scale(scale_xy.view());
@@ -181,6 +184,15 @@ impl TryFrom<&LabelMeData> for LateralPoints {
             manubrium,
             image_data,
         })
+    }
+}
+
+impl TryFrom<&LateralPoints> for LabelMeData {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(lateral_points: &LateralPoints) -> Result<Self, Self::Error> {
+        let lateral_points_ir = LateralPointsIR::from(lateral_points);
+        lateral_points_ir.try_into()
     }
 }
 
@@ -508,6 +520,13 @@ impl<'a> DrawComponent for Sacs<'a> {
         ];
         let line = painter.line(points.view());
         group = group.add(line);
+        let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
+        let text = painter.text(
+            &format!("{:.1} {}", length, self.0.image_data.unit),
+            points.index_axis(Axis(0), 0),
+            Some(self.id()),
+        );
+        group = group.add(text);
 
         // C2SAC to T1SAC
         let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
@@ -528,6 +547,7 @@ impl<'a> DrawComponent for Sacs<'a> {
             let projected_point = Array::from(vec![projected_point.x, projected_point.y]);
 
             let points = stack![Axis(0), lamina, projected_point.view()];
+            let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
             let line = painter.line(points.view());
             group = group.add(line);
             let (line_p1, line_p2) = distanced_pair3(
@@ -537,6 +557,12 @@ impl<'a> DrawComponent for Sacs<'a> {
             );
             let line = painter.line(stack![Axis(0), line_p1, line_p2].view());
             group = group.add(line);
+            let text = painter.text(
+                &format!("{:.1} {}", length, self.0.image_data.unit),
+                lamina,
+                Some(self.id()),
+            );
+            group = group.add(text);
         }
         Ok(group)
     }
@@ -612,6 +638,13 @@ impl<'a> DrawComponent for Adi<'a> {
         ];
         let line = painter.line(points.view());
         group = group.add(line);
+        let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
+        let text = painter.text(
+            &format!("{:.1} {}", length, self.0.image_data.unit),
+            points.index_axis(Axis(0), 0),
+            Some(self.id()),
+        );
+        group = group.add(text);
         Ok(group)
     }
 }
@@ -710,8 +743,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
                     .unwrap()
             })
             .collect();
-        let mean_wedge_length =
-            wedge_lengths.iter().sum::<f64>() / wedge_lengths.len() as f64;
+        let mean_wedge_length = wedge_lengths.iter().sum::<f64>() / wedge_lengths.len() as f64;
         for i in 0..6 {
             let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
@@ -802,6 +834,15 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
             );
             let line = painter.line(stack![Axis(0), p1, p2].view());
             group = group.add(line);
+            let length = (&intersection_c2_lower_middle.index_axis(Axis(0), 0)
+                - &intersection_c2_lower_middle.index_axis(Axis(0), 1))
+                .l2norm();
+            let text = painter.text(
+                &format!("{:.1} {}", length, self.0.image_data.unit),
+                intersection_c2_lower_middle.index_axis(Axis(0), 0),
+                Some(self.id()),
+            );
+            group = group.add(text);
         }
 
         Ok(group)

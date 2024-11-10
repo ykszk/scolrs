@@ -182,4 +182,31 @@ impl DrawParam {
     pub fn style(&self) -> String {
         format!("{}\n{}", self.text_style(), self.line_style())
     }
+    pub fn scale(&mut self, scale: f64) -> std::result::Result<(), String> {
+        if scale == 0.0 {
+            return Ok(());
+        }
+
+        if scale < 0.0 {
+            return Err("Negative scale".into());
+        }
+
+        self.radius *= scale;
+        self.line_width *= scale;
+        self.text_stroke_width *= scale;
+        let re = regex::Regex::new(r"^([\d.]+)(\D+)").unwrap();
+        if let Some(caps) = re.captures(self.font_size.trim()) {
+            let value = caps
+                .get(1)
+                .unwrap()
+                .as_str()
+                .parse::<f64>()
+                .map_err(|e| e.to_string())?;
+            let unit = caps.get(2).map(|v| v.as_str()).unwrap_or_default();
+            self.font_size = format!("{}{}", value * scale, unit);
+        } else {
+            return Err(format!("Invalid font size format: {}", self.font_size));
+        }
+        Ok(())
+    }
 }

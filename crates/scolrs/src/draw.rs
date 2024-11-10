@@ -408,12 +408,14 @@ impl Painter {
     pub fn doc_w_background(
         &self,
         image: &labelme_rs::image::DynamicImage,
+        spacing_xy: &(f64, f64),
     ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
         let (w, h) = self.size;
+        let (spaced_w, spaced_h) = (w as f64 * spacing_xy.0, h as f64 * spacing_xy.1);
         let mut document = svg::Document::new()
             .set("width", w)
             .set("height", h)
-            .set("viewBox", (0i64, 0i64, w, h))
+            .set("viewBox", (0i64, 0i64, spaced_w, spaced_h))
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
@@ -422,8 +424,8 @@ impl Painter {
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", w)
-            .set("height", h)
+            .set("width", spaced_w)
+            .set("height", spaced_h)
             .set("xlink:href", b64);
         document = document.add(bg);
         Ok(document)
@@ -1870,7 +1872,7 @@ pub fn draw_sagittal(
         mut line_colors,
     } = palettes;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
+    let mut document = painter.doc_w_background(&data.image, &(1.0, 1.0))?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
@@ -1920,7 +1922,7 @@ pub fn draw_coronal(
 
     let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
+    let mut document = painter.doc_w_background(&data.image, &(1.0, 1.0))?;
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);
