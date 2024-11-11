@@ -91,7 +91,7 @@ fn process_json(
         }
         (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
             let from_data: CoronalPointsIR = serde_json::from_reader(reader)?;
-            let to_data: LabelMeData = from_data.try_into()?;
+            let to_data: LabelMeData = from_data.into();
             serde_json::to_writer(&mut writer, &to_data)?
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisSagittal) => {
@@ -101,7 +101,7 @@ fn process_json(
         }
         (ConvFormat::ScoliosisSagittal, ConvFormat::Labelme) => {
             let from_data: SagittalPointsIR = serde_json::from_reader(reader)?;
-            let to_data: LabelMeData = from_data.try_into()?;
+            let to_data: LabelMeData = from_data.into();
             serde_json::to_writer(&mut writer, &to_data)?
         }
         (from, to) => {

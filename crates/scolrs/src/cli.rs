@@ -90,6 +90,9 @@ pub struct MeasureArgs {
     /// Measurements to draw. By default, all measurements are drawn
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
+    /// Input data format is labelme instead of native format
+    #[clap(long)]
+    pub labelme: bool,
 }
 
 #[derive(Parser, Debug)]

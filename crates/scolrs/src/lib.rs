@@ -1,5 +1,6 @@
 use clap::ValueEnum;
-use labelme_rs::LabelMeData;
+use head_neck::TryConvertContentFilename;
+use labelme_rs::{LabelMeData, LabelMeDataLine};
 use log::{debug, error};
 use named_derive::{ContentFilename, TryFromJsonStr};
 use ndarray::{
@@ -329,10 +330,8 @@ fn create_shapes(label_points: &[(&str, Vec<Point2d>)]) -> Vec<labelme_rs::Shape
     shapes
 }
 
-impl TryFrom<CoronalPointsIR> for LabelMeData {
-    type Error = ndarray::ShapeError;
-
-    fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
+impl From<CoronalPointsIR> for LabelMeData {
+    fn from(ir: CoronalPointsIR) -> Self {
         let mut data = LabelMeData {
             imagePath: ir.image_data.path,
             imageHeight: ir.image_data.height,
@@ -352,7 +351,16 @@ impl TryFrom<CoronalPointsIR> for LabelMeData {
             ("Pelvis", ir.pelvis),
             ("FemoralHead", ir.femoral_head),
         ]);
-        Ok(data)
+        data
+    }
+}
+
+impl TryFrom<CoronalPointsIR> for CoronalPoints {
+    type Error = ScolError;
+
+    fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
+        let data = LabelMeData::from(ir);
+        CoronalPoints::try_from(&data)
     }
 }
 
@@ -592,6 +600,14 @@ pub struct CoronalPointsIRLine {
     pub filename: String,
 }
 
+impl TryFrom<LabelMeDataLine> for CoronalPointsIRLine {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        TryConvertContentFilename::try_convert_from(data)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SagittalPoints {
     pub spine: Spine,
@@ -609,10 +625,8 @@ pub struct SagittalPointsIR {
     pub image_data: ImageMetadata,
 }
 
-impl TryFrom<SagittalPointsIR> for LabelMeData {
-    type Error = ndarray::ShapeError;
-
-    fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
+impl From<SagittalPointsIR> for LabelMeData {
+    fn from(ir: SagittalPointsIR) -> Self {
         let mut data = LabelMeData {
             imagePath: ir.image_data.path,
             imageHeight: ir.image_data.height,
@@ -629,7 +643,7 @@ impl TryFrom<SagittalPointsIR> for LabelMeData {
             ("BR", br),
             ("FemoralHead", ir.femoral_head),
         ]);
-        Ok(data)
+        data
     }
 }
 
@@ -655,12 +669,29 @@ impl TryFrom<LabelMeData> for SagittalPointsIR {
     }
 }
 
+impl TryFrom<SagittalPointsIR> for SagittalPoints {
+    type Error = ScolError;
+
+    fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
+        let data = LabelMeData::from(ir);
+        SagittalPoints::try_from(&data)
+    }
+}
+
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
 )]
 pub struct SagittalPointsIRLine {
     pub content: SagittalPointsIR,
     pub filename: String,
+}
+
+impl TryFrom<LabelMeDataLine> for SagittalPointsIRLine {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        TryConvertContentFilename::try_convert_from(data)
+    }
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae
