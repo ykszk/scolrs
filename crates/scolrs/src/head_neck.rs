@@ -3,9 +3,9 @@ use std::ops::MulAssign;
 use crate::{
     angle_between, angle_from_lines, distanced_pair3, draw_incidence_angle, extract_points,
     femoral_incidence_angle, points2line, Centroids, CobbAux, ColorPalette, Corners, DrawComponent,
-    DrawCorners, HasCornerPoints, L2Norm, MeasureError, Named, Painter, ScolError, ValidateLength,
-    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
-    CLASS_TEXT, CORNER_LABELS,
+    DrawCorners, HasCornerPoints, ImageMetadata, L2Norm, MeasureError, Named, Painter, ScolError,
+    ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+    CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -77,29 +77,6 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ImageData {
-    pub path: String,
-    pub height: usize,
-    pub width: usize,
-    pub spacing_xy: (f64, f64),
-    pub unit: String,
-}
-
-impl Default for ImageData {
-    fn default() -> Self {
-        let spacing_xy = (1.0, 1.0);
-        let unit = "px".to_string();
-        Self {
-            path: String::default(),
-            height: 0,
-            width: 0,
-            spacing_xy,
-            unit,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
@@ -117,7 +94,7 @@ pub struct LateralPoints {
     pub chin: Array2<f64>,
     pub manubrium: Array2<f64>,
 
-    pub image_data: ImageData,
+    pub image_data: ImageMetadata,
 }
 
 impl LateralPoints {
@@ -161,12 +138,7 @@ impl TryFrom<&LabelMeData> for LateralPoints {
         let chin = extract_points(data, "Chin")?;
         let manubrium = extract_points(data, "Manubrium")?;
 
-        let image_data = ImageData {
-            path: data.imagePath.clone(),
-            height: data.imageHeight,
-            width: data.imageWidth,
-            ..Default::default()
-        };
+        let image_data = ImageMetadata::from(data);
 
         Ok(LateralPoints {
             corners,
@@ -270,7 +242,7 @@ pub struct LateralPointsIR {
     pub posterior_hard_palate: Vec<Vec<f64>>,
     pub chin: Vec<Vec<f64>>,
     pub manubrium: Vec<Vec<f64>>,
-    pub image_data: ImageData,
+    pub image_data: ImageMetadata,
 }
 
 #[derive(

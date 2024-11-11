@@ -33,6 +33,43 @@ pub enum ScolError {
     Linalg(#[from] rulinalg::error::Error),
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ImageMetadata {
+    pub path: String,
+    pub height: usize,
+    pub width: usize,
+    pub spacing_xy: (f64, f64),
+    pub unit: String,
+}
+
+impl Default for ImageMetadata {
+    fn default() -> Self {
+        let spacing_xy = (1.0, 1.0);
+        let unit = "px".to_string();
+        Self {
+            path: String::default(),
+            height: 0,
+            width: 0,
+            spacing_xy,
+            unit,
+        }
+    }
+}
+
+impl From<&LabelMeData> for ImageMetadata {
+    fn from(data: &LabelMeData) -> Self {
+        let path = data.imagePath.clone();
+        let height = data.imageHeight;
+        let width = data.imageWidth;
+        Self {
+            path,
+            height,
+            width,
+            ..Default::default()
+        }
+    }
+}
+
 fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f64>, ScolError> {
     let tuples: Result<Vec<_>, _> = data
         .shapes
@@ -190,12 +227,16 @@ pub struct CoronalPoints {
     pub shoulder: AtMost2<Array2<f64>>,
     pub pelvis: AtMost2<Array2<f64>>,
     pub femoral_head: AtMost2<Array2<f64>>,
+
+    pub image_data: ImageMetadata,
 }
 
 #[derive(Debug, Clone)]
 pub struct SagittalPoints {
     pub spine: Spine,
     pub femoral_head: AtMost2<Array2<f64>>,
+
+    pub image_data: ImageMetadata,
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae
@@ -689,12 +730,15 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
         let pelvis = _new_at_most2(data, "Pelvis")?;
         let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
+        let image_data = ImageMetadata::from(data);
+
         Ok(CoronalPoints {
             spine,
             clavicle,
             pelvis,
             shoulder,
             femoral_head,
+            image_data,
         })
     }
 }
@@ -706,9 +750,12 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
         let spine = Spine::try_from(data)?;
         let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
+        let image_data = ImageMetadata::from(data);
+
         Ok(SagittalPoints {
             spine,
             femoral_head,
+            image_data,
         })
     }
 }

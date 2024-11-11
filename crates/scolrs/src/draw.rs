@@ -991,7 +991,13 @@ impl DrawComponent for CoronalBalance<'_> {
         let points = self.prep(spine);
         let color = line_colors.get_or_new(label);
         let g = self.default_group().set("fill", color).set("stroke", color);
-        let g = draw_difference_in_x(g, label, points.view(), painter);
+        let g = draw_difference_in_x(
+            g,
+            label,
+            points.view(),
+            painter,
+            self.0.image_data.unit.as_str(),
+        );
         g
     }
 }
@@ -1049,6 +1055,7 @@ fn draw_difference_in_x(
     label: &str,
     points: ArrayView2<f64>,
     painter: &Painter,
+    unit: &str,
 ) -> Result<element::Group, MeasureError> {
     let dx = difference_in_x(points)?;
     let mut g = group;
@@ -1075,10 +1082,10 @@ fn draw_difference_in_x(
     g = g.add(painter.line(h_line.view()));
     let dx = p1[0] - p2[0];
     let text = painter.text(
-        &format!("{:.1} {}", dx, painter.param.len_unit),
+        &format!("{:.1}", dx),
         h_line.index_axis(Axis(0), 1),
         Some(label),
-        None,
+        Some(unit),
     );
 
     g = g.add(text);
@@ -1090,6 +1097,7 @@ fn draw_difference_in_y(
     group: element::Group,
     points: ArrayView2<f64>,
     painter: &Painter,
+    unit: &str,
 ) -> Result<element::Group, MeasureError> {
     let dy = difference_in_y(points)?;
     let mut g = group;
@@ -1102,8 +1110,8 @@ fn draw_difference_in_y(
     vline[[1, 0]] = vline[[0, 0]];
     g = g.add(painter.line(vline.view()));
     let text_pos = vline.mean_axis(Axis(0)).unwrap();
-    let text = format!("{:.1} {}", dy, painter.param.len_unit);
-    let text = painter.text(&text, text_pos, Some(label), None);
+    let text = format!("{:.1}", dy);
+    let text = painter.text(&text, text_pos, Some(label), Some(unit));
 
     g = g.add(text);
     Ok(g)
@@ -1124,7 +1132,13 @@ impl DrawComponent for ShoulderHeight<'_> {
         let color = line_colors.get_or_new(self.id());
         let g = self.default_group().set("fill", color).set("stroke", color);
 
-        draw_difference_in_y(self.id(), g, self.0.shoulder.0.view(), painter)
+        draw_difference_in_y(
+            self.id(),
+            g,
+            self.0.shoulder.0.view(),
+            painter,
+            self.0.image_data.unit.as_str(),
+        )
     }
 }
 impl MeasureComponent for ShoulderHeight<'_> {
@@ -1267,7 +1281,13 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
     ) -> Result<element::Group, MeasureError> {
         let color = line_colors.get_or_new(self.id());
         let g = self.default_group().set("fill", color).set("stroke", color);
-        draw_difference_in_y(self.id(), g, self.0.femoral_head.0.view(), painter)
+        draw_difference_in_y(
+            self.id(),
+            g,
+            self.0.femoral_head.0.view(),
+            painter,
+            self.0.image_data.unit.as_str(),
+        )
     }
 }
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
@@ -1483,7 +1503,13 @@ impl<'a> DrawComponent for SagittalBalance<'a> {
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let g = self.default_group().set("stroke", color).set("fill", color);
-        let g = draw_difference_in_x(g, label, points.view(), painter);
+        let g = draw_difference_in_x(
+            g,
+            label,
+            points.view(),
+            painter,
+            self.0.image_data.unit.as_str(),
+        );
         g
     }
 }
