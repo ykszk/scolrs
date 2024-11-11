@@ -1904,7 +1904,8 @@ pub fn draw_sagittal(
         mut line_colors,
     } = palettes;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image, &(1.0, 1.0))?;
+    let mut document =
+        painter.doc_w_background(&data.image, &sagittal_points.image_data.spacing_xy)?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
@@ -1953,7 +1954,8 @@ pub fn draw_coronal(
     let (draws, hide) = draws_hide;
 
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image, &(1.0, 1.0))?;
+    let mut document =
+        painter.doc_w_background(&data.image, &coronal_points.image_data.spacing_xy)?;
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);

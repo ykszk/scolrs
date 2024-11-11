@@ -22,6 +22,7 @@ pub use defs::*;
 mod draw;
 pub use draw::*;
 pub mod head_neck;
+use head_neck::Scale2DPoints;
 
 pub type Point2d = (f64, f64);
 
@@ -264,6 +265,14 @@ pub struct Spine {
     pub c_c7tl: Centroids,
 }
 
+impl Spine {
+    pub fn scale(&mut self, scale_xy: ArrayView1<f64>) {
+        self.c7tls.0.scale(scale_xy);
+        self.v_c7tl.0.scale(scale_xy);
+        self.c_c7tl.scale(scale_xy);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
@@ -275,6 +284,21 @@ pub struct CoronalPoints {
     pub c_coefs: Array1<f64>,
 
     pub image_data: ImageMetadata,
+}
+
+impl CoronalPoints {
+    pub fn scale(&mut self) {
+        if self.image_data.spacing_xy == (1.0, 1.0) {
+            return;
+        }
+        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+
+        self.spine.scale(scale_xy.view());
+        self.clavicle.0.scale(scale_xy.view());
+        self.shoulder.0.scale(scale_xy.view());
+        self.pelvis.0.scale(scale_xy.view());
+        self.femoral_head.0.scale(scale_xy.view());
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
@@ -359,8 +383,11 @@ impl TryFrom<CoronalPointsIR> for CoronalPoints {
     type Error = ScolError;
 
     fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
+        let image_data = ir.image_data.clone();
         let data = LabelMeData::from(ir);
-        CoronalPoints::try_from(&data)
+        let mut cp = CoronalPoints::try_from(&data)?;
+        cp.image_data = image_data;
+        Ok(cp)
     }
 }
 
@@ -616,6 +643,18 @@ pub struct SagittalPoints {
     pub image_data: ImageMetadata,
 }
 
+impl SagittalPoints {
+    pub fn scale(&mut self) {
+        if self.image_data.spacing_xy == (1.0, 1.0) {
+            return;
+        }
+        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+
+        self.spine.scale(scale_xy.view());
+        self.femoral_head.0.scale(scale_xy.view());
+    }
+}
+
 /// Intermediate representation of `SagittalPoints` for serde
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
 pub struct SagittalPointsIR {
@@ -673,8 +712,11 @@ impl TryFrom<SagittalPointsIR> for SagittalPoints {
     type Error = ScolError;
 
     fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
+        let image_data = ir.image_data.clone();
         let data = LabelMeData::from(ir);
-        SagittalPoints::try_from(&data)
+        let mut sp = SagittalPoints::try_from(&data)?;
+        sp.image_data = image_data;
+        Ok(sp)
     }
 }
 

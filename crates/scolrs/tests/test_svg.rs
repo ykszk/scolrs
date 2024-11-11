@@ -52,8 +52,24 @@ fn _test_svg(
     };
     let draws = CoronalMeasure::all_draws();
     let hide = Vec::new();
+    let native_path = json_filename.parent().unwrap().join(
+        json_filename
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+            + "_native.json",
+    );
     let document = if coronal {
-        let coronal_points = CoronalPoints::try_from(&data.data)?;
+        let coronal_points: CoronalPoints = if native_path.exists() {
+            let json_str = std::fs::read_to_string(native_path)?;
+            let ir = scolrs::CoronalPointsIR::try_from(json_str.as_str())?;
+            let mut cp = CoronalPoints::try_from(ir)?;
+            cp.scale();
+            cp
+        } else {
+            CoronalPoints::try_from(&data.data)?
+        };
         draw_coronal(
             data,
             coronal_points,
@@ -64,7 +80,15 @@ fn _test_svg(
             curve_apex_set,
         )
     } else {
-        let sagittal_points = SagittalPoints::try_from(&data.data)?;
+        let sagittal_points: SagittalPoints = if native_path.exists() {
+            let json_str = std::fs::read_to_string(native_path)?;
+            let ir = scolrs::SagittalPointsIR::try_from(json_str.as_str())?;
+            let mut sp: SagittalPoints = ir.try_into()?;
+            sp.scale();
+            sp
+        } else {
+            SagittalPoints::try_from(&data.data)?
+        };
         let draws = SagittalMeasure::all_draws();
         let hide = Vec::new();
         draw_sagittal(

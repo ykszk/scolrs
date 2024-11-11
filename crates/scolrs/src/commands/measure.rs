@@ -175,7 +175,7 @@ mod tests {
         let input = if labelme {
             data_dir.join(case_dir).join("lateral.json")
         } else {
-            data_dir.join(case_dir).join("lateral_sagittal_points.json")
+            data_dir.join(case_dir).join("lateral_native.json")
         };
         let curve_set = None;
         let direction = Plane::Sagittal;
@@ -194,7 +194,7 @@ mod tests {
         let input = if labelme {
             data_dir.join(case_dir).join("frontal.json")
         } else {
-            data_dir.join(case_dir).join("frontal_coronal_points.json")
+            data_dir.join(case_dir).join("frontal_native.json")
         };
         let curve_set = None;
         let direction = Plane::Coronal;
@@ -212,7 +212,7 @@ mod tests {
         let input = if labelme {
             data_dir.join(case_dir).join("lateral.json")
         } else {
-            data_dir.join(case_dir).join("lateral_sagittal_points.json")
+            data_dir.join(case_dir).join("lateral_native.json")
         };
         let curve_set = None;
         let direction = Plane::Sagittal;

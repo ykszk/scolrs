@@ -74,6 +74,9 @@ pub struct SvgArgs {
     /// Hide measurements. Use `--list` to see all measurements
     #[clap(long)]
     pub hide: Vec<String>,
+    /// Input data format is labelme instead of native format
+    #[clap(long)]
+    pub labelme: bool,
 }
 
 #[derive(Parser, Debug)]
