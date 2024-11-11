@@ -146,18 +146,21 @@ impl Painter {
         text: &str,
         coords: ArrayBase<S, Ix1>,
         title: Option<&str>,
+        unit: Option<&str>,
     ) -> element::Text
     where
         S: ndarray::Data<Elem = f64>,
     {
-        let t = element::Text::new(text)
+        let mut t = element::Text::new(text)
             .set("x", coords[0])
             .set("y", coords[1]);
-        if let Some(title) = title {
-            t.add(self.title(title))
-        } else {
-            t
+        if let Some(unit) = unit {
+            t = t.add(element::TSpan::new(unit).set("class", "unit"));
         }
+        if let Some(title) = title {
+            t = t.add(self.title(title))
+        }
+        t
     }
 
     pub fn title(&self, text: &str) -> element::Title {
@@ -259,6 +262,7 @@ impl Painter {
             format!("{:.1}°", angle_deg).as_str(),
             rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
             title,
+            None,
         );
         (group.add(text), angle_deg)
     }
@@ -329,6 +333,7 @@ impl Painter {
                     format!("{:.1}°", angle).as_str(),
                     ndarray::arr1(&[intersection.x, intersection.y]),
                     title,
+                    None,
                 );
 
                 group = group.add(text);
@@ -357,7 +362,7 @@ impl Painter {
                     ]);
                     group = group.add(line);
                 }
-                let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title);
+                let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
                 group = group.add(text);
             }
         } else {
@@ -595,7 +600,7 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
         for (coords, label) in
             std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
         {
-            let t = painter.text(label, coords, None);
+            let t = painter.text(label, coords, None, None);
             g_vert_labels = g_vert_labels.add(t);
         }
         Ok(g_vert_labels)
@@ -926,7 +931,7 @@ impl DrawComponent for T1TiltAngle<'_> {
             // T1 is vertical, which is highly unlikely
             debug!("T1 is vertical");
             g = g.add(painter.line(t1sup.view()));
-            g = g.add(painter.text("90°", mid, Some(label)));
+            g = g.add(painter.text("90°", mid, Some(label), None));
         } else {
             let mut arc_start = mid.to_owned();
             let arc_radius = mult_arc * l2r.l2norm();
@@ -1073,6 +1078,7 @@ fn draw_difference_in_x(
         &format!("{:.1} {}", dx, painter.param.len_unit),
         h_line.index_axis(Axis(0), 1),
         Some(label),
+        None,
     );
 
     g = g.add(text);
@@ -1097,7 +1103,7 @@ fn draw_difference_in_y(
     g = g.add(painter.line(vline.view()));
     let text_pos = vline.mean_axis(Axis(0)).unwrap();
     let text = format!("{:.1} {}", dy, painter.param.len_unit);
-    let text = painter.text(&text, text_pos, Some(label));
+    let text = painter.text(&text, text_pos, Some(label), None);
 
     g = g.add(text);
     Ok(g)
@@ -1305,7 +1311,7 @@ pub fn draw_incidence_angle(
     g = g.add(painter.line(perp_line.view()));
     let angle = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
     let text = format!("{:.1}°", angle);
-    let text = painter.text(&text, sac_sup_mid, Some(label));
+    let text = painter.text(&text, sac_sup_mid, Some(label), None);
 
     g = g.add(text);
     g
@@ -1604,7 +1610,7 @@ impl<'a> DrawComponent for PelvicTilt<'a> {
         g = g.add(painter.line(v_line.view()));
         let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
         let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, sac2fem.index_axis(Axis(0), 1), Some(label));
+        let text = painter.text(&text, sac2fem.index_axis(Axis(0), 1), Some(label), None);
         g = g.add(text);
         Ok(g)
     }
@@ -1771,7 +1777,7 @@ impl<'a> DrawComponent for PelvicRadiusAngle<'a> {
         g = g.add(painter.line(line_fem2post_sac.view()));
         let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
         let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, post_sac, Some(label));
+        let text = painter.text(&text, post_sac, Some(label), None);
         g = g.add(text);
         Ok(g)
     }

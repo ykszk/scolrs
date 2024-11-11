@@ -522,9 +522,10 @@ impl<'a> DrawComponent for Sacs<'a> {
         group = group.add(line);
         let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
         let text = painter.text(
-            &format!("{:.1} {}", length, self.0.image_data.unit),
+            &format!("{:.1}", length),
             points.index_axis(Axis(0), 0),
-            Some(self.id()),
+            Some("C1SAC"),
+            Some(&self.0.image_data.unit),
         );
         group = group.add(text);
 
@@ -535,9 +536,10 @@ impl<'a> DrawComponent for Sacs<'a> {
         let brs = self.0.corners.0.index_axis(Axis(1), 3);
         let tr_brs = stack![Axis(0), trs, brs];
         let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]);
-        for (tr_br, lamina) in tr_brs
+        for (i, (tr_br, lamina)) in tr_brs
             .axis_iter(Axis(1))
             .zip(lamina_below_c2.axis_iter(Axis(0)))
+            .enumerate()
         {
             let posterior_line = points2line(tr_br);
             let l_lamina = lyon_geom::Point::new(lamina[0], lamina[1]);
@@ -557,10 +559,16 @@ impl<'a> DrawComponent for Sacs<'a> {
             );
             let line = painter.line(stack![Axis(0), line_p1, line_p2].view());
             group = group.add(line);
+            let title = if i < 6 {
+                format!("C{}SAC", 2 + i)
+            } else {
+                "T1SAC".to_string()
+            };
             let text = painter.text(
-                &format!("{:.1} {}", length, self.0.image_data.unit),
+                &format!("{:.1}", length),
                 lamina,
-                Some(self.id()),
+                Some(title.as_str()),
+                Some(&self.0.image_data.unit),
             );
             group = group.add(text);
         }
@@ -640,9 +648,10 @@ impl<'a> DrawComponent for Adi<'a> {
         group = group.add(line);
         let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
         let text = painter.text(
-            &format!("{:.1} {}", length, self.0.image_data.unit),
+            &format!("{:.1}", length,),
             points.index_axis(Axis(0), 0),
             Some(self.id()),
+            Some(&self.0.image_data.unit),
         );
         group = group.add(text);
         Ok(group)
@@ -838,9 +847,10 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
                 - &intersection_c2_lower_middle.index_axis(Axis(0), 1))
                 .l2norm();
             let text = painter.text(
-                &format!("{:.1} {}", length, self.0.image_data.unit),
+                &format!("{:.1}", length),
                 intersection_c2_lower_middle.index_axis(Axis(0), 0),
                 Some(self.id()),
+                Some(&self.0.image_data.unit),
             );
             group = group.add(text);
         }
@@ -949,6 +959,7 @@ impl<'a> DrawComponent for NeckTilt<'a> {
             &text,
             self.0.manubrium.index_axis(Axis(0), 0),
             Some(self.id()),
+            None,
         );
         group = group.add(text);
         Ok(group)
@@ -1054,7 +1065,7 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
             } else {
                 "T1".to_string()
             };
-            let text = painter.text(&label, centroid, None);
+            let text = painter.text(&label, centroid, None, None);
             group = group.add(text);
         }
         Ok(group)

@@ -108,6 +108,9 @@ fn default_line_width() -> f64 {
 fn default_font_size() -> String {
     "24px".into()
 }
+fn default_unit_font_size() -> String {
+    "12px".into()
+}
 fn default_text_stroke() -> String {
     "black".into()
 }
@@ -135,6 +138,9 @@ pub struct DrawParam {
     /// `stroke` for texts
     #[serde(default = "default_font_size")]
     pub font_size: String,
+    /// `stroke` for small texts (e.g. unit)
+    #[serde(default = "default_unit_font_size")]
+    pub unit_font_size: String,
     /// `stroke` for texts
     #[serde(default = "default_text_stroke")]
     pub text_stroke: String,
@@ -155,6 +161,7 @@ impl Default for DrawParam {
             radius: default_radius(),
             line_width: default_line_width(),
             font_size: default_font_size(),
+            unit_font_size: default_unit_font_size(),
             text_stroke: default_text_stroke(),
             text_stroke_width: default_text_stroke_width(),
             text_fill: default_text_fill(),
@@ -171,6 +178,9 @@ impl DrawParam {
             self.text_stroke,
             self.text_stroke_width,
             self.text_fill
+        ) + &format!(
+            "\ntspan.unit {{font-size: {}; dominant-baseline: hanging}}",
+            self.unit_font_size,
         )
     }
     pub fn line_style(&self) -> String {
@@ -182,6 +192,23 @@ impl DrawParam {
     pub fn style(&self) -> String {
         format!("{}\n{}", self.text_style(), self.line_style())
     }
+
+    fn scale_font_size(font_size: &str, scale: f64) -> std::result::Result<String, String> {
+        let re = regex::Regex::new(r"^([\d.]+)(\D+)").unwrap();
+        if let Some(caps) = re.captures(font_size.trim()) {
+            let value = caps
+                .get(1)
+                .unwrap()
+                .as_str()
+                .parse::<f64>()
+                .map_err(|e| e.to_string())?;
+            let unit = caps.get(2).map(|v| v.as_str()).unwrap_or_default();
+            Ok(format!("{}{}", value * scale, unit))
+        } else {
+            Err(format!("Invalid font size format: {}", font_size))
+        }
+    }
+
     pub fn scale(&mut self, scale: f64) -> std::result::Result<(), String> {
         if scale == 0.0 {
             return Ok(());
@@ -194,19 +221,8 @@ impl DrawParam {
         self.radius *= scale;
         self.line_width *= scale;
         self.text_stroke_width *= scale;
-        let re = regex::Regex::new(r"^([\d.]+)(\D+)").unwrap();
-        if let Some(caps) = re.captures(self.font_size.trim()) {
-            let value = caps
-                .get(1)
-                .unwrap()
-                .as_str()
-                .parse::<f64>()
-                .map_err(|e| e.to_string())?;
-            let unit = caps.get(2).map(|v| v.as_str()).unwrap_or_default();
-            self.font_size = format!("{}{}", value * scale, unit);
-        } else {
-            return Err(format!("Invalid font size format: {}", self.font_size));
-        }
+        self.font_size = Self::scale_font_size(&self.font_size, scale)?;
+        self.unit_font_size = Self::scale_font_size(&self.unit_font_size, scale)?;
         Ok(())
     }
 }
