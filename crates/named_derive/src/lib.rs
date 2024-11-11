@@ -170,3 +170,22 @@ pub fn content_filename_derive(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+/// Derive `TryFrom<&str>` for a struct that can be deserialized from JSON.
+#[proc_macro_derive(TryFromJsonStr)]
+pub fn try_from_json_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+
+    let expanded = quote! {
+        impl TryFrom<&str> for #name {
+            type Error = serde_json::Error;
+
+            fn try_from(json: &str) -> Result<Self, Self::Error> {
+                serde_json::from_str(json)
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}

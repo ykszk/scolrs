@@ -5,6 +5,7 @@ use crate::neck::cli::ConvArgs;
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use scolrs::head_neck::{LateralPointsIR, LateralPointsIRLine, TryConvertContentFilename};
+use scolrs::{CoronalPointsIR, CoronalPointsIRLine};
 
 use super::cli::ConvFormat;
 
@@ -17,17 +18,33 @@ fn process_ndjson(
     for line in reader.lines() {
         let line = line?;
         match (from, to) {
-            (super::cli::ConvFormat::Labelme, super::cli::ConvFormat::LateralPoints) => {
+            (ConvFormat::Labelme, ConvFormat::LateralPoints) => {
                 let from_data = LabelMeDataLine::try_from(line.as_str())?;
                 let to_data: LateralPointsIRLine =
                     TryConvertContentFilename::try_convert_from(from_data)?;
                 serde_json::to_writer(&mut writer, &to_data)?;
             }
-            (super::cli::ConvFormat::LateralPoints, super::cli::ConvFormat::Labelme) => {
+            (ConvFormat::LateralPoints, ConvFormat::Labelme) => {
                 let from_data = LateralPointsIRLine::try_from(line.as_str())?;
                 let to_data: LabelMeDataLine =
                     TryConvertContentFilename::<LateralPointsIRLine>::try_convert_from(from_data)?;
                 serde_json::to_writer(&mut writer, &to_data)?;
+            }
+            (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
+                let from_data = LabelMeDataLine::try_from(line.as_str())?;
+                let to_data: CoronalPointsIRLine =
+                    TryConvertContentFilename::try_convert_from(from_data)?;
+                serde_json::to_writer(&mut writer, &to_data)?;
+            }
+            (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
+                let from_data = CoronalPointsIRLine::try_from(line.as_str())?;
+                let to_data: LabelMeDataLine =
+                    TryConvertContentFilename::<CoronalPointsIRLine>::try_convert_from(from_data)?;
+                serde_json::to_writer(&mut writer, &to_data)?;
+            }
+            (ConvFormat::LateralPoints, ConvFormat::ScoliosisCoronal)
+            | (ConvFormat::ScoliosisCoronal, ConvFormat::LateralPoints) => {
+                bail!("Invalid conversion")
             }
             (from, to) => {
                 anyhow::ensure!(from == to, "Bug in conversion logic");
@@ -56,6 +73,21 @@ fn process_json(
             let to_data: LabelMeData = from_data.try_into()?;
             serde_json::to_writer(&mut writer, &to_data)?
         }
+        (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
+            let from_data: LabelMeData = serde_json::from_reader(reader)?;
+            let to_data: CoronalPointsIR = from_data.try_into()?;
+            serde_json::to_writer(&mut writer, &to_data)?
+        }
+        (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
+            let from_data: CoronalPointsIR = serde_json::from_reader(reader)?;
+            let to_data: LabelMeData = from_data.try_into()?;
+            serde_json::to_writer(&mut writer, &to_data)?
+        }
+        (ConvFormat::LateralPoints, ConvFormat::ScoliosisCoronal)
+        | (ConvFormat::ScoliosisCoronal, ConvFormat::LateralPoints) => {
+            bail!("Invalid conversion")
+        }
+
         (from, to) => {
             anyhow::ensure!(from == to, "Bug in conversion logic");
             bail!("No conversion needed")

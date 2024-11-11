@@ -1,9 +1,10 @@
 use clap::ValueEnum;
 use labelme_rs::LabelMeData;
 use log::{debug, error};
+use named_derive::{ContentFilename, TryFromJsonStr};
 use ndarray::{
-    concatenate, s, stack, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2, ArrayView3,
-    Axis, Data,
+    concatenate, s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2,
+    ArrayView3, Axis, Data,
 };
 use ndarray_stats::QuantileExt;
 pub use serde;
@@ -20,6 +21,15 @@ pub use defs::*;
 mod draw;
 pub use draw::*;
 pub mod head_neck;
+
+pub type Point2d = (f64, f64);
+
+/// Trait for converting between different content filename types
+pub trait ContentFilename {
+    type ContentType;
+    fn content_filename(self) -> (Self::ContentType, String);
+    fn new(content: Self::ContentType, filename: String) -> Self;
+}
 
 #[derive(Error, Debug)]
 pub enum ScolError {
@@ -155,6 +165,41 @@ trait HasCornerPoints {
     fn bottom_right(&self) -> ArrayView2<f64>;
 }
 
+fn vec_points_to_array2(nested_vec: &[Point2d]) -> Result<Array2<f64>, ndarray::ShapeError> {
+    if nested_vec.is_empty() {
+        return Ok(Array::zeros((0, 0)));
+    }
+    let flattened = nested_vec.iter().flat_map(|p| vec![p.0, p.1]).collect();
+    Array::from_shape_vec((nested_vec.len(), 2), flattened)
+}
+
+fn nested_vec_to_array3(nested_vec: &[Vec<Point2d>]) -> Result<Array3<f64>, ndarray::ShapeError> {
+    if nested_vec.is_empty() {
+        return Ok(Array::zeros((0, 0, 0)));
+    }
+    if nested_vec[0].is_empty() {
+        return Ok(Array::zeros((nested_vec.len(), 0, 0)));
+    }
+    let shape = (nested_vec.len(), nested_vec[0].len(), 2);
+    let flattened = nested_vec
+        .concat()
+        .iter()
+        .flat_map(|p| vec![p.0, p.1])
+        .collect();
+    Array::from_shape_vec(shape, flattened)
+}
+
+fn array2_to_vec_points(array: Array2<f64>) -> Vec<Point2d> {
+    array.axis_iter(Axis(0)).map(|a| (a[0], a[1])).collect()
+}
+
+fn array3_to_nested_vec(array: Array3<f64>) -> Vec<Vec<Point2d>> {
+    array
+        .axis_iter(Axis(0))
+        .map(|a| array2_to_vec_points(a.to_owned()))
+        .collect()
+}
+
 /// Polynomial fitting of `deg` degrees
 pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
@@ -218,6 +263,12 @@ pub struct Spine {
     pub c_c7tl: Centroids,
 }
 
+/// Intermediate representation of `Spine` for serde
+// #[derive(Serialize, Deserialize, Debug)]
+// pub struct SpineIR {
+//     pub c7tls: Vec<Vec<Vec<f64>>>,
+// }
+
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
@@ -229,6 +280,96 @@ pub struct CoronalPoints {
     pub c_coefs: Array1<f64>,
 
     pub image_data: ImageMetadata,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+pub struct CoronalPointsIR {
+    pub spine: Vec<Vec<Point2d>>,
+    pub clavicle: Vec<Point2d>,
+    pub shoulder: Vec<Point2d>,
+    pub pelvis: Vec<Point2d>,
+    pub femoral_head: Vec<Point2d>,
+
+    pub image_data: ImageMetadata,
+}
+
+impl TryFrom<CoronalPointsIR> for LabelMeData {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
+        let mut data = LabelMeData {
+            imagePath: ir.image_data.path,
+            imageHeight: ir.image_data.height,
+            imageWidth: ir.image_data.width,
+            ..Default::default()
+        };
+
+        let (mut tl, mut tr, mut bl, mut br) = (
+            Vec::with_capacity(ir.spine.len()),
+            Vec::with_capacity(ir.spine.len()),
+            Vec::with_capacity(ir.spine.len()),
+            Vec::with_capacity(ir.spine.len()),
+        );
+        for points in ir.spine {
+            tl.push(points[0]);
+            tr.push(points[1]);
+            bl.push(points[2]);
+            br.push(points[3]);
+        }
+        // remove last points from bl and br
+        bl.pop();
+        br.pop();
+
+        for (label, points) in [
+            ("TL", tl),
+            ("TR", tr),
+            ("BL", bl),
+            ("BR", br),
+            ("Clavicle", ir.clavicle),
+            ("Shoulder", ir.shoulder),
+            ("Pelvis", ir.pelvis),
+            ("FemoralHead", ir.femoral_head),
+        ] {
+            for point in points {
+                let shape = labelme_rs::Shape {
+                    label: label.to_string(),
+                    points: vec![point],
+                    shape_type: "point".to_string(),
+                    ..Default::default()
+                };
+                data.shapes.push(shape);
+            }
+        }
+        Ok(data)
+    }
+}
+
+impl From<&CoronalPoints> for CoronalPointsIR {
+    fn from(cp: &CoronalPoints) -> Self {
+        let spine = array3_to_nested_vec(cp.spine.c7tls.0.clone());
+        let clavicle = array2_to_vec_points(cp.clavicle.0.clone());
+        let shoulder = array2_to_vec_points(cp.shoulder.0.clone());
+        let pelvis = array2_to_vec_points(cp.pelvis.0.clone());
+        let femoral_head = array2_to_vec_points(cp.femoral_head.0.clone());
+        Self {
+            spine,
+            clavicle,
+            shoulder,
+            pelvis,
+            femoral_head,
+            image_data: cp.image_data.clone(),
+        }
+    }
+}
+
+impl TryFrom<LabelMeData> for CoronalPointsIR {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let coronal_points = CoronalPoints::try_from(&data)?;
+        let coronal_points_ir = CoronalPointsIR::from(&coronal_points);
+        Ok(coronal_points_ir)
+    }
 }
 
 impl CoronalPoints {
@@ -429,6 +570,14 @@ impl CoronalPoints {
             LumbarModifier::AorB
         }
     }
+}
+
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
+)]
+pub struct CoronalPointsIRLine {
+    pub content: CoronalPointsIR,
+    pub filename: String,
 }
 
 #[derive(Debug, Clone)]
@@ -975,6 +1124,8 @@ impl TryFrom<&LabelMeData> for C7TLS {
                 corners[2].shape()[0],
             ));
         }
+
+        // Add the last point of TL to BL and TR to BR
         let last = corners[0]
             .index_axis(Axis(0), corners[0].len_of(Axis(0)) - 1)
             .insert_axis(Axis(0));
@@ -983,6 +1134,7 @@ impl TryFrom<&LabelMeData> for C7TLS {
             .index_axis(Axis(0), corners[1].len_of(Axis(0)) - 1)
             .insert_axis(Axis(0));
         corners[3] = concatenate(Axis(0), &[corners[3].view(), last]).unwrap();
+
         let verts = stack![Axis(1), corners[0], corners[1], corners[2], corners[3]];
         Ok(C7TLS(verts))
     }

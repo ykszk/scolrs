@@ -121,6 +121,7 @@ pub struct HtmlArgs {
 pub enum ConvFormat {
     Labelme,
     LateralPoints,
+    ScoliosisCoronal,
 }
 
 #[derive(Parser, Debug)]
