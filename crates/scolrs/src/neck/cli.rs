@@ -122,6 +122,7 @@ pub enum ConvFormat {
     Labelme,
     LateralPoints,
     ScoliosisCoronal,
+    ScoliosisSagittal,
 }
 
 #[derive(Parser, Debug)]

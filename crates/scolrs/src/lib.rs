@@ -263,12 +263,6 @@ pub struct Spine {
     pub c_c7tl: Centroids,
 }
 
-/// Intermediate representation of `Spine` for serde
-// #[derive(Serialize, Deserialize, Debug)]
-// pub struct SpineIR {
-//     pub c7tls: Vec<Vec<Vec<f64>>>,
-// }
-
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
@@ -293,6 +287,48 @@ pub struct CoronalPointsIR {
     pub image_data: ImageMetadata,
 }
 
+type CornerPoints = (
+    Vec<(f64, f64)>,
+    Vec<(f64, f64)>,
+    Vec<(f64, f64)>,
+    Vec<(f64, f64)>,
+);
+
+fn split_corner_points(spine: &Vec<Vec<Point2d>>) -> CornerPoints {
+    let (mut tl, mut tr, mut bl, mut br) = (
+        Vec::with_capacity(spine.len()),
+        Vec::with_capacity(spine.len()),
+        Vec::with_capacity(spine.len()),
+        Vec::with_capacity(spine.len()),
+    );
+    for points in spine {
+        tl.push(points[0]);
+        tr.push(points[1]);
+        bl.push(points[2]);
+        br.push(points[3]);
+    }
+    // remove last points from bl and br
+    bl.pop();
+    br.pop();
+    (tl, tr, bl, br)
+}
+
+fn create_shapes(label_points: &[(&str, Vec<Point2d>)]) -> Vec<labelme_rs::Shape> {
+    let mut shapes: Vec<labelme_rs::Shape> = Vec::new();
+    for (label, points) in label_points {
+        for point in points {
+            let shape = labelme_rs::Shape {
+                label: label.to_string(),
+                points: vec![*point],
+                shape_type: "point".to_string(),
+                ..Default::default()
+            };
+            shapes.push(shape);
+        }
+    }
+    shapes
+}
+
 impl TryFrom<CoronalPointsIR> for LabelMeData {
     type Error = ndarray::ShapeError;
 
@@ -304,23 +340,9 @@ impl TryFrom<CoronalPointsIR> for LabelMeData {
             ..Default::default()
         };
 
-        let (mut tl, mut tr, mut bl, mut br) = (
-            Vec::with_capacity(ir.spine.len()),
-            Vec::with_capacity(ir.spine.len()),
-            Vec::with_capacity(ir.spine.len()),
-            Vec::with_capacity(ir.spine.len()),
-        );
-        for points in ir.spine {
-            tl.push(points[0]);
-            tr.push(points[1]);
-            bl.push(points[2]);
-            br.push(points[3]);
-        }
-        // remove last points from bl and br
-        bl.pop();
-        br.pop();
+        let (tl, tr, bl, br) = split_corner_points(&ir.spine);
 
-        for (label, points) in [
+        data.shapes = create_shapes(&[
             ("TL", tl),
             ("TR", tr),
             ("BL", bl),
@@ -329,17 +351,7 @@ impl TryFrom<CoronalPointsIR> for LabelMeData {
             ("Shoulder", ir.shoulder),
             ("Pelvis", ir.pelvis),
             ("FemoralHead", ir.femoral_head),
-        ] {
-            for point in points {
-                let shape = labelme_rs::Shape {
-                    label: label.to_string(),
-                    points: vec![point],
-                    shape_type: "point".to_string(),
-                    ..Default::default()
-                };
-                data.shapes.push(shape);
-            }
-        }
+        ]);
         Ok(data)
     }
 }
@@ -586,6 +598,69 @@ pub struct SagittalPoints {
     pub femoral_head: AtMost2<Array2<f64>>,
 
     pub image_data: ImageMetadata,
+}
+
+/// Intermediate representation of `SagittalPoints` for serde
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+pub struct SagittalPointsIR {
+    pub spine: Vec<Vec<Point2d>>,
+    pub femoral_head: Vec<Point2d>,
+
+    pub image_data: ImageMetadata,
+}
+
+impl TryFrom<SagittalPointsIR> for LabelMeData {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
+        let mut data = LabelMeData {
+            imagePath: ir.image_data.path,
+            imageHeight: ir.image_data.height,
+            imageWidth: ir.image_data.width,
+            ..Default::default()
+        };
+
+        let (tl, tr, bl, br) = split_corner_points(&ir.spine);
+
+        data.shapes = create_shapes(&[
+            ("TL", tl),
+            ("TR", tr),
+            ("BL", bl),
+            ("BR", br),
+            ("FemoralHead", ir.femoral_head),
+        ]);
+        Ok(data)
+    }
+}
+
+impl From<&SagittalPoints> for SagittalPointsIR {
+    fn from(cp: &SagittalPoints) -> Self {
+        let spine = array3_to_nested_vec(cp.spine.c7tls.0.clone());
+        let femoral_head = array2_to_vec_points(cp.femoral_head.0.clone());
+        Self {
+            spine,
+            femoral_head,
+            image_data: cp.image_data.clone(),
+        }
+    }
+}
+
+impl TryFrom<LabelMeData> for SagittalPointsIR {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let coronal_points = SagittalPoints::try_from(&data)?;
+        let coronal_points_ir = SagittalPointsIR::from(&coronal_points);
+        Ok(coronal_points_ir)
+    }
+}
+
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
+)]
+pub struct SagittalPointsIRLine {
+    pub content: SagittalPointsIR,
+    pub filename: String,
 }
 
 /// Spinal curve represented by superior and inferior indices of vertebrae

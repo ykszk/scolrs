@@ -1,12 +1,13 @@
 use std::ops::MulAssign;
 
 use crate::{
-    angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, distanced_pair3,
-    draw_incidence_angle, extract_points, femoral_incidence_angle, nested_vec_to_array3,
-    points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette, ContentFilename, Corners,
-    DrawComponent, DrawCorners, HasCornerPoints, ImageMetadata, L2Norm, MeasureError, Named,
-    Painter, Point2d, ScolError, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
-    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
+    distanced_pair3, draw_incidence_angle, extract_points, femoral_incidence_angle,
+    nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
+    ContentFilename, Corners, DrawComponent, DrawCorners, HasCornerPoints, ImageMetadata, L2Norm,
+    MeasureError, Named, Painter, Point2d, ScolError, ValidateLength, CLASS_ANGLE,
+    CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT,
+    CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -367,7 +368,8 @@ impl TryFrom<LateralPointsIR> for LabelMeData {
             array2_to_vec_points(lateral_points.corners.0.index_axis(Axis(1), 2).to_owned());
         let br_points =
             array2_to_vec_points(lateral_points.corners.0.index_axis(Axis(1), 3).to_owned());
-        for (label, points) in [
+
+        data.shapes = create_shapes(&[
             ("TL", tl_points),
             ("TR", tr_points),
             ("BL", bl_points),
@@ -390,17 +392,8 @@ impl TryFrom<LateralPointsIR> for LabelMeData {
             ),
             ("Chin", lateral_points_ir.chin.clone()),
             ("Manubrium", lateral_points_ir.manubrium.clone()),
-        ] {
-            for point in points {
-                let shape = labelme_rs::Shape {
-                    label: label.to_string(),
-                    points: vec![point],
-                    shape_type: "point".to_string(),
-                    ..Default::default()
-                };
-                data.shapes.push(shape);
-            }
-        }
+        ]);
+
         Ok(data)
     }
 }
@@ -1080,7 +1073,7 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
-    use crate::{CoronalPointsIRLine, CLASS_LINE, CLASS_MEASURE};
+    use crate::{CoronalPointsIRLine, SagittalPointsIRLine, CLASS_LINE, CLASS_MEASURE};
 
     #[test]
     fn test_derive_name() {
@@ -1120,7 +1113,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_conversion_scoliosis() -> Result<()> {
+    fn test_conversion_scoliosis_frontal() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
         for filename in [
             "case1/frontal.json",
@@ -1140,6 +1133,32 @@ pub(crate) mod tests {
             let coronal_poins_line2 = CoronalPointsIRLine::try_convert_from(data_line2.clone())?;
             assert_eq!(coronal_points_line, coronal_poins_line2);
             let data_line3 = LabelMeDataLine::try_convert_from(coronal_poins_line2.clone())?;
+            assert_eq!(data_line2, data_line3);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_conversion_scoliosis_sagittal() -> Result<()> {
+        let data_dir = PathBuf::from("../../tests/data/");
+        for filename in [
+            "case1/lateral.json",
+            "case2/lateral.json",
+            "case3/lateral.json",
+            "case4/lateral.json",
+        ]
+        .iter()
+        {
+            let json = std::fs::read_to_string(data_dir.join(filename))?;
+            let original_data = LabelMeData::try_from(json.as_str())?;
+            let original_data_line =
+                LabelMeDataLine::new(original_data.clone(), filename.to_string());
+            let lateral_points_line =
+                SagittalPointsIRLine::try_convert_from(original_data_line.clone())?;
+            let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
+            let lateral_poins_line2 = SagittalPointsIRLine::try_convert_from(data_line2.clone())?;
+            assert_eq!(lateral_points_line, lateral_poins_line2);
+            let data_line3 = LabelMeDataLine::try_convert_from(lateral_poins_line2.clone())?;
             assert_eq!(data_line2, data_line3);
         }
         Ok(())

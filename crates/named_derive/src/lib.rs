@@ -46,6 +46,7 @@ fn first_doc_line(attrs: &[Attribute]) -> proc_macro2::TokenStream {
     }
 }
 
+/// Derive `Named` for a struct with `draw_type` and `label` attributes.
 #[proc_macro_derive(Named, attributes(draw_type, label))]
 pub fn derive_named(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -120,6 +121,7 @@ pub fn derive_named(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Implement `ContentFilename` for a struct with `content` and `filename` fields.
 #[proc_macro_derive(ContentFilename)]
 pub fn content_filename_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
