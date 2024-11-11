@@ -1,8 +1,8 @@
 use ndarray::Axis;
 use scolrs::{
-    BendReasonAngles, Curve, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
-    RegionalCurveType, SagittalModifier, Spine, StructuralReason, Study, VertebralIndex,
-    KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
+    BendReasonAngles, CoronalPoints, Curve, CurveType, IsStructural, LumbarModifier, MajorCurve,
+    MinorReason, RegionalCurveType, SagittalModifier, Spine, StructuralReason, Study,
+    VertebralIndex, KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
 
 use anyhow::{Context, Result};
@@ -24,6 +24,12 @@ fn load_spine(filename: &Path) -> Result<Spine> {
     Ok(Spine::try_from(&data)?)
 }
 
+fn load_lateral_points(filename: &Path) -> Result<CoronalPoints> {
+    let s = std::fs::read_to_string(filename).with_context(|| format!("Opening {:?}", filename))?;
+    let data: LabelMeData = s.try_into()?;
+    Ok(CoronalPoints::try_from(&data)?)
+}
+
 fn test_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests")
 }
@@ -39,7 +45,7 @@ fn test_curve(
     inf: VertebralIndex,
 ) -> Result<()> {
     let json_filename = data_directory().join(json_filename);
-    let scol = load_spine(&json_filename)?;
+    let scol = load_lateral_points(&json_filename)?;
 
     let (curve_set, apex_set, major_curve_result) = scol.identify_curves();
     assert_eq!(major_curve_result.unwrap(), major_curve);
@@ -67,7 +73,7 @@ fn test_curves_case1() -> Result<()> {
 #[test]
 fn test_curves_case2() -> Result<()> {
     let json_filename = data_directory().join("case2/frontal.json");
-    let scol = load_spine(&json_filename)?;
+    let scol = load_lateral_points(&json_filename)?;
 
     let (curve_set, apex_set, major_curve) = scol.identify_curves();
     // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
@@ -101,7 +107,7 @@ fn load_study(
     right_filename: Option<&str>,
 ) -> Result<Study> {
     let coronal_filename = data_directory().join(coronal_filename);
-    let coronal = load_spine(&coronal_filename)?;
+    let coronal = load_lateral_points(&coronal_filename)?;
 
     let sagittal = sagittal_filename.map(|filename| {
         let filename = data_directory().join(filename);

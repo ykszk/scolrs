@@ -1952,7 +1952,6 @@ pub fn draw_coronal(
     } = palettes;
     let (draws, hide) = draws_hide;
 
-    let spine = &coronal_points.spine;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document = painter.doc_w_background(&data.image, &(1.0, 1.0))?;
     let style = element::Style::new(draw_param.style());
@@ -1971,7 +1970,7 @@ pub fn draw_coronal(
     }
 
     let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
-        let (cs, apexes, _major_curve) = spine.identify_curves();
+        let (cs, apexes, _major_curve) = coronal_points.identify_curves();
         (cs, apexes)
     });
     for measure in draws {

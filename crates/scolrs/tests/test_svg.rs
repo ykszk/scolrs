@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use scolrs::{
     draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalMeasure,
-    CoronalPoints, CurveSet, DrawParam, SagittalMeasure, SagittalPoints, Spine,
+    CoronalPoints, CurveSet, DrawParam, SagittalMeasure, SagittalPoints,
 };
 use std::path::{Path, PathBuf};
 use svg::Document;
@@ -105,7 +105,7 @@ fn test_bend() -> Result<(Document, Document)> {
     let json_filename = data_dir.join("case1/frontal.json");
     let s = std::fs::read_to_string(json_filename)?;
     let data = LabelMeData::try_from(s)?;
-    let spine = Spine::try_from(&data)?;
+    let spine = CoronalPoints::try_from(&data)?;
     let (curves, apex_set, _major_curve) = spine.identify_curves();
     let curve_apex_set = Some((curves, apex_set));
     let coronal = true;

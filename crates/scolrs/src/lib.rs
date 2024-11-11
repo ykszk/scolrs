@@ -216,8 +216,6 @@ pub struct Spine {
     /// The number of points/vertebrae can vary because some spine have 4 or 6 lumbar vertebrae
     pub v_c7tl: VertebraeC7TL,
     pub c_c7tl: Centroids,
-    /// Coefficients of the polynomial curve of the spine
-    pub c_coefs: Array1<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -227,8 +225,210 @@ pub struct CoronalPoints {
     pub shoulder: AtMost2<Array2<f64>>,
     pub pelvis: AtMost2<Array2<f64>>,
     pub femoral_head: AtMost2<Array2<f64>>,
+    /// Coefficients of the polynomial curve of the spine
+    pub c_coefs: Array1<f64>,
 
     pub image_data: ImageMetadata,
+}
+
+impl CoronalPoints {
+    pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
+        polynomial(xs, self.c_coefs.view())
+    }
+
+    fn find_largest_curve(&self) -> Option<(Curve, f64)> {
+        let n = self.spine.tl_corners().0.len_of(ndarray::Axis(0));
+        let mut curves = Vec::new();
+        for sup in 0..n - 2 {
+            for inf in sup..n {
+                if self.is_valid_curve(sup, inf) {
+                    curves.push(Curve { sup, inf });
+                } else {
+                    break;
+                }
+            }
+        }
+        self._find_largest_curve(curves)
+    }
+
+    fn find_largest_up(&self, inf: usize) -> Option<(Curve, f64)> {
+        let mut curves = Vec::new();
+        if inf <= 1 {
+            return None;
+        }
+        let end = inf - 2;
+        // search sup from bottom to top (by .rev()) so that we can break early from the loop
+        for sup in (0..end).rev() {
+            if self.is_valid_curve(sup, inf) {
+                curves.push(Curve { sup, inf });
+            } else {
+                break;
+            }
+        }
+        self._find_largest_curve(curves)
+    }
+
+    fn find_largest_down(&self, sup: usize) -> Option<(Curve, f64)> {
+        let n = self.spine.tl_corners().0.len_of(ndarray::Axis(0));
+        let mut curves = Vec::new();
+        let start = (sup + 2).min(n);
+        for inf in start..n {
+            if self.is_valid_curve(sup, inf) {
+                curves.push(Curve { sup, inf });
+            } else {
+                break;
+            }
+        }
+        self._find_largest_curve(curves)
+    }
+
+    /// Curve is invalid when it contains S curve, i.e. checking if the curve is convex
+    fn is_valid_curve(&self, sup: usize, inf: usize) -> bool {
+        // inf - sup <= 2
+        if inf <= sup + 2 {
+            return true;
+        }
+        let centroids = self.spine.tl_centroids();
+        let ys = centroids.slice(s![sup + 1..inf, 1]);
+        let xs = polynomial(ys, self.c_coefs.view());
+
+        // coefficients of the second derivative
+        let coefs2: Array1<f64> = self
+            .c_coefs
+            .slice(s![2..])
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f64)
+            .collect();
+
+        let ddxs = polynomial(ys, coefs2.view());
+        debug!("sup: {}, inf: {}", sup, inf);
+        debug!("xs: {:?}", xs);
+        debug!("ys: {:?}", ys);
+        debug!("ddxs: {:?}", ddxs);
+
+        debug!("ddxs.have_same_signs(): {}", ddxs.have_same_signs());
+        ddxs.have_same_signs()
+    }
+
+    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f64)> {
+        let angles: Vec<_> = curves
+            .iter()
+            .filter_map(|c| self.spine.angle(c).map(|a| (c, a)))
+            .collect();
+        if angles.is_empty() {
+            return None;
+        }
+        let (i_max, _max_value) = angles.iter().map(|e| e.1.abs()).enumerate().fold(
+            (0, angles[0].1),
+            |(i_max, max_value), (i, value)| {
+                if value > max_value {
+                    (i, value)
+                } else {
+                    (i_max, max_value)
+                }
+            },
+        );
+        Some((angles[i_max].0.clone(), angles[i_max].1))
+    }
+
+    /// Identify the apex of the curve
+    pub fn id_apex(&self, curve: &Curve) -> VertebraDiscIndex {
+        let vert_disc_corners = self.spine.tl_vert_disc_corners();
+        let vd_centroids: Centroids = vert_disc_corners.into();
+        let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
+        let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
+        let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), self.c_coefs.view());
+        if xs.is_monotonic() {
+            VertebraDiscIndex::from((sup + inf) as u8 / 2)
+        } else {
+            let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
+            let i_max = ts.argmax().unwrap();
+            VertebraDiscIndex::from((i_max + sup) as u8)
+        }
+    }
+
+    fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f64)> {
+        let mut curves = Vec::new();
+        while let Some(largest_curve) = self.find_largest_down(sup) {
+            sup = largest_curve.0.inf;
+            curves.push(largest_curve);
+        }
+        curves
+    }
+
+    fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f64)> {
+        let mut curves = Vec::new();
+        while let Some(largest_curve) = self.find_largest_up(inf) {
+            inf = largest_curve.0.sup;
+            curves.push(largest_curve);
+        }
+        curves
+    }
+
+    pub fn find_all_curves(&self) -> Vec<(Curve, f64)> {
+        if let Some(largest_curve) = self.find_largest_curve() {
+            let mut downs = self.find_all_down(largest_curve.0.inf);
+            let ups = self.find_all_up(largest_curve.0.sup);
+            downs.extend(vec![largest_curve]);
+            downs.extend(ups);
+            downs
+        } else {
+            Vec::default()
+        }
+    }
+
+    pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
+        let mut curves = CurveSet::default();
+        let mut major_curve = None;
+        if let Some(largest_curve) = self.find_largest_curve() {
+            let major_apex = self.id_apex(&largest_curve.0);
+            major_curve = if major_apex <= VertebraDiscIndex::T5 {
+                // largest curve is PT
+                debug!("PT is the largest curve");
+                if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
+                    curves.tll = self.find_largest_down(mt.0.inf);
+                    curves.mt = Some(mt);
+                }
+                curves.pt = Some(largest_curve);
+                Some(MajorCurve::MT) // PT is never major
+            } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
+                // largest curve is MT
+                debug!("MT is the largest curve");
+                curves.pt = self.find_largest_up(largest_curve.0.sup);
+                curves.tll = self.find_largest_down(largest_curve.0.inf);
+                curves.mt = Some(largest_curve);
+                Some(MajorCurve::MT)
+            } else {
+                // largest curve is TLL
+                debug!("TLL is the largest curve");
+                if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
+                    curves.pt = self.find_largest_up(mt.0.sup);
+                    curves.mt = Some(mt);
+                }
+                curves.tll = Some(largest_curve);
+                Some(MajorCurve::TLL)
+            };
+        }
+        let apices = curves.apices(self);
+        (curves, apices, major_curve)
+    }
+
+    pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {
+        let x_scvl = self.spine.sacral_center()[0];
+        // vertebral index -> vertebral index or disc index -> vertebral index right above the disc
+        let index = (apex as u8 / 2) as usize;
+        let vertebra = self.spine.v_c7tl.0.index_axis(Axis(0), index + 1);
+        let v_xs = vertebra.index_axis(Axis(1), 0);
+        let x_min = v_xs.min().unwrap();
+        let x_max = v_xs.max().unwrap();
+        if x_scvl < *x_min || *x_max < x_scvl {
+            LumbarModifier::C
+        } else {
+            // TODO: implement pedicle checking
+            LumbarModifier::AorB
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -286,20 +486,20 @@ pub struct CurveSet {
 }
 
 impl CurveSet {
-    fn apices(&self, scol: &Spine) -> ApexSet {
+    fn apices(&self, coronal_points: &CoronalPoints) -> ApexSet {
         ApexSet {
             pt: if let Some((c, _)) = self.pt.as_ref() {
-                Some(scol.id_apex(c))
+                Some(coronal_points.id_apex(c))
             } else {
                 None
             },
             mt: if let Some((c, _)) = self.mt.as_ref() {
-                Some(scol.id_apex(c))
+                Some(coronal_points.id_apex(c))
             } else {
                 None
             },
             tll: if let Some((c, _)) = self.tll.as_ref() {
-                Some(scol.id_apex(c))
+                Some(coronal_points.id_apex(c))
             } else {
                 None
             },
@@ -346,8 +546,8 @@ impl TryFrom<&LabelMeData> for ScolDesc {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let spine = Spine::try_from(data)?;
-        let (curves, apex_set, major_curve) = spine.identify_curves();
+        let coronal_points = CoronalPoints::try_from(data)?;
+        let (curves, apex_set, major_curve) = coronal_points.identify_curves();
         Ok(ScolDesc::new(curves, apex_set, major_curve))
     }
 }
@@ -484,204 +684,6 @@ impl Spine {
         self.sacral_sup_plate().mean_axis(Axis(0)).unwrap()
     }
 
-    pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {
-        let x_scvl = self.sacral_center()[0];
-        // vertebral index -> vertebral index or disc index -> vertebral index right above the disc
-        let index = (apex as u8 / 2) as usize;
-        let vertebra = self.v_c7tl.0.index_axis(Axis(0), index + 1);
-        let v_xs = vertebra.index_axis(Axis(1), 0);
-        let x_min = v_xs.min().unwrap();
-        let x_max = v_xs.max().unwrap();
-        if x_scvl < *x_min || *x_max < x_scvl {
-            LumbarModifier::C
-        } else {
-            // TODO: implement pedicle checking
-            LumbarModifier::AorB
-        }
-    }
-
-    pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
-        polynomial(xs, self.c_coefs.view())
-    }
-
-    fn find_largest_curve(&self) -> Option<(Curve, f64)> {
-        let n = self.tl_corners().0.len_of(ndarray::Axis(0));
-        let mut curves = Vec::new();
-        for sup in 0..n - 2 {
-            for inf in sup..n {
-                if self.is_valid_curve(sup, inf) {
-                    curves.push(Curve { sup, inf });
-                } else {
-                    break;
-                }
-            }
-        }
-        self._find_largest_curve(curves)
-    }
-
-    fn find_largest_up(&self, inf: usize) -> Option<(Curve, f64)> {
-        let mut curves = Vec::new();
-        if inf <= 1 {
-            return None;
-        }
-        let end = inf - 2;
-        // search sup from bottom to top (by .rev()) so that we can break early from the loop
-        for sup in (0..end).rev() {
-            if self.is_valid_curve(sup, inf) {
-                curves.push(Curve { sup, inf });
-            } else {
-                break;
-            }
-        }
-        self._find_largest_curve(curves)
-    }
-
-    fn find_largest_down(&self, sup: usize) -> Option<(Curve, f64)> {
-        let n = self.tl_corners().0.len_of(ndarray::Axis(0));
-        let mut curves = Vec::new();
-        let start = (sup + 2).min(n);
-        for inf in start..n {
-            if self.is_valid_curve(sup, inf) {
-                curves.push(Curve { sup, inf });
-            } else {
-                break;
-            }
-        }
-        self._find_largest_curve(curves)
-    }
-
-    /// Curve is invalid when it contains S curve, i.e. checking if the curve is convex
-    fn is_valid_curve(&self, sup: usize, inf: usize) -> bool {
-        // inf - sup <= 2
-        if inf <= sup + 2 {
-            return true;
-        }
-        let centroids = self.tl_centroids();
-        let ys = centroids.slice(s![sup + 1..inf, 1]);
-        let xs = polynomial(ys, self.c_coefs.view());
-
-        // coefficients of the second derivative
-        let coefs2: Array1<f64> = self
-            .c_coefs
-            .slice(s![2..])
-            .iter()
-            .enumerate()
-            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f64)
-            .collect();
-
-        let ddxs = polynomial(ys, coefs2.view());
-        debug!("sup: {}, inf: {}", sup, inf);
-        debug!("xs: {:?}", xs);
-        debug!("ys: {:?}", ys);
-        debug!("ddxs: {:?}", ddxs);
-
-        debug!("ddxs.have_same_signs(): {}", ddxs.have_same_signs());
-        ddxs.have_same_signs()
-    }
-
-    fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f64)> {
-        let angles: Vec<_> = curves
-            .iter()
-            .filter_map(|c| self.angle(c).map(|a| (c, a)))
-            .collect();
-        if angles.is_empty() {
-            return None;
-        }
-        let (i_max, _max_value) = angles.iter().map(|e| e.1.abs()).enumerate().fold(
-            (0, angles[0].1),
-            |(i_max, max_value), (i, value)| {
-                if value > max_value {
-                    (i, value)
-                } else {
-                    (i_max, max_value)
-                }
-            },
-        );
-        Some((angles[i_max].0.clone(), angles[i_max].1))
-    }
-
-    /// Identify the apex of the curve
-    pub fn id_apex(&self, curve: &Curve) -> VertebraDiscIndex {
-        let vert_disc_corners = self.tl_vert_disc_corners();
-        let vd_centroids: Centroids = vert_disc_corners.into();
-        let sup = VertebraDiscIndex::from(VertebralIndex::from(curve.sup as u8)) as usize;
-        let inf = VertebraDiscIndex::from(VertebralIndex::from(curve.inf as u8)) as usize;
-        let xs = polynomial(vd_centroids.slice(s![sup..=inf, 1]), self.c_coefs.view());
-        if xs.is_monotonic() {
-            VertebraDiscIndex::from((sup + inf) as u8 / 2)
-        } else {
-            let ts = (2.0 * &xs - xs[0] - xs[xs.len() - 1]).mapv(|e| e.abs());
-            let i_max = ts.argmax().unwrap();
-            VertebraDiscIndex::from((i_max + sup) as u8)
-        }
-    }
-
-    fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f64)> {
-        let mut curves = Vec::new();
-        while let Some(largest_curve) = self.find_largest_down(sup) {
-            sup = largest_curve.0.inf;
-            curves.push(largest_curve);
-        }
-        curves
-    }
-
-    fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f64)> {
-        let mut curves = Vec::new();
-        while let Some(largest_curve) = self.find_largest_up(inf) {
-            inf = largest_curve.0.sup;
-            curves.push(largest_curve);
-        }
-        curves
-    }
-
-    pub fn find_all_curves(&self) -> Vec<(Curve, f64)> {
-        if let Some(largest_curve) = self.find_largest_curve() {
-            let mut downs = self.find_all_down(largest_curve.0.inf);
-            let ups = self.find_all_up(largest_curve.0.sup);
-            downs.extend(vec![largest_curve]);
-            downs.extend(ups);
-            downs
-        } else {
-            Vec::default()
-        }
-    }
-
-    pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
-        let mut curves = CurveSet::default();
-        let mut major_curve = None;
-        if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.id_apex(&largest_curve.0);
-            major_curve = if major_apex <= VertebraDiscIndex::T5 {
-                // largest curve is PT
-                debug!("PT is the largest curve");
-                if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
-                    curves.tll = self.find_largest_down(mt.0.inf);
-                    curves.mt = Some(mt);
-                }
-                curves.pt = Some(largest_curve);
-                Some(MajorCurve::MT) // PT is never major
-            } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
-                // largest curve is MT
-                debug!("MT is the largest curve");
-                curves.pt = self.find_largest_up(largest_curve.0.sup);
-                curves.tll = self.find_largest_down(largest_curve.0.inf);
-                curves.mt = Some(largest_curve);
-                Some(MajorCurve::MT)
-            } else {
-                // largest curve is TLL
-                debug!("TLL is the largest curve");
-                if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
-                    curves.pt = self.find_largest_up(mt.0.sup);
-                    curves.mt = Some(mt);
-                }
-                curves.tll = Some(largest_curve);
-                Some(MajorCurve::TLL)
-            };
-        }
-        let apices = curves.apices(self);
-        (curves, apices, major_curve)
-    }
-
     /// Calculate Cobb angle in degrees
     pub fn angle(&self, curve: &Curve) -> Option<f64> {
         let sup_line = self.sup_plate(curve.sup);
@@ -697,13 +699,11 @@ impl TryFrom<&LabelMeData> for Spine {
         let c7tls = C7TLS::try_from(data)?;
         let v_c7tl = VertebraeC7TL::try_from(data)?;
         let c_c7tl: Centroids = Corners(v_c7tl.0.view()).into();
-        let c_coefs = polyfit(c_c7tl.slice(s![1.., 1]), c_c7tl.slice(s![1.., 0]), 6)?;
 
         Ok(Spine {
             c7tls,
             v_c7tl,
             c_c7tl,
-            c_coefs,
         })
     }
 }
@@ -730,6 +730,12 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
         let pelvis = _new_at_most2(data, "Pelvis")?;
         let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
+        let c_coefs = polyfit(
+            spine.c_c7tl.slice(s![1.., 1]),
+            spine.c_c7tl.slice(s![1.., 0]),
+            6,
+        )?;
+
         let image_data = ImageMetadata::from(data);
 
         Ok(CoronalPoints {
@@ -738,6 +744,7 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
             pelvis,
             shoulder,
             femoral_head,
+            c_coefs,
             image_data,
         })
     }
@@ -847,7 +854,7 @@ const LATERAL_ANGLE_THRESH: f64 = 20.0_f64;
 
 /// Set of `Spine`s required for Lenke classification
 pub struct Study {
-    pub coronal: Spine,
+    pub coronal: CoronalPoints,
     pub left_bend: Option<Spine>,
     pub right_bend: Option<Spine>,
     pub sagittal: Option<Spine>,
@@ -855,7 +862,7 @@ pub struct Study {
 
 impl Study {
     pub fn new(
-        coronal: Spine,
+        coronal: CoronalPoints,
         left_bend: Option<Spine>,
         right_bend: Option<Spine>,
         sagittal: Option<Spine>,
@@ -868,7 +875,12 @@ impl Study {
         }
     }
 
-    pub fn full(coronal: Spine, left_bend: Spine, right_bend: Spine, sagittal: Spine) -> Study {
+    pub fn full(
+        coronal: CoronalPoints,
+        left_bend: Spine,
+        right_bend: Spine,
+        sagittal: Spine,
+    ) -> Study {
         let left_bend = Some(left_bend);
         let right_bend = Some(right_bend);
         let sagittal = Some(sagittal);

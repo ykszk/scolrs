@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use labelme_rs::LabelMeData;
-use scolrs::{SagittalModifier, Spine, Study};
+use scolrs::{CoronalPoints, SagittalModifier, Spine, Study};
 use std::path::Path;
 
 use crate::cli::LenkeArgs;
@@ -12,8 +12,15 @@ fn load_spine<P: AsRef<Path>>(filename: P) -> Result<Spine> {
     Ok(Spine::try_from(&data)?)
 }
 
+fn load_coronal_points<P: AsRef<Path>>(filename: P) -> Result<CoronalPoints> {
+    let s = std::fs::read_to_string(filename.as_ref())
+        .with_context(|| format!("Opening {:?}", filename.as_ref()))?;
+    let data: LabelMeData = s.try_into()?;
+    Ok(CoronalPoints::try_from(&data)?)
+}
+
 pub fn cmd(args: LenkeArgs) -> Result<()> {
-    let coronal = load_spine(&args.coronal)?;
+    let coronal = load_coronal_points(&args.coronal)?;
 
     let (curve_set, apex_set, major_curve) = coronal.identify_curves();
     let left = args.left.map(load_spine).transpose()?;

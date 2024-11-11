@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
-use scolrs::{Curve, ScolDesc, Spine, VertebraDiscIndex};
+use scolrs::{CoronalPoints, Curve, ScolDesc, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
@@ -30,14 +30,14 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let scol = Spine::try_from(data)?;
-        let (curves, apex_set, major_curve) = scol.identify_curves();
+        let coronal_points = CoronalPoints::try_from(data)?;
+        let (curves, apex_set, major_curve) = coronal_points.identify_curves();
         let info = ScolDesc::new(curves, apex_set, major_curve);
-        let all_curves = scol.find_all_curves();
+        let all_curves = coronal_points.find_all_curves();
         let all_curves: Vec<_> = all_curves
             .into_iter()
             .map(|(curve, angle)| {
-                let apex = scol.id_apex(&curve);
+                let apex = coronal_points.id_apex(&curve);
                 (curve, angle, apex)
             })
             .collect();

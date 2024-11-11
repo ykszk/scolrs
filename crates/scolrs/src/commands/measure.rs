@@ -114,7 +114,7 @@ fn measure_coronal(
         let cs: ScolDesc = serde_json::from_reader(reader)?;
         (cs.curves, cs.apices)
     } else {
-        let (cs, apexes, _major_curve) = coronal_points.spine.identify_curves();
+        let (cs, apexes, _major_curve) = coronal_points.identify_curves();
         (cs, apexes)
     };
     let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
