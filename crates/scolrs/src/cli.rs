@@ -31,15 +31,16 @@ pub struct CompleteArgs {
     pub shell: Shell,
 }
 
-#[derive(ValueEnum, Debug, Copy, Clone)]
+#[derive(ValueEnum, Debug, Copy, Clone, Default)]
 pub enum Plane {
     /// AP, PA and frontal view
+    #[default]
     Coronal,
     /// Lateral view
     Sagittal,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone, Default)]
 pub struct SvgArgs {
     /// Input labelme json filename
     #[arg(value_hint = ValueHint::FilePath)]

@@ -8,22 +8,8 @@ use scolrs::{
     ScolDesc,
 };
 
-// enum NativeFormat {
-//     Coronal(Box<CoronalPoints>),
-//     Sagittal(Box<SagittalPoints>),
-// }
-
-// impl NativeFormat {
-//     fn image_data(&self) -> Option<&Vec<u8>> {
-//         match self {
-//             NativeFormat::Coronal(cp) => Some(&cp.image_data),
-//             NativeFormat::Sagittal(sp) => Some(&sp.image_data),
-//         }
-//     }
-// }
-
 pub fn cmd(args: SvgArgs) -> Result<()> {
-    let draw_param = if let Some(filename) = args.config {
+    let mut draw_param = if let Some(filename) = args.config {
         let s = std::fs::read_to_string(&filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
         toml::from_str(&s)?
@@ -46,14 +32,30 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         match args.direction {
             Plane::Coronal => {
                 let ir: CoronalPointsIR = serde_json::from_str(&json_str)?;
-                let data = LabelMeData::from(ir.clone());
+                let mut data = LabelMeData::from(ir.clone());
+                data.imagePath = args
+                    .input
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("."))
+                    .to_string_lossy()
+                    .to_string()
+                    + "/"
+                    + &data.imagePath;
                 let data_w_image = LabelMeDataWImage::try_from(data)?;
                 let cp: CoronalPoints = ir.try_into()?;
                 (data_w_image, Some(cp.image_data))
             }
             Plane::Sagittal => {
                 let ir: SagittalPointsIR = serde_json::from_str(&json_str)?;
-                let data = LabelMeData::from(ir.clone());
+                let mut data = LabelMeData::from(ir.clone());
+                data.imagePath = args
+                    .input
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("."))
+                    .to_string_lossy()
+                    .to_string()
+                    + "/"
+                    + &data.imagePath;
                 let data_w_image = LabelMeDataWImage::try_from(data)?;
                 let sp: SagittalPoints = ir.try_into()?;
 
@@ -62,11 +64,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         }
     };
 
-    // let mut data: LabelMeDataWImage = args
-    //     .input
-    //     .as_path()
-    //     .try_into()
-    //     .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
+    if let Some(image_data) = image_data.as_ref() {
+        // mean spacing
+        let draw_scale = (image_data.spacing_xy.0 + image_data.spacing_xy.1) / 2.0;
+        draw_param
+            .scale(draw_scale)
+            .map_err(|e| anyhow::anyhow!(e))?;
+    }
 
     if let Some(resize) = args.resize {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
@@ -178,4 +182,92 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
     std::fs::write(args.output, document?.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use std::path::PathBuf;
+
+    fn output_path(name: &str) -> Result<PathBuf> {
+        if let Ok(dir) = std::env::var("TEST_OUTPUT_DIR") {
+            let path = PathBuf::from(dir).join("scol").join(name);
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            return Ok(path);
+        }
+        let devnull = PathBuf::from("/dev/null");
+        if devnull.exists() {
+            Ok(devnull)
+        } else {
+            Ok(PathBuf::from("NUL".to_string()))
+        }
+    }
+
+    fn gen_svg_args() -> SvgArgs {
+        let data_dir = PathBuf::from("../../tests/data/");
+        let config = Some(data_dir.join("config.toml"));
+        let label_colors = Some(data_dir.join("colors.yaml"));
+        let line_colors = Some(data_dir.join("line_colors.csv"));
+        let resize = Some("1024x1024".to_string());
+        SvgArgs {
+            input: Default::default(),
+            output: Default::default(),
+            config,
+            label_colors,
+            line_colors,
+            resize,
+            ..Default::default()
+        }
+    }
+
+    fn _test_case(case: &str, native: bool) -> Result<()> {
+        let mut svg_args = gen_svg_args();
+
+        let data_dir = PathBuf::from("../../tests/data/");
+        if native {
+            svg_args.input = data_dir.join(case).join("frontal_native.json");
+            svg_args.output = output_path(&format!("{}_frontal_native.svg", case))?;
+        } else {
+            svg_args.input = data_dir.join(case).join("frontal.json");
+            svg_args.output = output_path(&format!("{}_frontal.svg", case))?;
+        }
+        svg_args.labelme = !native;
+        cmd(svg_args.clone())?;
+
+        if native {
+            svg_args.input = data_dir.join(case).join("lateral_native.json");
+            svg_args.output = output_path(&format!("{}_lateral_native.svg", case))?;
+        } else {
+            svg_args.input = data_dir.join(case).join("lateral.json");
+            svg_args.output = output_path(&format!("{}_lateral.svg", case))?;
+        }
+        svg_args.labelme = !native;
+        svg_args.direction = Plane::Sagittal;
+        cmd(svg_args)?;
+
+        Ok(())
+    }
+
+    /// Entry point for debugging
+    #[test]
+    fn svg_cmd_scol_case1() -> Result<()> {
+        _test_case("case1", false)
+    }
+
+    #[test]
+    fn svg_cmd_scol_case2() -> Result<()> {
+        _test_case("case2", false)?;
+        _test_case("case2", true)
+    }
+
+    #[test]
+    fn svg_cmd_scol_case3() -> Result<()> {
+        _test_case("case3", false)
+    }
+
+    #[test]
+    fn svg_cmd_scol_case4() -> Result<()> {
+        _test_case("case4", false)
+    }
 }

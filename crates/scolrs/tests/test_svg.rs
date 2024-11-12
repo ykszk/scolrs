@@ -64,9 +64,11 @@ fn _test_svg(
         let coronal_points: CoronalPoints = if native_path.exists() {
             let json_str = std::fs::read_to_string(native_path)?;
             let ir = scolrs::CoronalPointsIR::try_from(json_str.as_str())?;
-            let mut cp = CoronalPoints::try_from(ir)?;
-            cp.scale();
-            cp
+            let cp = CoronalPoints::try_from(ir)?;
+            let mut resized_cp = CoronalPoints::try_from(&data.data)?;
+            resized_cp.image_data = cp.image_data;
+            resized_cp.scale();
+            resized_cp
         } else {
             CoronalPoints::try_from(&data.data)?
         };
@@ -83,9 +85,11 @@ fn _test_svg(
         let sagittal_points: SagittalPoints = if native_path.exists() {
             let json_str = std::fs::read_to_string(native_path)?;
             let ir = scolrs::SagittalPointsIR::try_from(json_str.as_str())?;
-            let mut sp: SagittalPoints = ir.try_into()?;
-            sp.scale();
-            sp
+            let sp: SagittalPoints = ir.try_into()?;
+            let mut resized_sp = SagittalPoints::try_from(&data.data)?;
+            resized_sp.image_data = sp.image_data;
+            resized_sp.scale();
+            resized_sp
         } else {
             SagittalPoints::try_from(&data.data)?
         };
