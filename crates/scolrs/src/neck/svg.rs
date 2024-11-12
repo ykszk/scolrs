@@ -9,18 +9,6 @@ use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckSagittalComponent};
 use scolrs::{parse_measures, ColorPalette, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
-fn resolve_image_path(
-    lateral_points: &LateralPoints,
-    json_path: &std::path::Path,
-) -> Result<String> {
-    let mut image_path = lateral_points.image_data.path.replace('\\', "/");
-    if let Some(parent) = json_path.parent() {
-        let path = parent.canonicalize()?;
-        image_path = path.join(image_path).to_string_lossy().to_string();
-    }
-    Ok(image_path)
-}
-
 fn process_data(
     mut lateral_points: LateralPoints,
     args: &SvgArgs,
@@ -30,8 +18,11 @@ fn process_data(
     neck_sagittal_draw: &[NeckLateralDraw],
 ) -> Result<SVG> {
     // use LabelMeDataWImage for resizing
-    let mut data = LabelMeDataWImage::try_from(LabelMeData::try_from(&lateral_points)?)
-        .with_context(|| format!("Failed to read {}", lateral_points.image_data.path))?;
+    let mut data = LabelMeDataWImage::try_from_data_and_path(
+        LabelMeData::try_from(&lateral_points)?,
+        &args.input,
+    )
+    .with_context(|| format!("Failed to read {}", lateral_points.image_data.path))?;
     if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
@@ -119,8 +110,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     if args.input.extension().unwrap_or_default() == "json" {
         let lateral_points_ir: scolrs::head_neck::LateralPointsIR =
             serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
-        let mut lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
-        lateral_points.image_data.path = resolve_image_path(&lateral_points, &args.input)?;
+        let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
         let document = process_data(
             lateral_points,
             &args,
@@ -144,9 +134,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             let line = line?;
             let lateral_points_ir_line: scolrs::head_neck::LateralPointsIRLine =
                 serde_json::from_str(&line)?;
-            let mut lateral_points =
+            let lateral_points =
                 scolrs::head_neck::LateralPoints::try_from(&lateral_points_ir_line.content)?;
-            lateral_points.image_data.path = resolve_image_path(&lateral_points, &args.input)?;
             let result = process_data(
                 lateral_points,
                 &args,

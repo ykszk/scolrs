@@ -32,31 +32,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         match args.direction {
             Plane::Coronal => {
                 let ir: CoronalPointsIR = serde_json::from_str(&json_str)?;
-                let mut data = LabelMeData::from(ir.clone());
-                data.imagePath = args
-                    .input
-                    .parent()
-                    .unwrap_or_else(|| std::path::Path::new("."))
-                    .to_string_lossy()
-                    .to_string()
-                    + "/"
-                    + &data.imagePath;
-                let data_w_image = LabelMeDataWImage::try_from(data)?;
+                let data = LabelMeData::from(ir.clone());
+                let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
                 let cp: CoronalPoints = ir.try_into()?;
                 (data_w_image, Some(cp.image_data))
             }
             Plane::Sagittal => {
                 let ir: SagittalPointsIR = serde_json::from_str(&json_str)?;
-                let mut data = LabelMeData::from(ir.clone());
-                data.imagePath = args
-                    .input
-                    .parent()
-                    .unwrap_or_else(|| std::path::Path::new("."))
-                    .to_string_lossy()
-                    .to_string()
-                    + "/"
-                    + &data.imagePath;
-                let data_w_image = LabelMeDataWImage::try_from(data)?;
+                let data = LabelMeData::from(ir.clone());
+                let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
                 let sp: SagittalPoints = ir.try_into()?;
 
                 (data_w_image, Some(sp.image_data))
@@ -233,6 +217,7 @@ mod tests {
             svg_args.output = output_path(&format!("{}_frontal.svg", case))?;
         }
         svg_args.labelme = !native;
+        svg_args.direction = Plane::Coronal;
         cmd(svg_args.clone())?;
 
         if native {
@@ -252,7 +237,21 @@ mod tests {
     /// Entry point for debugging
     #[test]
     fn svg_cmd_scol_case1() -> Result<()> {
-        _test_case("case1", false)
+        _test_case("case1", false)?;
+
+        // test bending
+        let mut svg_args = gen_svg_args();
+        let data_dir = PathBuf::from("../../tests/data/");
+        svg_args.input = data_dir.join("case1/left_lateral_bend.json");
+        svg_args.output = output_path("case1_left_lateral_bend.svg")?;
+        svg_args.curve_set = Some(data_dir.join("case1/curve_set.json"));
+        svg_args.labelme = true;
+        cmd(svg_args.clone())?;
+
+        svg_args.input = data_dir.join("case1/right_lateral_bend.json");
+        svg_args.output = output_path("case1_right_lateral_bend.svg")?;
+        cmd(svg_args)?;
+        Ok(())
     }
 
     #[test]
