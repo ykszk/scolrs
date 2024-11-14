@@ -996,7 +996,7 @@ impl DrawComponent for CoronalBalance<'_> {
             label,
             points.view(),
             painter,
-            self.0.image_data.unit.as_str(),
+            self.0.image_metadata.unit.as_str(),
         );
         g
     }
@@ -1137,7 +1137,7 @@ impl DrawComponent for ShoulderHeight<'_> {
             g,
             self.0.shoulder.0.view(),
             painter,
-            self.0.image_data.unit.as_str(),
+            self.0.image_metadata.unit.as_str(),
         )
     }
 }
@@ -1286,7 +1286,7 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
             g,
             self.0.femoral_head.0.view(),
             painter,
-            self.0.image_data.unit.as_str(),
+            self.0.image_metadata.unit.as_str(),
         )
     }
 }
@@ -1508,7 +1508,7 @@ impl<'a> DrawComponent for SagittalBalance<'a> {
             label,
             points.view(),
             painter,
-            self.0.image_data.unit.as_str(),
+            self.0.image_metadata.unit.as_str(),
         );
         g
     }
@@ -1905,7 +1905,7 @@ pub fn draw_sagittal(
     } = palettes;
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document =
-        painter.doc_w_background(&data.image, &sagittal_points.image_data.spacing_xy)?;
+        painter.doc_w_background(&data.image, &sagittal_points.image_metadata.spacing_xy)?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
@@ -1955,7 +1955,7 @@ pub fn draw_coronal(
 
     let painter = Painter::new(draw_param.clone(), svg_size);
     let mut document =
-        painter.doc_w_background(&data.image, &coronal_points.image_data.spacing_xy)?;
+        painter.doc_w_background(&data.image, &coronal_points.image_metadata.spacing_xy)?;
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);

@@ -2,7 +2,7 @@ use clap::ValueEnum;
 use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use log::{debug, error};
-use named_derive::{ContentFilename, TryFromJsonStr};
+use named_derive::{ContentFilename, HasImageMetadata, TryFromJsonStr};
 use ndarray::{
     concatenate, s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2,
     ArrayView3, Axis, Data,
@@ -52,6 +52,11 @@ pub struct ImageMetadata {
     pub width: usize,
     pub spacing_xy: (f64, f64),
     pub unit: String,
+}
+
+pub trait HasImageMetadata {
+    fn image_metadata(&self) -> &ImageMetadata;
+    fn image_metadata_mut(&mut self) -> &mut ImageMetadata;
 }
 
 impl Default for ImageMetadata {
@@ -283,15 +288,18 @@ pub struct CoronalPoints {
     /// Coefficients of the polynomial curve of the spine
     pub c_coefs: Array1<f64>,
 
-    pub image_data: ImageMetadata,
+    pub image_metadata: ImageMetadata,
 }
 
 impl CoronalPoints {
     pub fn scale(&mut self) {
-        if self.image_data.spacing_xy == (1.0, 1.0) {
+        if self.image_metadata.spacing_xy == (1.0, 1.0) {
             return;
         }
-        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+        let scale_xy = ndarray::array![
+            self.image_metadata.spacing_xy.0,
+            self.image_metadata.spacing_xy.1
+        ];
 
         self.spine.scale(scale_xy.view());
         self.clavicle.0.scale(scale_xy.view());
@@ -301,7 +309,9 @@ impl CoronalPoints {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
+)]
 pub struct CoronalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub clavicle: Vec<Point2d>,
@@ -309,7 +319,7 @@ pub struct CoronalPointsIR {
     pub pelvis: Vec<Point2d>,
     pub femoral_head: Vec<Point2d>,
 
-    pub image_data: ImageMetadata,
+    pub image_metadata: ImageMetadata,
 }
 
 type CornerPoints = (
@@ -357,9 +367,9 @@ fn create_shapes(label_points: &[(&str, Vec<Point2d>)]) -> Vec<labelme_rs::Shape
 impl From<CoronalPointsIR> for LabelMeData {
     fn from(ir: CoronalPointsIR) -> Self {
         let mut data = LabelMeData {
-            imagePath: ir.image_data.path,
-            imageHeight: ir.image_data.height,
-            imageWidth: ir.image_data.width,
+            imagePath: ir.image_metadata.path,
+            imageHeight: ir.image_metadata.height,
+            imageWidth: ir.image_metadata.width,
             ..Default::default()
         };
 
@@ -383,10 +393,10 @@ impl TryFrom<CoronalPointsIR> for CoronalPoints {
     type Error = ScolError;
 
     fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
-        let image_data = ir.image_data.clone();
+        let image_data = ir.image_metadata.clone();
         let data = LabelMeData::from(ir);
         let mut cp = CoronalPoints::try_from(&data)?;
-        cp.image_data = image_data;
+        cp.image_metadata = image_data;
         Ok(cp)
     }
 }
@@ -404,7 +414,7 @@ impl From<&CoronalPoints> for CoronalPointsIR {
             shoulder,
             pelvis,
             femoral_head,
-            image_data: cp.image_data.clone(),
+            image_metadata: cp.image_metadata.clone(),
         }
     }
 }
@@ -640,15 +650,18 @@ pub struct SagittalPoints {
     pub spine: Spine,
     pub femoral_head: AtMost2<Array2<f64>>,
 
-    pub image_data: ImageMetadata,
+    pub image_metadata: ImageMetadata,
 }
 
 impl SagittalPoints {
     pub fn scale(&mut self) {
-        if self.image_data.spacing_xy == (1.0, 1.0) {
+        if self.image_metadata.spacing_xy == (1.0, 1.0) {
             return;
         }
-        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+        let scale_xy = ndarray::array![
+            self.image_metadata.spacing_xy.0,
+            self.image_metadata.spacing_xy.1
+        ];
 
         self.spine.scale(scale_xy.view());
         self.femoral_head.0.scale(scale_xy.view());
@@ -656,20 +669,22 @@ impl SagittalPoints {
 }
 
 /// Intermediate representation of `SagittalPoints` for serde
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
+)]
 pub struct SagittalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub femoral_head: Vec<Point2d>,
 
-    pub image_data: ImageMetadata,
+    pub image_metadata: ImageMetadata,
 }
 
 impl From<SagittalPointsIR> for LabelMeData {
     fn from(ir: SagittalPointsIR) -> Self {
         let mut data = LabelMeData {
-            imagePath: ir.image_data.path,
-            imageHeight: ir.image_data.height,
-            imageWidth: ir.image_data.width,
+            imagePath: ir.image_metadata.path,
+            imageHeight: ir.image_metadata.height,
+            imageWidth: ir.image_metadata.width,
             ..Default::default()
         };
 
@@ -693,7 +708,7 @@ impl From<&SagittalPoints> for SagittalPointsIR {
         Self {
             spine,
             femoral_head,
-            image_data: cp.image_data.clone(),
+            image_metadata: cp.image_metadata.clone(),
         }
     }
 }
@@ -712,10 +727,10 @@ impl TryFrom<SagittalPointsIR> for SagittalPoints {
     type Error = ScolError;
 
     fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
-        let image_data = ir.image_data.clone();
+        let image_data = ir.image_metadata.clone();
         let data = LabelMeData::from(ir);
         let mut sp = SagittalPoints::try_from(&data)?;
-        sp.image_data = image_data;
+        sp.image_metadata = image_data;
         Ok(sp)
     }
 }
@@ -1042,7 +1057,7 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
             shoulder,
             femoral_head,
             c_coefs,
-            image_data,
+            image_metadata: image_data,
         })
     }
 }
@@ -1059,7 +1074,7 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
         Ok(SagittalPoints {
             spine,
             femoral_head,
-            image_data,
+            image_metadata: image_data,
         })
     }
 }

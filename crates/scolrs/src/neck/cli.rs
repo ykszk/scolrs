@@ -142,4 +142,9 @@ pub struct ConvArgs {
     /// To format
     #[clap(short, long, default_value = "LateralPoints")]
     pub to: ConvFormat,
+    /// Pull pixel spacing from the input file if available
+    ///
+    /// Try Pixel Spacing (0028,0030) first, then Imager Pixel Spacing (0018,1164)
+    #[clap(long = "spacing")]
+    pub pull_spacing: bool,
 }

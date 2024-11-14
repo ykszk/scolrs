@@ -344,7 +344,7 @@
     ]
   ],
   "femoral_head": [],
-  "image_data": {
+  "image_metadata": {
     "path": "lateral.jpg",
     "height": 768,
     "width": 497,

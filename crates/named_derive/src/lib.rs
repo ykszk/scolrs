@@ -191,3 +191,24 @@ pub fn try_from_json_derive(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+/// Derivem macro for `HasImageMetadata` trait.
+#[proc_macro_derive(HasImageMetadata)]
+pub fn has_image_metadata_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+
+    let expanded = quote! {
+        impl HasImageMetadata for #name {
+            fn image_metadata(&self) -> &ImageMetadata {
+                &self.image_metadata
+            }
+
+            fn image_metadata_mut(&mut self) -> &mut ImageMetadata {
+                &mut self.image_metadata
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}

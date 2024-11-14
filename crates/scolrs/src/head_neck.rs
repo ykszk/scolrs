@@ -4,10 +4,10 @@ use crate::{
     angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
     distanced_pair3, draw_incidence_angle, extract_points, femoral_incidence_angle,
     nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
-    ContentFilename, Corners, DrawComponent, DrawCorners, HasCornerPoints, ImageMetadata, L2Norm,
-    MeasureError, Named, Painter, Point2d, ScolError, ValidateLength, CLASS_ANGLE,
-    CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT,
-    CORNER_LABELS,
+    ContentFilename, Corners, DrawComponent, DrawCorners, HasCornerPoints, HasImageMetadata,
+    ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, ScolError, ValidateLength,
+    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
+    CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -188,13 +188,15 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
             posterior_hard_palate: vec_points_to_array2(&ir.posterior_hard_palate)?,
             chin: vec_points_to_array2(&ir.chin)?,
             manubrium: vec_points_to_array2(&ir.manubrium)?,
-            image_data: ir.image_data.clone(),
+            image_data: ir.image_metadata.clone(),
         })
     }
 }
 
 /// Intermediate representation for lateral neck points for serialization and deserialization
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
+)]
 pub struct LateralPointsIR {
     pub corners: Vec<Vec<Point2d>>,
     pub lamina: Vec<Point2d>,
@@ -209,7 +211,8 @@ pub struct LateralPointsIR {
     pub posterior_hard_palate: Vec<Point2d>,
     pub chin: Vec<Point2d>,
     pub manubrium: Vec<Point2d>,
-    pub image_data: ImageMetadata,
+
+    pub image_metadata: ImageMetadata,
 }
 
 #[derive(
@@ -321,7 +324,7 @@ impl From<&LateralPoints> for LateralPointsIR {
             ),
             chin: array2_to_vec_points(lateral_points.chin.to_owned()),
             manubrium: array2_to_vec_points(lateral_points.manubrium.to_owned()),
-            image_data: lateral_points.image_data.clone(),
+            image_metadata: lateral_points.image_data.clone(),
         }
     }
 }
@@ -342,9 +345,9 @@ impl TryFrom<LateralPointsIR> for LabelMeData {
     fn try_from(lateral_points_ir: LateralPointsIR) -> Result<Self, Self::Error> {
         let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
         let mut data = LabelMeData {
-            imagePath: lateral_points_ir.image_data.path,
-            imageHeight: lateral_points_ir.image_data.height,
-            imageWidth: lateral_points_ir.image_data.width,
+            imagePath: lateral_points_ir.image_metadata.path,
+            imageHeight: lateral_points_ir.image_metadata.height,
+            imageWidth: lateral_points_ir.image_metadata.width,
             ..Default::default()
         };
         // First poitns of TL and TR are discarded because they are dummy points

@@ -197,7 +197,7 @@
   "posterior_hard_palate": [],
   "chin": [],
   "manubrium": [],
-  "image_data": {
+  "image_metadata": {
     "path": "extension_lateral.jpg",
     "height": 941,
     "width": 706,

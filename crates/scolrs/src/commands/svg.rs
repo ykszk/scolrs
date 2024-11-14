@@ -35,7 +35,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 let data = LabelMeData::from(ir.clone());
                 let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
                 let cp: CoronalPoints = ir.try_into()?;
-                (data_w_image, Some(cp.image_data))
+                (data_w_image, Some(cp.image_metadata))
             }
             Plane::Sagittal => {
                 let ir: SagittalPointsIR = serde_json::from_str(&json_str)?;
@@ -43,7 +43,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
                 let sp: SagittalPoints = ir.try_into()?;
 
-                (data_w_image, Some(sp.image_data))
+                (data_w_image, Some(sp.image_metadata))
             }
         }
     };
@@ -95,7 +95,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         Plane::Coronal => {
             let mut coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
             if let Some(image_data) = image_data {
-                coronal_points.image_data = image_data;
+                coronal_points.image_metadata = image_data;
                 coronal_points.scale();
             }
             let curve_apex_set = if let Some(filename) = args.curve_set {
@@ -133,7 +133,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         Plane::Sagittal => {
             let mut sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
             if let Some(image_data) = image_data {
-                sagittal_points.image_data = image_data;
+                sagittal_points.image_metadata = image_data;
                 sagittal_points.scale();
             }
             let draws: Vec<SagittalMeasure> = if args.measures.is_empty() {
