@@ -12,6 +12,97 @@ use scolrs::{
 
 use super::cli::ConvFormat;
 
+fn conv_and_write_line<From, To>(
+    writer: &mut Box<dyn io::Write>,
+    from_str: String,
+    pull_spacing: bool,
+) -> Result<()>
+where
+    To: TryConvertContentFilename<From, Error: std::error::Error + Send + Sync>,
+    <To as scolrs::head_neck::TryConvertContentFilename<From>>::Error: 'static,
+    To: serde::Serialize + PullIfImplemented,
+    From: scolrs::ContentFilename,
+    From: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
+{
+    let from = From::try_from(from_str.as_str())?;
+    let mut to: To = TryConvertContentFilename::try_convert_from(from)?;
+    if pull_spacing {
+        to.pull_if_implemented()?;
+    }
+    serde_json::to_writer(writer, &to)?;
+    Ok(())
+}
+
+fn conv_and_write<From, To>(
+    writer: &mut Box<dyn io::Write>,
+    from_str: String,
+    pull_spacing: bool,
+) -> Result<()>
+where
+    To: TryFrom<From, Error: std::error::Error + Send + Sync>,
+    <To as TryFrom<From>>::Error: 'static,
+    To: serde::Serialize + PullIfImplemented,
+    From: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
+{
+    let from = From::try_from(from_str.as_str())?;
+    let mut to: To = To::try_from(from)?;
+    if pull_spacing {
+        to.pull_if_implemented()?;
+    }
+    serde_json::to_writer(writer, &to)?;
+    Ok(())
+}
+
+/// Trait to help convert_and_write
+trait PullIfImplemented {
+    /// Pull image metadata if implemented
+    ///
+    /// Just return Ok(()) if not implemented
+    fn pull_if_implemented(&mut self) -> Result<()>;
+}
+
+impl PullIfImplemented for LateralPointsIRLine {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.content.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for CoronalPointsIRLine {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.content.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for SagittalPointsIRLine {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.content.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for LabelMeDataLine {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl PullIfImplemented for LateralPointsIR {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for CoronalPointsIR {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for SagittalPointsIR {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        self.pull_image_metadata()
+    }
+}
+impl PullIfImplemented for LabelMeData {
+    fn pull_if_implemented(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
 fn process_ndjson(
     from: ConvFormat,
     to: ConvFormat,
@@ -19,50 +110,32 @@ fn process_ndjson(
     mut writer: Box<dyn io::Write>,
     pull_spacing: bool,
 ) -> Result<()> {
+    // shorthands to keep match hands one-line
+    let pull = pull_spacing;
+    type LMDLine = LabelMeDataLine;
+    type LatPtsLine = LateralPointsIRLine;
+    type CorPointsLine = CoronalPointsIRLine;
+    type SagPointsLine = SagittalPointsIRLine;
     for line in reader.lines() {
         let line = line?;
         match (from, to) {
             (ConvFormat::Labelme, ConvFormat::LateralPoints) => {
-                let from_data = LabelMeDataLine::try_from(line.as_str())?;
-                let to_data: LateralPointsIRLine =
-                    TryConvertContentFilename::try_convert_from(from_data)?;
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<LMDLine, LatPtsLine>(&mut writer, line, pull)?;
             }
             (ConvFormat::LateralPoints, ConvFormat::Labelme) => {
-                let from_data = LateralPointsIRLine::try_from(line.as_str())?;
-                let to_data: LabelMeDataLine =
-                    TryConvertContentFilename::<LateralPointsIRLine>::try_convert_from(from_data)?;
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<LatPtsLine, LMDLine>(&mut writer, line, pull)?;
             }
             (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
-                let from_data = LabelMeDataLine::try_from(line.as_str())?;
-                let mut to_data: CoronalPointsIRLine =
-                    TryConvertContentFilename::try_convert_from(from_data)?;
-                if pull_spacing {
-                    to_data.content.pull_image_metadata()?;
-                }
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<LMDLine, CorPointsLine>(&mut writer, line, pull)?;
             }
             (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
-                let from_data = CoronalPointsIRLine::try_from(line.as_str())?;
-                let to_data: LabelMeDataLine =
-                    TryConvertContentFilename::<CoronalPointsIRLine>::try_convert_from(from_data)?;
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<CorPointsLine, LMDLine>(&mut writer, line, pull)?;
             }
             (ConvFormat::Labelme, ConvFormat::ScoliosisSagittal) => {
-                let from_data = LabelMeDataLine::try_from(line.as_str())?;
-                let mut to_data: SagittalPointsIRLine =
-                    TryConvertContentFilename::try_convert_from(from_data)?;
-                if pull_spacing {
-                    to_data.content.pull_image_metadata()?;
-                }
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<LMDLine, SagPointsLine>(&mut writer, line, pull)?;
             }
             (ConvFormat::ScoliosisSagittal, ConvFormat::Labelme) => {
-                let from_data = SagittalPointsIRLine::try_from(line.as_str())?;
-                let to_data: LabelMeDataLine =
-                    TryConvertContentFilename::<SagittalPointsIRLine>::try_convert_from(from_data)?;
-                serde_json::to_writer(&mut writer, &to_data)?;
+                conv_and_write_line::<SagPointsLine, LMDLine>(&mut writer, line, pull)?;
             }
             (from, to) => {
                 if from == to {
@@ -130,45 +203,26 @@ fn process_json(
     mut writer: Box<dyn io::Write>,
     pull_spacing: bool,
 ) -> Result<()> {
+    let json_str = std::io::read_to_string(reader)?;
+
     match (from, to) {
         (ConvFormat::Labelme, ConvFormat::LateralPoints) => {
-            let from_data: LabelMeData = serde_json::from_reader(reader)?;
-            let mut to_data: LateralPointsIR = from_data.try_into()?;
-            if pull_spacing {
-                to_data.pull_image_metadata()?;
-            }
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<LabelMeData, LateralPointsIR>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::LateralPoints, ConvFormat::Labelme) => {
-            let from_data: LateralPointsIR = serde_json::from_reader(reader)?;
-            let to_data: LabelMeData = from_data.try_into()?;
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<LateralPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
-            let from_data: LabelMeData = serde_json::from_reader(reader)?;
-            let mut to_data: CoronalPointsIR = from_data.try_into()?;
-            if pull_spacing {
-                to_data.pull_image_metadata()?;
-            }
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<LabelMeData, CoronalPointsIR>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
-            let from_data: CoronalPointsIR = serde_json::from_reader(reader)?;
-            let to_data: LabelMeData = from_data.into();
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<CoronalPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisSagittal) => {
-            let from_data: LabelMeData = serde_json::from_reader(reader)?;
-            let mut to_data: SagittalPointsIR = from_data.try_into()?;
-            if pull_spacing {
-                to_data.pull_image_metadata()?;
-            }
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<LabelMeData, SagittalPointsIR>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::ScoliosisSagittal, ConvFormat::Labelme) => {
-            let from_data: SagittalPointsIR = serde_json::from_reader(reader)?;
-            let to_data: LabelMeData = from_data.into();
-            serde_json::to_writer(&mut writer, &to_data)?
+            conv_and_write::<SagittalPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (from, to) => {
             if from == to {
