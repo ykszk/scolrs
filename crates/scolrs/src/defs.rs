@@ -189,8 +189,16 @@ impl DrawParam {
             self.line_width
         )
     }
+    pub fn point_style(&self) -> String {
+        format!("circle {{stroke-width: {}}}", self.line_width)
+    }
     pub fn style(&self) -> String {
-        format!("{}\n{}", self.text_style(), self.line_style())
+        format!(
+            "{}\n{}\n{}",
+            self.text_style(),
+            self.line_style(),
+            self.point_style()
+        )
     }
 
     fn scale_font_size(font_size: &str, scale: f64) -> std::result::Result<String, String> {

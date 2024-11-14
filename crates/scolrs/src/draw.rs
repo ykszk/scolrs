@@ -449,6 +449,7 @@ where
 
 type ColorMap = HashMap<String, String>;
 
+#[derive(Debug, Clone)]
 pub struct ColorPalette {
     color_map: HashMap<String, String>,
     color_cycler: labelme_rs::ColorCycler,
@@ -1883,6 +1884,7 @@ impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ColorPalettes {
     pub label_colors: ColorPalette,
     pub line_colors: ColorPalette,

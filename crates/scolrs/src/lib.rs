@@ -789,7 +789,7 @@ impl Display for Curve {
 }
 
 /// Set of PT, MT, and TLL curves
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub struct CurveSet {
     pub pt: Option<(Curve, f64)>,
@@ -820,7 +820,7 @@ impl CurveSet {
 }
 
 /// Set of PT, MT, and TLL apices
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub struct ApexSet {
     pub pt: Option<VertebraDiscIndex>,
@@ -837,7 +837,7 @@ pub enum MajorCurve {
 }
 
 /// Descriptor for scoliosis consisting of curves, apices, and major-curve-kind (MT or TLL)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ScolDesc {
     pub curves: CurveSet,
     pub apices: ApexSet,
@@ -862,6 +862,12 @@ impl TryFrom<&LabelMeData> for ScolDesc {
         let (curves, apex_set, major_curve) = coronal_points.identify_curves();
         Ok(ScolDesc::new(curves, apex_set, major_curve))
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr)]
+pub struct ScolDescLine {
+    pub content: ScolDesc,
+    pub filename: String,
 }
 
 /// Trait that enables `arr.l2norm()` to a vector (Array1 or ArrayView1)

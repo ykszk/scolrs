@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
@@ -15,6 +15,8 @@ pub enum Command {
     Complete(CompleteArgs),
     /// Create SVG
     Svg(SvgArgs),
+    /// Create SVGs from ndjson
+    SvgNdjson(SvgNdjsonArgs),
     /// Measure scoliotic parameters
     Measure(MeasureArgs),
     /// Determine curves
@@ -40,17 +42,8 @@ pub enum Plane {
     Sagittal,
 }
 
-#[derive(Parser, Debug, Clone, Default)]
-pub struct SvgArgs {
-    /// Input labelme json filename
-    #[arg(value_hint = ValueHint::FilePath)]
-    pub input: PathBuf,
-    /// Output svg filename
-    #[arg(value_hint = ValueHint::FilePath)]
-    pub output: PathBuf,
-    /// Use specified curves instaed of calculating from the points
-    #[clap(long)]
-    pub curve_set: Option<PathBuf>,
+#[derive(Args, Debug, Clone, Default)]
+pub struct SvgArgsCommon {
     /// Config file in toml
     #[clap(long)]
     pub config: Option<PathBuf>,
@@ -69,15 +62,45 @@ pub struct SvgArgs {
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
-    /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements
+    /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements. Comma separated list
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub measures: Vec<String>,
-    /// Hide measurements. Use `--list` to see all measurements
-    #[clap(long)]
+    /// Hide measurements. Use `--list` to see all measurements. Comma separated list
+    #[clap(long, value_delimiter = ',', value_hint = ValueHint::Other)]
     pub hide: Vec<String>,
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+}
+
+#[derive(Parser, Debug, Clone, Default)]
+pub struct SvgArgs {
+    /// Input labelme json filename
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Output svg filename
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// Use specified curves instaed of calculating from the points
+    #[clap(long)]
+    pub curve_set: Option<PathBuf>,
+    #[clap(flatten)]
+    pub svg_args: SvgArgsCommon,
+}
+
+#[derive(Parser, Debug, Clone, Default)]
+pub struct SvgNdjsonArgs {
+    /// Input labelme json or ndjson filename
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Output directory
+    #[arg(value_hint = ValueHint::DirPath)]
+    pub output: PathBuf,
+    /// Use specified curves from ndjson instaed of calculating from the points
+    #[clap(long)]
+    pub curve_set: Option<PathBuf>,
+    #[clap(flatten)]
+    pub svg_args: SvgArgsCommon,
 }
 
 #[derive(Parser, Debug)]

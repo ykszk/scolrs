@@ -23,6 +23,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Svg(args) => svg::cmd(args),
+        Command::SvgNdjson(args) => commands::svg::cmd_ndjson(args),
         Command::Measure(args) => measure::cmd(args),
         Command::Curve(args) => curve::cmd(args),
         Command::Lenke(args) => lenke::cmd(args),
