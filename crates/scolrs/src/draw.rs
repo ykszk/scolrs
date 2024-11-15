@@ -1997,6 +1997,7 @@ pub fn draw_coronal(
 
     let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
         let (cs, apexes, _major_curve) = coronal_points.identify_curves();
+        debug!("CurveSet: {:?}", cs);
         (cs, apexes)
     });
     for measure in draws {

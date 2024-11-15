@@ -49,7 +49,7 @@ fn process_one(
             let mut coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
             if let Some(image_data) = image_data {
                 coronal_points.image_metadata = image_data;
-                coronal_points.scale();
+                coronal_points.scale()?;
             }
 
             let draws = subcommand

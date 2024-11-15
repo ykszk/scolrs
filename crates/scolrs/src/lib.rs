@@ -218,10 +218,6 @@ where
 {
     let mut vander = Array2::zeros([xs.len(), deg + 1]);
 
-    // f64 is required for higher degrees
-    let xs = xs.mapv(|x| x);
-    let ys = ys.mapv(|x| x);
-
     for d in 0..=deg {
         vander
             .slice_mut(s![.., d])
@@ -235,7 +231,7 @@ where
         vander.ncols(),
         vander.into_raw_vec_and_offset().0,
     );
-    let ys = Vector::new(ys.into_raw_vec_and_offset().0);
+    let ys = Vector::new(ys.to_owned().into_raw_vec_and_offset().0);
     let a = vander.transpose() * &vander;
 
     let b = &vander.transpose() * &ys;
@@ -276,6 +272,14 @@ impl Spine {
         self.v_c7tl.0.scale(scale_xy);
         self.c_c7tl.scale(scale_xy);
     }
+
+    pub fn fit_poly(&self) -> Result<Array1<f64>, rulinalg::error::Error> {
+        polyfit(
+            self.c_c7tl.slice(s![1.., 1]),
+            self.c_c7tl.slice(s![1.., 0]),
+            6,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -292,9 +296,10 @@ pub struct CoronalPoints {
 }
 
 impl CoronalPoints {
-    pub fn scale(&mut self) {
+    /// Scale all points by `scale_xy` and refit the polynomial curve
+    pub fn scale(&mut self) -> Result<(), rulinalg::error::Error> {
         if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return;
+            return Ok(());
         }
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
@@ -306,6 +311,9 @@ impl CoronalPoints {
         self.shoulder.0.scale(scale_xy.view());
         self.pelvis.0.scale(scale_xy.view());
         self.femoral_head.0.scale(scale_xy.view());
+
+        self.c_coefs = self.spine.fit_poly()?;
+        Ok(())
     }
 }
 
@@ -1048,11 +1056,7 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
         let pelvis = _new_at_most2(data, "Pelvis")?;
         let femoral_head = _new_at_most2(data, "FemoralHead")?;
 
-        let c_coefs = polyfit(
-            spine.c_c7tl.slice(s![1.., 1]),
-            spine.c_c7tl.slice(s![1.., 0]),
-            6,
-        )?;
+        let c_coefs = spine.fit_poly()?;
 
         let image_data = ImageMetadata::from(data);
 
