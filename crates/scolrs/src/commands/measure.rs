@@ -1,17 +1,18 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader},
+    path::{Path, PathBuf},
 };
 
-use crate::cli::{MeasureArgs, Plane};
+use crate::cli::{MeasureArgs, MeasureSubCommands, MeasureSubCoronalArgs, MeasureSubSagittallArgs};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    parse_measures, CoronalComponent, CoronalMeasure, CoronalPoints, CoronalPointsIR,
-    CoronalPointsIRLine, MeasureError, SagittalComponent, SagittalMeasure, SagittalPoints,
-    SagittalPointsIR, SagittalPointsIRLine, ScolDesc, ScolError,
+    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, MeasureComponent,
+    MeasureError, SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine,
+    ScolDesc, ScolError,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -36,21 +37,30 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
         Box::new(BufReader::new(File::open(&args.input)?))
     };
     for line in reader.lines() {
-        match &args.direction {
-            Plane::Coronal => {
-                let data_line: CoronalPointsIRLine =
-                    load_labelme_or_native::<CoronalPointsIRLine, LabelMeDataLine>(&args, &line?)?;
-                let results = measure_coronal(data_line.content.try_into()?, &args)?;
+        match args.subcommand.clone() {
+            MeasureSubCommands::Coronal(subcommand) => {
+                let data_line: CoronalPointsIRLine = load_labelme_or_native::<
+                    CoronalPointsIRLine,
+                    LabelMeDataLine,
+                >(
+                    args.labelme, &args.input, &line?
+                )?;
+                let results =
+                    measure_coronal(data_line.content.try_into()?, subcommand, &args.curve_set)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
                     content: results,
                 };
                 println!("{}", serde_json::to_string(&line)?);
             }
-            Plane::Sagittal => {
-                let data_line: SagittalPointsIRLine =
-                    load_labelme_or_native::<SagittalPointsIRLine, LabelMeDataLine>(&args, &line?)?;
-                let results = measure_sagittal(data_line.content.try_into()?, &args)?;
+            MeasureSubCommands::Sagittal(subcommand) => {
+                let data_line: SagittalPointsIRLine = load_labelme_or_native::<
+                    SagittalPointsIRLine,
+                    LabelMeDataLine,
+                >(
+                    args.labelme, &args.input, &line?
+                )?;
+                let results = measure_sagittal(data_line.content.try_into()?, subcommand)?;
                 let line = SagittalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -66,16 +76,16 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
 ///
 /// if `args.labelme` is true, load LM then convert to IR
 /// otherwise, load IR directly
-fn load_labelme_or_native<IR, LM>(args: &MeasureArgs, json_str: &str) -> Result<IR>
+fn load_labelme_or_native<IR, LM>(labelme: bool, input: &Path, json_str: &str) -> Result<IR>
 where
     IR: DeserializeOwned,
     IR: TryFrom<LM, Error = ScolError>,
     LM: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
 {
-    if args.labelme {
+    if labelme {
         let data: LM = json_str
             .try_into()
-            .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
+            .with_context(|| format!("Load LabelMeData from {:?}", input))?;
         let data = IR::try_from(data)?;
         Ok(data)
     } else {
@@ -88,15 +98,23 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     debug!("Loading {:?}", args.input);
     let data_str = std::fs::read_to_string(&args.input)?;
 
-    match args.direction {
-        Plane::Coronal => {
-            let data = load_labelme_or_native::<CoronalPointsIR, LabelMeData>(&args, &data_str)?;
-            let results = measure_coronal(data.try_into()?, &args)?;
+    match args.subcommand {
+        MeasureSubCommands::Coronal(subcommand) => {
+            let data = load_labelme_or_native::<CoronalPointsIR, LabelMeData>(
+                args.labelme,
+                &args.input,
+                &data_str,
+            )?;
+            let results = measure_coronal(data.try_into()?, subcommand, &args.curve_set)?;
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
-        Plane::Sagittal => {
-            let data = load_labelme_or_native::<SagittalPointsIR, LabelMeData>(&args, &data_str)?;
-            let results = measure_sagittal(data.try_into()?, &args)?;
+        MeasureSubCommands::Sagittal(subcommand) => {
+            let data = load_labelme_or_native::<SagittalPointsIR, LabelMeData>(
+                args.labelme,
+                &args.input,
+                &data_str,
+            )?;
+            let results = measure_sagittal(data.try_into()?, subcommand)?;
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
     };
@@ -106,16 +124,14 @@ fn process_json(args: MeasureArgs) -> Result<()> {
 
 fn measure_sagittal(
     sagittal_points: SagittalPoints,
-    args: &MeasureArgs,
+    subcommand: MeasureSubSagittallArgs,
 ) -> Result<IndexMap<SagittalMeasure, MeasureResult>, anyhow::Error> {
-    let measures: Vec<SagittalMeasure> = if args.measures.is_empty() {
-        SagittalMeasure::all_measures()
-    } else {
-        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
-    };
+    let measures = subcommand
+        .measures
+        .unwrap_or_else(SagittalMeasure::all_measures);
     let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
     for measure in measures {
-        let spinal_measure: Box<dyn SagittalComponent> = (measure, &sagittal_points).into();
+        let spinal_measure: Box<dyn MeasureComponent> = (measure, &sagittal_points).into();
         results.insert(measure, spinal_measure.measure());
     }
     Ok(results)
@@ -123,14 +139,13 @@ fn measure_sagittal(
 
 fn measure_coronal(
     coronal_points: CoronalPoints,
-    args: &MeasureArgs,
+    subcommand: MeasureSubCoronalArgs,
+    curve_set_path: &Option<PathBuf>,
 ) -> Result<IndexMap<CoronalMeasure, MeasureResult>, anyhow::Error> {
-    let measures: Vec<CoronalMeasure> = if args.measures.is_empty() {
-        CoronalMeasure::all_measures()
-    } else {
-        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
-    };
-    let (curve_set, apex_set) = if let Some(curve_set) = args.curve_set.as_ref() {
+    let measures = subcommand
+        .measures
+        .unwrap_or_else(CoronalMeasure::all_measures);
+    let (curve_set, apex_set) = if let Some(curve_set) = curve_set_path.as_ref() {
         let reader = std::fs::File::open(curve_set)
             .with_context(|| format!("Load curve set {:?}", curve_set))?;
         let cs: ScolDesc = serde_json::from_reader(reader)?;
@@ -141,7 +156,7 @@ fn measure_coronal(
     };
     let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
     for measure in measures {
-        let spinal_measure: Box<dyn CoronalComponent> =
+        let spinal_measure: Box<dyn MeasureComponent> =
             (measure, &coronal_points, &curve_set, &apex_set).into();
         results.insert(measure, spinal_measure.measure());
     }
@@ -178,14 +193,12 @@ mod tests {
             data_dir.join(case_dir).join("lateral_native.json")
         };
         let curve_set = None;
-        let direction = Plane::Sagittal;
-        let measures = Default::default();
+        let subcommand = MeasureSubCommands::Sagittal(MeasureSubSagittallArgs::default());
         let args = MeasureArgs {
             input,
             curve_set,
-            direction,
-            measures,
             labelme,
+            subcommand,
         };
         cmd(args)?;
 
@@ -197,51 +210,15 @@ mod tests {
             data_dir.join(case_dir).join("frontal_native.json")
         };
         let curve_set = None;
-        let direction = Plane::Coronal;
-        let measures = Default::default();
+        let subcommand = MeasureSubCommands::Coronal(MeasureSubCoronalArgs::default());
         let args = MeasureArgs {
             input,
             curve_set,
-            direction,
-            measures,
             labelme,
+            subcommand,
         };
         cmd(args)?;
 
-        // Test if the command fails with invalid measures
-        let input = if labelme {
-            data_dir.join(case_dir).join("lateral.json")
-        } else {
-            data_dir.join(case_dir).join("lateral_native.json")
-        };
-        let curve_set = None;
-        let direction = Plane::Sagittal;
-        let measures = vec!["CobbPT".to_string()];
-        let args = MeasureArgs {
-            input,
-            curve_set,
-            direction,
-            measures,
-            labelme,
-        };
-        assert!(cmd(args).is_err());
-
-        let input = if labelme {
-            data_dir.join(case_dir).join("frontal.json")
-        } else {
-            data_dir.join(case_dir).join("frontal_coronal_points.json")
-        };
-        let curve_set = None;
-        let direction = Plane::Coronal;
-        let measures = vec!["ThoracicKyphosis".to_string()];
-        let args = MeasureArgs {
-            input,
-            curve_set,
-            direction,
-            measures,
-            labelme,
-        };
-        assert!(cmd(args).is_err());
         Ok(())
     }
 

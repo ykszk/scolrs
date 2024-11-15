@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
-use std::str::FromStr;
 use svg::node::element;
 pub type LineColors = HashMap<String, String>;
 
@@ -506,10 +505,6 @@ pub enum MeasureError {
     #[error("Unable to measure: {0}")]
     UnableToMeasure(String),
 
-    // No measurement is defined
-    #[error("No measurement is defined")]
-    NoMeasurementDefined,
-
     // No curve is found
     #[error("No curve is found")]
     NoCurveFound,
@@ -571,7 +566,7 @@ pub trait CommonComponent: DrawComponent {
 }
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
-pub trait CoronalComponent: DrawComponent + MeasureComponent {
+pub trait CoronalComponent: DrawComponent {
     fn default_group(&self) -> element::Group {
         self.default_group_w_classes(&["Component", CORONAL_COMPONENT_CLASS])
     }
@@ -825,11 +820,6 @@ impl<'a> DrawComponent for CurveApex<'a> {
         Ok(g)
     }
 }
-impl MeasureComponent for CurveApex<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        Err(MeasureError::NoMeasurementDefined)
-    }
-}
 
 /// Spinal center line
 #[derive(Named)]
@@ -891,11 +881,6 @@ impl<'a> DrawComponent for Csvl<'a> {
             g = g.add(painter.line(vl));
         }
         Ok(g)
-    }
-}
-impl MeasureComponent for Csvl<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        Err(MeasureError::NoMeasurementDefined)
     }
 }
 
@@ -1836,7 +1821,7 @@ pub fn femoral_incidence_angle(
     Ok(angle_deg)
 }
 
-impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn SagittalComponent + 'a> {
+impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
     fn from((measure, sagittal_points): (SagittalMeasure, &'a SagittalPoints)) -> Self {
         match measure {
             SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
@@ -1857,12 +1842,42 @@ impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn SagittalCompone
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+
+            SagittalMeasure::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
+            SagittalMeasure::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
+        }
+    }
+}
+
+impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponent + 'a> {
+    fn from((measure, sagittal_points): (SagittalMeasure, &'a SagittalPoints)) -> Self {
+        match measure {
+            SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
+            SagittalMeasure::ProximalThoracicKyphosis => {
+                Box::new(ProximalThoracicKyphosis(sagittal_points))
+            }
+            SagittalMeasure::MidLowerThoracicKyphosis => {
+                Box::new(MidLowerThoracicKyphosis(sagittal_points))
+            }
+            SagittalMeasure::ThoracolumbarSagittalAlignment => {
+                Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
+            }
+            SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
+            SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
+            SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
+            SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
+            SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
+            SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
+            SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
+            SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+
+            _ => panic!("Invalid conversion: {:?}", measure),
         }
     }
 }
 
 impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
-    for Box<dyn CoronalComponent + 'a>
+    for Box<dyn DrawComponent + 'a>
 {
     fn from(value: (CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)) -> Self {
         let (measure, coronal_points, curve_set, apex_set) = value;
@@ -1880,6 +1895,34 @@ impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
             CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+
+            CoronalMeasure::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
+            CoronalMeasure::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
+            CoronalMeasure::Centroids => Box::new(Centroids(&coronal_points.spine)),
+            CoronalMeasure::SpinalLine => Box::new(SpinalLine(&coronal_points.spine)),
+        }
+    }
+}
+
+impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
+    for Box<dyn MeasureComponent + 'a>
+{
+    fn from(value: (CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)) -> Self {
+        let (measure, coronal_points, curve_set, _apex_set) = value;
+        match measure {
+            CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
+            CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
+            CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
+
+            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
+            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
+            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
+            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
+            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
+            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
+            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+
+            _ => panic!("Invalid conversion: {:?}", measure),
         }
     }
 }
@@ -1911,18 +1954,8 @@ pub fn draw_sagittal(
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
-    // common components
-    let common_components: Vec<Box<dyn CommonComponent>> = vec![
-        Box::new(VertebralLabels(&sagittal_points.spine)),
-        Box::new(VertebralPoints(&sagittal_points.spine)),
-    ];
-    for component in common_components {
-        let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
-        document = document.add(g);
-    }
-
     for measure in draws {
-        let spinal_measure: Box<dyn SagittalComponent> = (measure, &sagittal_points).into();
+        let spinal_measure: Box<dyn DrawComponent> = (measure, &sagittal_points).into();
         match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
                 let visibility = if hide.contains(&measure) {
@@ -1961,24 +1994,13 @@ pub fn draw_coronal(
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);
-    // common components
-    let common_components: Vec<Box<dyn CommonComponent>> = vec![
-        Box::new(VertebralLabels(&coronal_points.spine)),
-        Box::new(VertebralPoints(&coronal_points.spine)),
-        Box::new(SpinalLine(&coronal_points.spine)),
-        Box::new(Centroids(&coronal_points.spine)),
-    ];
-    for component in common_components {
-        let g = component.draw(&painter, &mut label_colors, &mut line_colors)?;
-        document = document.add(g);
-    }
 
     let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
         let (cs, apexes, _major_curve) = coronal_points.identify_curves();
         (cs, apexes)
     });
     for measure in draws {
-        let spinal_measure: Box<dyn CoronalComponent> =
+        let spinal_measure: Box<dyn DrawComponent> =
             (measure, &coronal_points, &curve_set, &apex_set).into();
 
         match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
@@ -1996,17 +2018,4 @@ pub fn draw_coronal(
     }
 
     Ok(document)
-}
-
-pub fn parse_measures<TMeasure: FromStr>(measures: &[String]) -> Result<Vec<TMeasure>, String>
-where
-    <TMeasure as std::str::FromStr>::Err: std::fmt::Debug,
-{
-    let v: Result<Vec<TMeasure>, _> = measures.iter().map(|m| m.parse()).collect();
-    v.map_err(|e| {
-        format!(
-            "{:?}. Use `list` command to print all available measures",
-            e
-        )
-    })
 }

@@ -1745,11 +1745,16 @@ impl Display for StructuralReason {
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum CoronalMeasure {
+    VertebralLabels,
+    VertebralPoints,
+    Centroids,
+    SpinalLine,
+    CurveApex,
+    CSVL,
+    // Measures
     CobbPT,
     CobbMT,
     CobbTLL,
-    CurveApex,
-    CSVL,
     T1TiltAngle,
     CoronalBalance,
     ClavicleAngle,
@@ -1763,11 +1768,17 @@ impl CoronalMeasure {
     pub fn all_draws() -> Vec<Self> {
         CoronalMeasure::VARIANTS.to_vec()
     }
-    pub fn all_measures() -> Vec<Self> {
+    pub fn is_measure(&self) -> bool {
         use CoronalMeasure::*;
+        !matches!(
+            self,
+            VertebralLabels | VertebralPoints | Centroids | SpinalLine | CurveApex | CSVL
+        )
+    }
+    pub fn all_measures() -> Vec<Self> {
         CoronalMeasure::VARIANTS
             .iter()
-            .filter(|v| !matches!(v, CurveApex | CSVL))
+            .filter(|&m| m.is_measure())
             .copied()
             .collect()
     }
@@ -1792,6 +1803,9 @@ impl CoronalMeasure {
 #[clap(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum SagittalMeasure {
+    VertebralLabels,
+    VertebralPoints,
+    // Measures
     ThoracicKyphosis,
     ProximalThoracicKyphosis,
     MidLowerThoracicKyphosis,
@@ -1810,8 +1824,16 @@ impl SagittalMeasure {
     pub fn all_draws() -> Vec<Self> {
         SagittalMeasure::VARIANTS.to_vec()
     }
+    pub fn is_measure(&self) -> bool {
+        use SagittalMeasure::*;
+        !matches!(self, VertebralLabels | VertebralPoints)
+    }
     pub fn all_measures() -> Vec<Self> {
-        Self::all_draws()
+        SagittalMeasure::VARIANTS
+            .iter()
+            .filter(|&m| m.is_measure())
+            .copied()
+            .collect()
     }
 }
 

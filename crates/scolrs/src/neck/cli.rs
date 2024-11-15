@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
+use scolrs::head_neck::{NeckLateralDraw, NeckLateralMeasure};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -56,12 +57,12 @@ pub struct SvgArgs {
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
-    /// Measurements to draw. By default, all measurements are drawn. Run `list` command to see all measurements
+    /// Measurements to draw. By default, all measurements are drawn.measurements
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub measures: Vec<String>,
-    /// Hide measurements. Use `--list` to see all measurements
+    pub measures: Option<Vec<NeckLateralDraw>>,
+    /// Hide measurements.
     #[clap(long)]
-    pub hide: Vec<String>,
+    pub hide: Option<Vec<NeckLateralDraw>>,
 }
 
 #[derive(Parser, Debug, Default)]
@@ -72,9 +73,9 @@ pub struct MeasureArgs {
     /// Output json/ndjson file
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
-    /// Measurements to draw. By default, all measurements are drawn. Run `list` command to see all measurements
+    /// Measurements to draw. By default, all measurements are drawn.
     #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub measures: Vec<String>,
+    pub measures: Option<Vec<NeckLateralMeasure>>,
 }
 
 #[derive(Parser, Debug)]

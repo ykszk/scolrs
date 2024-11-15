@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use log::{debug, warn};
 use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckSagittalComponent};
-use scolrs::{parse_measures, ColorPalette, DrawParam, Painter};
+use scolrs::{ColorPalette, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
 fn process_data(
@@ -101,11 +101,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         ColorPalette::new(scolrs::LineColors::default())
     };
 
-    let neck_sagittal_draw: Vec<NeckLateralDraw> = if args.measures.is_empty() {
-        NeckLateralDraw::all()
-    } else {
-        parse_measures(&args.measures).map_err(|e| anyhow::anyhow!(e))?
-    };
+    let neck_sagittal_draw = args.measures.clone().unwrap_or_else(NeckLateralDraw::all);
 
     if args.input.extension().unwrap_or_default() == "json" {
         let lateral_points_ir: scolrs::head_neck::LateralPointsIR =

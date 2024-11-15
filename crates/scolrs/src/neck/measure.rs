@@ -7,12 +7,8 @@ use crate::neck::cli::MeasureArgs;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::warn;
-use scolrs::{
-    head_neck::{
-        LateralPoints, LateralPointsIR, LateralPointsIRLine, NeckLateralMeasure,
-        NeckMeasureComponent,
-    },
-    parse_measures,
+use scolrs::head_neck::{
+    LateralPoints, LateralPointsIR, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +70,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     let data_ir = LateralPointsIR::try_from(std::fs::read_to_string(&args.input)?.as_str())
         .with_context(|| format!("Loading {:?}", args.input))?;
     let data = LateralPoints::try_from(&data_ir)?;
-    let measures = handle_measures_arg(&args.measures)?;
+    let measures = args.measures.unwrap_or_else(NeckLateralMeasure::all);
     let results = process_data(data, &measures)?;
     if let Some(output) = args.output {
         std::fs::write(output, serde_json::to_string_pretty(&results)?)?;
@@ -84,17 +80,8 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     Ok(())
 }
 
-fn handle_measures_arg(measure_strs: &[String]) -> Result<Vec<NeckLateralMeasure>, anyhow::Error> {
-    let measures: Vec<NeckLateralMeasure> = if measure_strs.is_empty() {
-        NeckLateralMeasure::all()
-    } else {
-        parse_measures(measure_strs).map_err(|e| anyhow::anyhow!(e))?
-    };
-    Ok(measures)
-}
-
 fn process_ndjson(args: MeasureArgs) -> Result<()> {
-    let measures = handle_measures_arg(&args.measures)?;
+    let measures = args.measures.unwrap_or_else(NeckLateralMeasure::all);
 
     let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
         Box::new(BufReader::new(std::io::stdin()))

@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
+use scolrs::{CoronalMeasure, SagittalMeasure};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -42,35 +43,62 @@ pub enum Plane {
     Sagittal,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum SvgSubCommands {
+    /// Coronal view
+    Coronal(SvgSubCoronalArgs),
+    /// Sagittal view
+    Sagittal(SvgSubSagittallArgs),
+}
+
+impl Default for SvgSubCommands {
+    fn default() -> Self {
+        SvgSubCommands::Coronal(SvgSubCoronalArgs::default())
+    }
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct SvgSubCoronalArgs {
+    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<CoronalMeasure>>,
+    /// Hide measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide: Vec<CoronalMeasure>,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct SvgSubSagittallArgs {
+    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<SagittalMeasure>>,
+    /// Hide measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide: Vec<SagittalMeasure>,
+}
+
 #[derive(Args, Debug, Clone, Default)]
 pub struct SvgArgsCommon {
     /// Config file in toml
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub config: Option<PathBuf>,
     /// Label colors in yaml
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub label_colors: Option<PathBuf>,
     /// Line colors in csv with `label` and `color` columns
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub line_colors: Option<PathBuf>,
-    /// Scan direction
-    #[clap(short, long, default_value = "coronal")]
-    pub direction: Plane,
     /// Resize x-ray image. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub resize: Option<String>,
     /// Output image size. Aspect ratio will be adjusted based on x-ray image size. Specify in imagemagick's `-resize`-like format
     #[clap(long)]
     pub size: Option<String>,
-    /// Measurements to draw. By default, all measurements are drawn. Use `--list` to see all measurements. Comma separated list
-    #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub measures: Vec<String>,
-    /// Hide measurements. Use `--list` to see all measurements. Comma separated list
-    #[clap(long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub hide: Vec<String>,
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+    #[clap(subcommand)]
+    pub subcommand: SvgSubCommands,
 }
 
 #[derive(Parser, Debug, Clone, Default)]
@@ -82,7 +110,7 @@ pub struct SvgArgs {
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
     /// Use specified curves instaed of calculating from the points
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
@@ -97,10 +125,44 @@ pub struct SvgNdjsonArgs {
     #[arg(value_hint = ValueHint::DirPath)]
     pub output: PathBuf,
     /// Use specified curves from ndjson instaed of calculating from the points
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum MeasureSubCommands {
+    /// Coronal view
+    Coronal(MeasureSubCoronalArgs),
+    /// Sagittal view
+    Sagittal(MeasureSubSagittallArgs),
+}
+
+impl Default for MeasureSubCommands {
+    fn default() -> Self {
+        MeasureSubCommands::Coronal(MeasureSubCoronalArgs::default())
+    }
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct MeasureSubCoronalArgs {
+    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<CoronalMeasure>>,
+    /// Hide measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide: Vec<CoronalMeasure>,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct MeasureSubSagittallArgs {
+    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<SagittalMeasure>>,
+    /// Hide measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide: Vec<SagittalMeasure>,
 }
 
 #[derive(Parser, Debug)]
@@ -109,17 +171,13 @@ pub struct MeasureArgs {
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
     /// Use specified curves instaed of calculating from the points
-    #[clap(long)]
+    #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,
-    /// Scan direction
-    #[clap(short, long, default_value = "coronal")]
-    pub direction: Plane,
-    /// Measurements to draw. By default, all measurements are drawn
-    #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub measures: Vec<String>,
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+    #[clap(subcommand)]
+    pub subcommand: MeasureSubCommands,
 }
 
 #[derive(Parser, Debug)]
@@ -134,16 +192,16 @@ pub struct CurveArgs {
 #[derive(Parser, Debug)]
 pub struct LenkeArgs {
     /// coronal
-    #[clap(short, long)]
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub coronal: PathBuf,
     /// sagittal
-    #[clap(short, long)]
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub sagittal: Option<PathBuf>,
     /// right bend
-    #[clap(short, long)]
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub right: Option<PathBuf>,
     /// left bend
-    #[clap(short, long)]
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub left: Option<PathBuf>,
 }
 

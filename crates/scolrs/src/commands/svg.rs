@@ -3,17 +3,17 @@ use std::{
     path::Path,
 };
 
-use crate::cli::{Plane, SvgArgs, SvgArgsCommon, SvgNdjsonArgs};
+use crate::cli::{Plane, SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
 use labelme_rs::{
     image::GenericImageView, LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam,
 };
 use log::{debug, info};
 use scolrs::{
-    draw_coronal, draw_sagittal, parse_measures, ApexSet, ColorPalette, ColorPalettes,
-    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveSet, DrawParam,
-    ImageMetadata, SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine,
-    ScolDesc, ScolDescLine,
+    draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalMeasure,
+    CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveSet, DrawParam, ImageMetadata,
+    SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine, ScolDesc,
+    ScolDescLine,
 };
 
 fn process_one(
@@ -44,28 +44,18 @@ fn process_one(
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let document = match svg_common.direction {
-        Plane::Coronal => {
+    let document = match svg_common.subcommand {
+        SvgSubCommands::Coronal(subcommand) => {
             let mut coronal_points = scolrs::CoronalPoints::try_from(&data.data)?;
             if let Some(image_data) = image_data {
                 coronal_points.image_metadata = image_data;
                 coronal_points.scale();
             }
 
-            let draws: Vec<CoronalMeasure> = if svg_common.measures.is_empty() {
-                CoronalMeasure::all_draws()
-            } else {
-                let v = parse_measures(&svg_common.measures);
-                match v {
-                    Ok(v) => v,
-                    Err(e) => return Err(anyhow::anyhow!(e)),
-                }
-            };
-            let hide = parse_measures(&svg_common.hide);
-            let hide = match hide {
-                Ok(v) => v,
-                Err(e) => return Err(anyhow::anyhow!(e)),
-            };
+            let draws = subcommand
+                .measures
+                .unwrap_or_else(CoronalMeasure::all_draws);
+            let hide = subcommand.hide;
             draw_coronal(
                 data,
                 coronal_points,
@@ -76,26 +66,17 @@ fn process_one(
                 curve_apex_set,
             )
         }
-        Plane::Sagittal => {
+        SvgSubCommands::Sagittal(subcommand) => {
             let mut sagittal_points = scolrs::SagittalPoints::try_from(&data.data)?;
             if let Some(image_data) = image_data {
                 sagittal_points.image_metadata = image_data;
                 sagittal_points.scale();
             }
-            let draws: Vec<SagittalMeasure> = if svg_common.measures.is_empty() {
-                SagittalMeasure::all_draws()
-            } else {
-                let v = parse_measures(&svg_common.measures);
-                match v {
-                    Ok(v) => v,
-                    Err(e) => return Err(anyhow::anyhow!(e)),
-                }
-            };
-            let hide = parse_measures(&svg_common.hide);
-            let hide = match hide {
-                Ok(v) => v,
-                Err(e) => return Err(anyhow::anyhow!(e)),
-            };
+
+            let draws = subcommand
+                .measures
+                .unwrap_or_else(SagittalMeasure::all_draws);
+            let hide = subcommand.hide;
             draw_sagittal(
                 data,
                 sagittal_points,
@@ -172,8 +153,7 @@ struct ReadSvgArgCommon {
     svg_size_param: Option<labelme_rs::ResizeParam>,
     palettes: ColorPalettes,
     direction: Plane,
-    measures: Vec<String>,
-    hide: Vec<String>,
+    subcommand: SvgSubCommands,
     labelme: bool,
 }
 
@@ -214,14 +194,18 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
         line_colors,
     };
 
+    let direction = match args.subcommand {
+        SvgSubCommands::Coronal(_) => Plane::Coronal,
+        SvgSubCommands::Sagittal(_) => Plane::Sagittal,
+    };
+
     Ok(ReadSvgArgCommon {
         draw_param,
         resize_param,
         svg_size_param,
         palettes,
-        direction: args.direction,
-        measures: args.measures,
-        hide: args.hide,
+        direction,
+        subcommand: args.subcommand,
         labelme: args.labelme,
     })
 }
@@ -347,7 +331,7 @@ mod tests {
             svg_args.output = output_path(&format!("{}_frontal.svg", case))?;
         }
         svg_args.svg_args.labelme = !native;
-        svg_args.svg_args.direction = Plane::Coronal;
+        svg_args.svg_args.subcommand = SvgSubCommands::Coronal(Default::default());
         cmd(svg_args.clone())?;
 
         if native {
@@ -358,7 +342,7 @@ mod tests {
             svg_args.output = output_path(&format!("{}_lateral.svg", case))?;
         }
         svg_args.svg_args.labelme = !native;
-        svg_args.svg_args.direction = Plane::Sagittal;
+        svg_args.svg_args.subcommand = SvgSubCommands::Sagittal(Default::default());
         cmd(svg_args)?;
 
         Ok(())
