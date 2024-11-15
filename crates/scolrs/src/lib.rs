@@ -462,7 +462,7 @@ impl CoronalPoints {
         if inf <= 1 {
             return None;
         }
-        let end = inf - 2;
+        let end = inf - 1;
         // search sup from bottom to top (by .rev()) so that we can break early from the loop
         for sup in (0..end).rev() {
             if self.is_valid_curve(sup, inf) {

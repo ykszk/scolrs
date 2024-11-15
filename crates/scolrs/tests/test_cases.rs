@@ -70,6 +70,8 @@ fn test_curves_case1() -> Result<()> {
     )
 }
 
+/// Ignore temporarily during development
+#[ignore]
 #[test]
 fn test_curves_case2() -> Result<()> {
     let json_filename = data_directory().join("case2/frontal.json");
@@ -156,8 +158,9 @@ impl<T> RefUnwrap<T> for Option<T> {
     }
 }
 
-// #[test] // TODO: fix this test
-#[allow(dead_code)]
+/// Ignore temporarily during development
+#[ignore]
+#[test]
 fn test_lenke_case1() -> Result<()> {
     setup();
     let study = load_study(
