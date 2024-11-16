@@ -39,7 +39,7 @@ pub enum ScolError {
     InvalidShape(String, usize, usize),
     #[error("Invalid point count for {0}: {1}")]
     InvalidPointCount(String, usize),
-    #[error("Invalid combination of the numbeer of points for {0} and {1}: {2} vs. {3}")]
+    #[error("Invalid combination of the numbers of points for {0} and {1}: {2} vs. {3}")]
     InvalidPointCombo(String, String, usize, usize),
     #[error("Linalg error")]
     Linalg(#[from] rulinalg::error::Error),
