@@ -25,11 +25,11 @@ serde.workspace = true
 anyhow.workspace = true
 pretty_assertions.workspace = true
 walkdir = "2.4.0"
-dicom = "0.7.1"
-dicom-pixeldata = { version = "0.7.1", default-features = false, features = [
+dicom = "0.8.0"
+dicom-pixeldata = { version = "0.8.0", default-features = false, features = [
     "native",
     "image",
     "ndarray",
     # "gdcm",
 ] }
-dicom-transfer-syntax-registry = { version = "0.7.1" }
+dicom-transfer-syntax-registry = { version = "0.8.0" }
