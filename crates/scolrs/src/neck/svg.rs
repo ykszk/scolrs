@@ -261,6 +261,7 @@ mod tests {
             output: output_path("neck_case2_catalog.html")?,
             title: Some("Neck Case 2".to_string()),
             selector: vec!["g.Component".to_string()],
+            jobs: None,
         };
         crate::neck::catalog::cmd(catalog_args)?;
 

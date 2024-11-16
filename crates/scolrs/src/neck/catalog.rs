@@ -4,8 +4,9 @@ use std::{
 };
 
 use crate::neck::cli::CatalogArgs;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
+use rayon::prelude::*;
 use scraper::{Html, Selector};
 
 /// Shorthand for writing a string to a file
@@ -20,6 +21,13 @@ impl WriteString for BufWriter<File> {
 }
 
 pub fn cmd(args: CatalogArgs) -> Result<()> {
+    if let Some(jobs) = args.jobs {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build_global()
+            .unwrap();
+    }
+
     let glob_pattern = args.input.join("*.svg");
     let mut writer = BufWriter::new(File::create(&args.output)?);
     writer.ws("<html>\n")?;
@@ -58,27 +66,35 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         ),
     ])?;
 
-    let mut checkboxes: IndexMap<String, String> = IndexMap::new();
+    let checkboxes: IndexMap<String, String> = IndexMap::new();
+    let checkboxes = std::sync::Arc::from(std::sync::Mutex::new(checkboxes));
     let selectors: Result<Vec<_>, _> = args
         .selector
         .iter()
         .map(|s| Selector::parse(s.as_str()))
         .collect();
+    let selectors = match selectors {
+        Ok(selectors) => selectors,
+        Err(e) => {
+            bail!("Error parsing selector: {}", e);
+        }
+    };
 
     let mut paths: Vec<_> =
         glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
     paths.sort();
-    for path in paths {
+    let writer = std::sync::Arc::from(std::sync::Mutex::new(writer));
+    paths.into_par_iter().try_for_each(|path| -> Result<()> {
         let filename = path.file_stem().unwrap().to_string_lossy();
         let svg = std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?;
         let document = Html::parse_document(&svg);
         let mut elements: Vec<_> = Vec::new();
-        for selector in selectors.as_ref().unwrap() {
+        for selector in selectors.iter() {
             elements.extend(document.select(selector));
         }
         for element in elements {
             let id = element.value().attr("id").context("`id` not defined")?;
-            if checkboxes.contains_key(id) {
+            if checkboxes.lock().unwrap().contains_key(id) {
                 continue;
             }
             let label = element.value().attr("data-label").unwrap_or(id);
@@ -89,7 +105,8 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
             context.insert("label", &label);
             context.insert("description", &description);
             context.insert("checked", checked);
-            checkboxes.insert(
+
+            checkboxes.lock().unwrap().insert(
                 id.to_string(),
                 templates.render("checkbox.jinja", &context)?,
             );
@@ -98,9 +115,16 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         let mut context = tera::Context::new();
         context.insert("img", &svg);
         context.insert("id", &filename);
+        let mut writer = writer.lock().unwrap();
         writer.ws(&templates.render("image_container.jinja", &context)?)?;
         writer.ws("</div>\n")?;
-    }
+        Ok(())
+    })?;
+
+    let checkboxes = std::sync::Arc::into_inner(checkboxes)
+        .unwrap()
+        .into_inner()
+        .unwrap();
 
     let mut context = tera::Context::new();
     context.insert(
@@ -112,6 +136,7 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         &include_str!("../templates/save_module.html"),
     );
     let div_popup = templates.render("catalog_popup.jinja", &context)?;
+    let mut writer = writer.lock().unwrap();
     writer.ws(&div_popup)?;
     writer.ws("</body></html>\n")?;
     Ok(())

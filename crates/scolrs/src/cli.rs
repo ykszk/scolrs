@@ -128,7 +128,7 @@ pub struct SvgNdjsonArgs {
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,
     /// Maximum number of jobs to run in parallel
-    #[clap(long)]
+    #[clap(short, long)]
     pub jobs: Option<usize>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
