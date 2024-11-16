@@ -5,6 +5,8 @@ use crate::neck::cli::SvgArgs;
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
 use log::{debug, warn};
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::*;
 use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckSagittalComponent};
 use scolrs::{ColorPalette, DrawParam, Painter};
 use svg::node::element::{self, SVG};
@@ -77,6 +79,12 @@ fn process_data(
 }
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
+    if let Some(jobs) = args.jobs {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build_global()
+            .context("Failed to build thread pool")?;
+    }
     let draw_param = if let Some(filename) = args.config.as_ref() {
         let s = std::fs::read_to_string(filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
@@ -126,8 +134,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         } else {
             Box::new(BufReader::new(File::open(&args.input)?))
         };
-        for line in reader.lines() {
-            let line = line?;
+        let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
+        lines.into_par_iter().try_for_each(|line| -> Result<()> {
             let lateral_points_ir_line: scolrs::head_neck::LateralPointsIRLine =
                 serde_json::from_str(&line)?;
             let lateral_points =
@@ -136,15 +144,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 lateral_points,
                 &args,
                 &draw_param,
-                &mut label_colors,
-                &mut line_colors,
+                &mut label_colors.clone(),
+                &mut line_colors.clone(),
                 &neck_sagittal_draw,
             );
             let document = match result {
                 Ok(document) => document,
                 Err(e) => {
                     warn!("Skip {:?}: {:?}", lateral_points_ir_line.filename, e);
-                    continue;
+                    return Ok(());
                 }
             };
             let output = args
@@ -153,7 +161,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .with_extension("svg");
             std::fs::write(&output, document.to_string())
                 .with_context(|| format!("Saving to {:?}", args.output))?;
-        }
+            Ok(())
+        })?;
     } else {
         return Err(anyhow::anyhow!("Unsupported file format"));
     }

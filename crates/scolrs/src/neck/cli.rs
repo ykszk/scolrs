@@ -63,6 +63,9 @@ pub struct SvgArgs {
     /// Hide measurements.
     #[clap(long)]
     pub hide: Option<Vec<NeckLateralDraw>>,
+    /// Maximum number of jobs to run in parallel
+    #[clap(short, long)]
+    pub jobs: Option<usize>,
 }
 
 #[derive(Parser, Debug, Default)]

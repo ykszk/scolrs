@@ -239,9 +239,8 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     } else {
         Box::new(BufReader::new(std::fs::File::open(&args.input)?))
     };
-    let lines: Vec<_> = reader.lines().collect();
+    let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
     lines.into_par_iter().try_for_each(|line| -> Result<()> {
-        let line = line?;
         let (data, image_data, filename) = if svg_common.labelme {
             let data_line: LabelMeDataLine = line.as_str().try_into()?;
             let data = LabelMeDataWImage::try_from_data_and_path(data_line.content, &args.input)?;
