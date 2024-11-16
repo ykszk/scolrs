@@ -190,6 +190,9 @@ pub struct CurveArgs {
     /// Output all curves
     #[clap(short, long)]
     pub all: bool,
+    /// Input data format is labelme instead of native format
+    #[clap(long)]
+    pub labelme: bool,
 }
 
 #[derive(Parser, Debug)]
