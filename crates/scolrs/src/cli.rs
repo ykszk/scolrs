@@ -127,6 +127,9 @@ pub struct SvgNdjsonArgs {
     /// Use specified curves from ndjson instaed of calculating from the points
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,
+    /// Maximum number of jobs to run in parallel
+    #[clap(long)]
+    pub jobs: Option<usize>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
 }

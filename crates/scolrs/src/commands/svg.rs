@@ -9,6 +9,7 @@ use labelme_rs::{
     image::GenericImageView, LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam,
 };
 use log::{debug, info};
+use rayon::prelude::*;
 use scolrs::{
     draw_coronal, draw_sagittal, ApexSet, ColorPalette, ColorPalettes, CoronalMeasure,
     CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveSet, DrawParam, ImageMetadata,
@@ -211,7 +212,13 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
 }
 
 pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
-    let mut curve_map = if let Some(filename) = args.curve_set.as_ref() {
+    if let Some(jobs) = args.jobs {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build_global()?;
+    }
+
+    let curve_map = if let Some(filename) = args.curve_set.as_ref() {
         info!("Load curve set {:?}", filename);
         let reader = BufReader::new(std::fs::File::open(filename)?);
         let mut curve_map: std::collections::HashMap<String, (CurveSet, ApexSet)> =
@@ -232,7 +239,8 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     } else {
         Box::new(BufReader::new(std::fs::File::open(&args.input)?))
     };
-    for line in reader.lines() {
+    let lines: Vec<_> = reader.lines().collect();
+    lines.into_par_iter().try_for_each(|line| -> Result<()> {
         let line = line?;
         let (data, image_data, filename) = if svg_common.labelme {
             let data_line: LabelMeDataLine = line.as_str().try_into()?;
@@ -269,12 +277,15 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 .to_string()
                 + ".svg",
         );
-        let curve_set = curve_map.as_mut().and_then(|m| m.remove(&filename));
+        let curve_set = curve_map
+            .as_ref()
+            .and_then(|m| m.get(&filename).map(|v| v.to_owned()));
         if args.curve_set.as_ref().is_some() && curve_set.is_none() {
             return Err(anyhow::anyhow!("Curve set not found for {}", filename));
         }
         process_one(svg_common.clone(), data, image_data, curve_set, &output)?;
-    }
+        Ok(())
+    })?;
     Ok(())
 }
 
