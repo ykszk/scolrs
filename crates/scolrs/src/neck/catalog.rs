@@ -83,43 +83,48 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     let mut paths: Vec<_> =
         glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
     paths.sort();
-    let writer = std::sync::Arc::from(std::sync::Mutex::new(writer));
-    paths.into_par_iter().try_for_each(|path| -> Result<()> {
-        let filename = path.file_stem().unwrap().to_string_lossy();
-        let svg = std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?;
-        let document = Html::parse_document(&svg);
-        let mut elements: Vec<_> = Vec::new();
-        for selector in selectors.iter() {
-            elements.extend(document.select(selector));
-        }
-        for element in elements {
-            let id = element.value().attr("id").context("`id` not defined")?;
-            if checkboxes.lock().unwrap().contains_key(id) {
-                continue;
+    let divs: Result<Vec<_>> = paths
+        .into_par_iter()
+        .map(|path| -> Result<String> {
+            let filename = path.file_stem().unwrap().to_string_lossy();
+            let svg =
+                std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?;
+            let document = Html::parse_document(&svg);
+            let mut elements: Vec<_> = Vec::new();
+            for selector in selectors.iter() {
+                elements.extend(document.select(selector));
             }
-            let label = element.value().attr("data-label").unwrap_or(id);
-            let description = element.value().attr("data-description").unwrap_or("");
-            let checked = "checked";
+            for element in elements {
+                let id = element.value().attr("id").context("`id` not defined")?;
+                if checkboxes.lock().unwrap().contains_key(id) {
+                    continue;
+                }
+                let label = element.value().attr("data-label").unwrap_or(id);
+                let description = element.value().attr("data-description").unwrap_or("");
+                let checked = "checked";
+                let mut context = tera::Context::new();
+                context.insert("id", &id);
+                context.insert("label", &label);
+                context.insert("description", &description);
+                context.insert("checked", checked);
+
+                checkboxes.lock().unwrap().insert(
+                    id.to_string(),
+                    templates.render("checkbox.jinja", &context)?,
+                );
+            }
+
             let mut context = tera::Context::new();
-            context.insert("id", &id);
-            context.insert("label", &label);
-            context.insert("description", &description);
-            context.insert("checked", checked);
+            context.insert("img", &svg);
+            context.insert("id", &filename);
+            Ok(templates.render("image_container.jinja", &context)?)
+        })
+        .collect();
+    let divs = divs?;
 
-            checkboxes.lock().unwrap().insert(
-                id.to_string(),
-                templates.render("checkbox.jinja", &context)?,
-            );
-        }
-
-        let mut context = tera::Context::new();
-        context.insert("img", &svg);
-        context.insert("id", &filename);
-        let mut writer = writer.lock().unwrap();
-        writer.ws(&templates.render("image_container.jinja", &context)?)?;
-        writer.ws("</div>\n")?;
-        Ok(())
-    })?;
+    for div in divs {
+        writer.ws(&div)?;
+    }
 
     let checkboxes = std::sync::Arc::into_inner(checkboxes)
         .unwrap()
@@ -136,7 +141,6 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         &include_str!("../templates/save_module.html"),
     );
     let div_popup = templates.render("catalog_popup.jinja", &context)?;
-    let mut writer = writer.lock().unwrap();
     writer.ws(&div_popup)?;
     writer.ws("</body></html>\n")?;
     Ok(())
