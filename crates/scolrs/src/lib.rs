@@ -437,6 +437,8 @@ impl TryFrom<LabelMeData> for CoronalPointsIR {
     }
 }
 
+static MAX_NUM_VERTS_IN_CURVE: usize = 10;
+
 impl CoronalPoints {
     pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
         polynomial(xs, self.c_coefs.view())
@@ -447,10 +449,11 @@ impl CoronalPoints {
         let mut curves = Vec::new();
         for sup in 0..n - 2 {
             for inf in sup..n {
+                if inf - sup > MAX_NUM_VERTS_IN_CURVE {
+                    break;
+                }
                 if self.is_valid_curve(sup, inf) {
                     curves.push(Curve { sup, inf });
-                } else {
-                    break;
                 }
             }
         }
@@ -465,10 +468,11 @@ impl CoronalPoints {
         let end = inf - 1;
         // search sup from bottom to top (by .rev()) so that we can break early from the loop
         for sup in (0..end).rev() {
+            if inf - sup > MAX_NUM_VERTS_IN_CURVE {
+                break;
+            }
             if self.is_valid_curve(sup, inf) {
                 curves.push(Curve { sup, inf });
-            } else {
-                break;
             }
         }
         self._find_largest_curve(curves)
@@ -479,10 +483,11 @@ impl CoronalPoints {
         let mut curves = Vec::new();
         let start = (sup + 2).min(n);
         for inf in start..n {
+            if inf - sup > MAX_NUM_VERTS_IN_CURVE {
+                break;
+            }
             if self.is_valid_curve(sup, inf) {
                 curves.push(Curve { sup, inf });
-            } else {
-                break;
             }
         }
         self._find_largest_curve(curves)
@@ -495,26 +500,16 @@ impl CoronalPoints {
             return true;
         }
         let centroids = self.spine.tl_centroids();
-        let ys = centroids.slice(s![sup + 1..inf, 1]);
-        let xs = polynomial(ys, self.c_coefs.view());
-
-        // coefficients of the second derivative
-        let coefs2: Array1<f64> = self
-            .c_coefs
-            .slice(s![2..])
-            .iter()
-            .enumerate()
-            .map(|(i, c)| c * ((i + 1) * (i + 2)) as f64)
-            .collect();
-
-        let ddxs = polynomial(ys, coefs2.view());
-        debug!("sup: {}, inf: {}", sup, inf);
-        debug!("xs: {:?}", xs);
-        debug!("ys: {:?}", ys);
-        debug!("ddxs: {:?}", ddxs);
-
-        debug!("ddxs.have_same_signs(): {}", ddxs.have_same_signs());
-        ddxs.have_same_signs()
+        let sub_centroids = centroids.slice(s![sup..=inf, ..]);
+        let top = sub_centroids.index_axis(Axis(0), 0);
+        let bottom = sub_centroids.index_axis(Axis(0), sub_centroids.len_of(Axis(0)) - 1);
+        // check if all points are on the same side of the line
+        let top2bottom = &bottom - &top;
+        let cross_products = sub_centroids.map_axis(Axis(1), |p| {
+            let v = &p - &top;
+            top2bottom[0] * v[1] - top2bottom[1] * v[0]
+        });
+        cross_products.have_same_signs()
     }
 
     fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f64)> {
