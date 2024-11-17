@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
 use svg::node::element;
+use svg::Node;
 pub type LineColors = HashMap<String, String>;
 
 #[derive(Debug, serde::Deserialize)]
@@ -34,6 +35,107 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
 pub struct Painter {
     pub param: DrawParam,
     pub size: (usize, usize),
+}
+
+static X_ATTRS: [&str; 4] = ["x", "cx", "x1", "x2"];
+static Y_ATTRS: [&str; 4] = ["y", "cy", "y1", "y2"];
+
+/// Scale the coordinates of the SVG node recursively
+fn _scale_coordinates(scale: (f64, f64), node: &mut Box<dyn Node>) {
+    // TODO: Implemented only for `arc` at the moment. Need to implement for other elements
+    if node.get_name() == "path" {
+        let attrs = node.get_attributes_mut().unwrap();
+        let d = attrs.get_mut("d").unwrap(); // e.g. "M295.8,73.5 A65.42201,65.42201,0,0,1,296.42203,64.5"
+        let re = regex::Regex::new(r"([MA])|(-?\d+\.?\d*)").unwrap();
+
+        let matches = re.find_iter(d).map(|m| m.as_str()).collect::<Vec<_>>();
+
+        if matches.len() != 11 || matches[0] != "M" || matches[3] != "A" {
+            println!("{:?}", matches);
+            panic!("Invalid path data: {}", d);
+        }
+        let m_scaled_numbers = matches[1..3]
+            .iter()
+            .map(|s| {
+                if let Ok(x) = s.parse::<f64>() {
+                    format!("{}", x * scale.0)
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut a_scaled_numbers: Vec<_> = matches[4..]
+            .iter()
+            .map(|s| s.parse::<f64>().unwrap())
+            .collect();
+
+        a_scaled_numbers[5] *= scale.0;
+        a_scaled_numbers[6] *= scale.1;
+
+        let new_d = format!(
+            "M{},{} A{}",
+            m_scaled_numbers[0],
+            m_scaled_numbers[1],
+            a_scaled_numbers
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        *d = new_d.into();
+    }
+
+    if let Some(attrs) = node.get_attributes_mut() {
+        for (attr, value) in attrs.iter_mut() {
+            if X_ATTRS.contains(&attr.as_str()) {
+                if let Ok(x) = value.parse::<f64>() {
+                    *value = format!("{}", x * scale.0).into();
+                }
+            } else if Y_ATTRS.contains(&attr.as_str()) {
+                if let Ok(y) = value.parse::<f64>() {
+                    *value = format!("{}", y * scale.1).into();
+                }
+            } else if attr == "points" {
+                // polygon and polyline
+                let points: Vec<_> = value.split_whitespace().collect();
+                let mut points = Array2::from_shape_vec((points.len() / 2, 2), points)
+                    .unwrap()
+                    .mapv(|a| a.parse::<f64>().unwrap());
+                points
+                    .index_axis_mut(Axis(1), 0)
+                    .mapv_inplace(|a| a * scale.0);
+                points
+                    .index_axis_mut(Axis(1), 1)
+                    .mapv_inplace(|a| a * scale.1);
+                *value = points
+                    .iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .into();
+            }
+        }
+    }
+    for child in node.get_children_mut().unwrap_or(&mut vec![]) {
+        _scale_coordinates(scale, child);
+    }
+}
+
+/// Scale the coordinates of the SVG nodes
+///
+/// If the scale is (1.0, 1.0), the function do nothing and returns the original nodes
+pub fn scale_coordinates(scale: (f64, f64), groups: Vec<Box<dyn Node>>) -> Vec<Box<dyn Node>> {
+    if scale == (1.0, 1.0) {
+        return groups;
+    }
+    groups
+        .into_iter()
+        .map(|mut g| {
+            _scale_coordinates(scale, &mut g);
+            g
+        })
+        .collect()
 }
 
 /// Squared distance between vectors. i.e. `(p1 - p2)^2`
@@ -374,15 +476,16 @@ impl Painter {
                 let line = self.line(line);
                 group = group.add(line);
                 // arrow
-                let unit_d = &d / d.l2norm();
-                let len = self.param.line_width * 8.0;
-                let p1 = plate.mean_axis(Axis(0)).unwrap();
-                let p2 = rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f64.to_radians());
-                let p3 = rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f64.to_radians());
-                let arrow = ndarray::stack![Axis(0), p1, p2, p3];
-                let arrow = self.polygon(arrow);
+                // disable arrow for now because scaling is not handled properly
+                // let unit_d = &d / d.l2norm();
+                // let len = self.param.line_width * 8.0;
+                // let p1 = plate.mean_axis(Axis(0)).unwrap();
+                // let p2 = rotate_around(&p1 - &unit_d * len, p1.view(), 30.0_f64.to_radians());
+                // let p3 = rotate_around(&p1 - &unit_d * len, p1.view(), -30.0_f64.to_radians());
+                // let arrow = ndarray::stack![Axis(0), p1, p2, p3];
+                // let arrow = self.polygon(arrow);
 
-                group = group.add(arrow);
+                // group = group.add(arrow);
             }
         }
         group
@@ -412,14 +515,12 @@ impl Painter {
     pub fn doc_w_background(
         &self,
         image: &labelme_rs::image::DynamicImage,
-        spacing_xy: &(f64, f64),
     ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
         let (w, h) = self.size;
-        let (spaced_w, spaced_h) = (w as f64 * spacing_xy.0, h as f64 * spacing_xy.1);
         let mut document = svg::Document::new()
             .set("width", w)
             .set("height", h)
-            .set("viewBox", (0i64, 0i64, spaced_w, spaced_h))
+            .set("viewBox", (0, 0, w, h))
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
@@ -428,8 +529,8 @@ impl Painter {
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", spaced_w)
-            .set("height", spaced_h)
+            .set("width", w)
+            .set("height", h)
             .set("xlink:href", b64);
         document = document.add(bg);
         Ok(document)
@@ -1949,11 +2050,11 @@ pub fn draw_sagittal(
         mut line_colors,
     } = palettes;
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document =
-        painter.doc_w_background(&data.image, &sagittal_points.image_metadata.spacing_xy)?;
+    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
     document = document.add(style);
 
+    let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
         let spinal_measure: Box<dyn DrawComponent> = (measure, &sagittal_points).into();
         match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
@@ -1964,10 +2065,16 @@ pub fn draw_sagittal(
                     VISIBILITY_VISIBLE
                 };
                 let g = g.set("visibility", visibility);
-                document = document.add(g)
+                groups.push(g.into());
             }
             Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.id(), err),
         }
+    }
+
+    let spacing = sagittal_points.image_metadata.spacing_xy;
+    groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    for g in groups {
+        document = document.add(g);
     }
 
     Ok(document)
@@ -1989,8 +2096,7 @@ pub fn draw_coronal(
     let (draws, hide) = draws_hide;
 
     let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document =
-        painter.doc_w_background(&data.image, &coronal_points.image_metadata.spacing_xy)?;
+    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
 
     document = document.add(style);
@@ -2000,6 +2106,8 @@ pub fn draw_coronal(
         debug!("CurveSet: {:?}", cs);
         (cs, apexes)
     });
+
+    let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
         let spinal_measure: Box<dyn DrawComponent> =
             (measure, &coronal_points, &curve_set, &apex_set).into();
@@ -2012,10 +2120,16 @@ pub fn draw_coronal(
                     VISIBILITY_VISIBLE
                 };
                 let g = g.set("visibility", visibility);
-                document = document.add(g)
+                groups.push(g.into());
             }
             Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.id(), err),
         }
+    }
+
+    let spacing = coronal_points.image_metadata.spacing_xy;
+    groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    for g in groups {
+        document = document.add(g);
     }
 
     Ok(document)

@@ -96,16 +96,19 @@ pub struct LateralPoints {
     pub chin: Array2<f64>,
     pub manubrium: Array2<f64>,
 
-    pub image_data: ImageMetadata,
+    pub image_metadata: ImageMetadata,
 }
 
 impl LateralPoints {
     // Scale point coordinates using image_data.spacing_xy
     pub fn scale(&mut self) {
-        if self.image_data.spacing_xy == (1.0, 1.0) {
+        if self.image_metadata.spacing_xy == (1.0, 1.0) {
             return;
         }
-        let scale_xy = ndarray::array![self.image_data.spacing_xy.0, self.image_data.spacing_xy.1];
+        let scale_xy = ndarray::array![
+            self.image_metadata.spacing_xy.0,
+            self.image_metadata.spacing_xy.1
+        ];
         self.corners.0.scale(scale_xy.view());
         self.lamina.scale(scale_xy.view());
         self.brow.scale(scale_xy.view());
@@ -156,7 +159,7 @@ impl TryFrom<&LabelMeData> for LateralPoints {
             posterior_hard_palate,
             chin,
             manubrium,
-            image_data,
+            image_metadata: image_data,
         })
     }
 }
@@ -188,7 +191,7 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
             posterior_hard_palate: vec_points_to_array2(&ir.posterior_hard_palate)?,
             chin: vec_points_to_array2(&ir.chin)?,
             manubrium: vec_points_to_array2(&ir.manubrium)?,
-            image_data: ir.image_metadata.clone(),
+            image_metadata: ir.image_metadata.clone(),
         })
     }
 }
@@ -324,7 +327,7 @@ impl From<&LateralPoints> for LateralPointsIR {
             ),
             chin: array2_to_vec_points(lateral_points.chin.to_owned()),
             manubrium: array2_to_vec_points(lateral_points.manubrium.to_owned()),
-            image_metadata: lateral_points.image_data.clone(),
+            image_metadata: lateral_points.image_metadata.clone(),
         }
     }
 }
@@ -443,7 +446,7 @@ impl<'a> DrawComponent for Sacs<'a> {
             &format!("{:.1}", length),
             points.index_axis(Axis(0), 0),
             Some("C1SAC"),
-            Some(&self.0.image_data.unit),
+            Some(&self.0.image_metadata.unit),
         );
         group = group.add(text);
 
@@ -486,7 +489,7 @@ impl<'a> DrawComponent for Sacs<'a> {
                 &format!("{:.1}", length),
                 lamina,
                 Some(title.as_str()),
-                Some(&self.0.image_data.unit),
+                Some(&self.0.image_metadata.unit),
             );
             group = group.add(text);
         }
@@ -569,7 +572,7 @@ impl<'a> DrawComponent for Adi<'a> {
             &format!("{:.1}", length,),
             points.index_axis(Axis(0), 0),
             Some(self.id()),
-            Some(&self.0.image_data.unit),
+            Some(&self.0.image_metadata.unit),
         );
         group = group.add(text);
         Ok(group)
@@ -768,7 +771,7 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
                 &format!("{:.1}", length),
                 intersection_c2_lower_middle.index_axis(Axis(0), 0),
                 Some(self.id()),
-                Some(&self.0.image_data.unit),
+                Some(&self.0.image_metadata.unit),
             );
             group = group.add(text);
         }

@@ -18,21 +18,12 @@ use scolrs::{
 };
 
 fn process_one(
-    mut svg_common: ReadSvgArgCommon,
+    svg_common: ReadSvgArgCommon,
     mut data: LabelMeDataWImage,
     image_data: Option<ImageMetadata>,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
     output: &std::path::Path,
 ) -> Result<()> {
-    if let Some(image_data) = image_data.as_ref() {
-        // mean spacing
-        let draw_scale = (image_data.spacing_xy.0 + image_data.spacing_xy.1) / 2.0;
-        svg_common
-            .draw_param
-            .scale(draw_scale)
-            .map_err(|e| anyhow::anyhow!(e))?;
-    }
-
     if let Some(resize_param) = svg_common.resize_param {
         data.resize(&resize_param);
     }

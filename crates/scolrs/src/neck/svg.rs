@@ -24,15 +24,15 @@ fn process_data(
         LabelMeData::try_from(&lateral_points)?,
         &args.input,
     )
-    .with_context(|| format!("Failed to read {}", lateral_points.image_data.path))?;
+    .with_context(|| format!("Failed to read {}", lateral_points.image_metadata.path))?;
     if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
     }
     // Return scaled points to lateral_points while keeping the original image data
-    let original_image_data = lateral_points.image_data.clone();
+    let original_image_data = lateral_points.image_metadata.clone();
     lateral_points = LateralPoints::try_from(&data.data)?;
-    lateral_points.image_data = original_image_data;
+    lateral_points.image_metadata = original_image_data;
 
     lateral_points.scale();
 
@@ -46,16 +46,10 @@ fn process_data(
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let draw_scale =
-        (lateral_points.image_data.spacing_xy.0 + lateral_points.image_data.spacing_xy.1) / 2.0;
-    let mut draw_param = draw_param.clone();
-    draw_param
-        .scale(draw_scale)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let draw_param = draw_param.clone();
     let style = element::Style::new(draw_param.style());
     let painter = Painter::new(draw_param, svg_size);
-    let mut document =
-        painter.doc_w_background(&data.image, &lateral_points.image_data.spacing_xy)?;
+    let mut document = painter.doc_w_background(&data.image)?;
     document = document.add(style);
 
     let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = neck_sagittal_draw
@@ -63,10 +57,11 @@ fn process_data(
         .map(|m| (m, &lateral_points).into())
         .collect();
 
+    let mut groups = Vec::with_capacity(neck_sagittal_components.len());
     for component in neck_sagittal_components {
         debug!("Draw {:?}", component.id());
         match component.draw(&painter, label_colors, line_colors) {
-            Ok(g) => document = document.add(g),
+            Ok(g) => groups.push(g.into()),
             Err(e) => match e {
                 scolrs::MeasureError::InvalidNumberOfPoints(err) => {
                     warn!("Skip point count error:{:?}", err);
@@ -74,6 +69,12 @@ fn process_data(
                 e => return Err(e.into()),
             },
         }
+    }
+
+    let spacing = lateral_points.image_metadata.spacing_xy;
+    groups = scolrs::scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    for g in groups {
+        document = document.add(g);
     }
     Ok(document)
 }

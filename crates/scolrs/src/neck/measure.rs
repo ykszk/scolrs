@@ -50,8 +50,8 @@ fn process_data(
     measures: &[NeckLateralMeasure],
 ) -> Result<Measurements> {
     let mut lateral_points = lateral_points;
-    if lateral_points.image_data.spacing_xy.0 != 1.0
-        || lateral_points.image_data.spacing_xy.1 != 1.0
+    if lateral_points.image_metadata.spacing_xy.0 != 1.0
+        || lateral_points.image_metadata.spacing_xy.1 != 1.0
     {
         lateral_points.scale();
     }
@@ -62,7 +62,7 @@ fn process_data(
     let measures = measure_all(measures)?;
     Ok(Measurements {
         measurements: measures,
-        unit: lateral_points.image_data.unit.clone(),
+        unit: lateral_points.image_metadata.unit.clone(),
     })
 }
 
@@ -172,9 +172,9 @@ mod tests {
         let mut lateral_points = LateralPoints::try_from(&LateralPointsIR::try_from(
             std::fs::read_to_string(&input)?.as_str(),
         )?)?;
-        lateral_points.image_data.spacing_xy = (0.5, 0.5);
+        lateral_points.image_metadata.spacing_xy = (0.5, 0.5);
         let mut non_scaled = lateral_points.clone();
-        non_scaled.image_data.spacing_xy = (1.0, 1.0);
+        non_scaled.image_metadata.spacing_xy = (1.0, 1.0);
         let measures = NeckLateralMeasure::all();
         let measurements = process_data(lateral_points, &measures)?.measurements;
         let measurements_non_scaled = process_data(non_scaled, &measures)?.measurements;
