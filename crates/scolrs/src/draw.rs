@@ -70,6 +70,8 @@ fn _scale_coordinates(scale: (f64, f64), node: &mut Box<dyn Node>) {
             .map(|s| s.parse::<f64>().unwrap())
             .collect();
 
+        a_scaled_numbers[0] *= scale.0;
+        a_scaled_numbers[1] *= scale.1;
         a_scaled_numbers[5] *= scale.0;
         a_scaled_numbers[6] *= scale.1;
 
@@ -342,16 +344,17 @@ impl Painter {
         let v2_unit = &v2 / v2.l2norm();
         let arc_start = &cross + arc_radius * &v1_unit;
         let arc_end = &cross + arc_radius * &v2_unit;
+        let x_axis_rotation = 0;
         let large_arc_flag = 0;
         let angle_rad = angle_between(line1, line2);
-        let sweep_flag = if angle_rad < 0.0 { 1 } else { 0 };
+        let sweep_flag = if angle_rad < 0.0 { 0 } else { 1 };
         let angle_deg = angle_rad.to_degrees();
         let data = element::path::Data::new()
             .move_to((arc_start[0], arc_start[1]))
             .elliptical_arc_to((
                 arc_radius,
                 arc_radius,
-                0,
+                x_axis_rotation,
                 large_arc_flag,
                 sweep_flag,
                 arc_end[0],
