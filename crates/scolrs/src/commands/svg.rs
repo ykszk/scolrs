@@ -47,7 +47,10 @@ fn process_one(
             let draws = subcommand
                 .measures
                 .unwrap_or_else(CoronalMeasure::all_draws);
-            let hide = subcommand.hide;
+            let mut hide = subcommand.hide;
+            for group in subcommand.hide_group {
+                hide.append(&mut (&group).into());
+            }
             draw_coronal(
                 data,
                 coronal_points,

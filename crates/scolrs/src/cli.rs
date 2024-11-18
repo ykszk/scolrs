@@ -57,6 +57,31 @@ impl Default for SvgSubCommands {
     }
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone)]
+pub enum CoronalMeasureGroup {
+    CobbExtra,
+    NonCobb,
+}
+
+impl From<&CoronalMeasureGroup> for Vec<CoronalMeasure> {
+    fn from(group: &CoronalMeasureGroup) -> Self {
+        use CoronalMeasure::*;
+        match group {
+            CoronalMeasureGroup::CobbExtra => vec![Centroids, SpinalLine, CurveApex],
+            CoronalMeasureGroup::NonCobb => vec![
+                CSVL,
+                T1TiltAngle,
+                CoronalBalance,
+                ClavicleAngle,
+                ShoulderHeight,
+                PelvicObliquity,
+                SacralObliquity,
+                LegLengthDiscrepancy,
+            ],
+        }
+    }
+}
+
 #[derive(Args, Debug, Clone, Default)]
 pub struct SvgSubCoronalArgs {
     /// Measurements to draw. By default, all measurements are drawn. Comma separated list
@@ -65,6 +90,9 @@ pub struct SvgSubCoronalArgs {
     /// Hide measurements. Comma separated list
     #[clap(long, value_delimiter = ',')]
     pub hide: Vec<CoronalMeasure>,
+    /// Hide group of measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide_group: Vec<CoronalMeasureGroup>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -156,9 +184,6 @@ pub struct MeasureSubCoronalArgs {
     /// Measurements to draw. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<CoronalMeasure>>,
-    /// Hide measurements. Comma separated list
-    #[clap(long, value_delimiter = ',')]
-    pub hide: Vec<CoronalMeasure>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -166,9 +191,6 @@ pub struct MeasureSubSagittallArgs {
     /// Measurements to draw. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<SagittalMeasure>>,
-    /// Hide measurements. Comma separated list
-    #[clap(long, value_delimiter = ',')]
-    pub hide: Vec<SagittalMeasure>,
 }
 
 #[derive(Parser, Debug)]
