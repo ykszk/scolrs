@@ -103,7 +103,12 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             .as_path()
             .try_into()
             .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
-        (data, None)
+        let image_data = if svg_common.pull_spacing {
+            Some(ImageMetadata::try_from(Path::new(&data.data.imagePath))?)
+        } else {
+            None
+        };
+        (data, image_data)
     } else {
         let json_str = std::fs::read_to_string(&args.input)
             .with_context(|| format!("Load native format data from {:?}", &args.input))?;
@@ -147,6 +152,7 @@ struct ReadSvgArgCommon {
     direction: Plane,
     subcommand: SvgSubCommands,
     labelme: bool,
+    pull_spacing: bool,
 }
 
 fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
@@ -199,6 +205,7 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
         direction,
         subcommand: args.subcommand,
         labelme: args.labelme,
+        pull_spacing: args.pull_spacing,
     })
 }
 
@@ -235,7 +242,12 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
         let (data, image_data, filename) = if svg_common.labelme {
             let data_line: LabelMeDataLine = line.as_str().try_into()?;
             let data = LabelMeDataWImage::try_from_data_and_path(data_line.content, &args.input)?;
-            (data, None, data_line.filename)
+            let image_data = if svg_common.pull_spacing {
+                Some(ImageMetadata::try_from(Path::new(&data.data.imagePath))?)
+            } else {
+                None
+            };
+            (data, image_data, data_line.filename)
         } else {
             let json_str = line.as_str();
             match svg_common.direction {

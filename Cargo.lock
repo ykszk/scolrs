@@ -2396,6 +2396,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "csv",
+ "dicom-core",
  "dicom-dictionary-std",
  "dicom-object",
  "env_logger",

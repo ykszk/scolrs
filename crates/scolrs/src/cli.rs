@@ -97,6 +97,9 @@ pub struct SvgArgsCommon {
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+    /// Load spacing from dicom
+    #[clap(long)]
+    pub pull_spacing: bool,
     #[clap(subcommand)]
     pub subcommand: SvgSubCommands,
 }

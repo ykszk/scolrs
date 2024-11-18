@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine};
-use log::{debug, error};
+use log::{debug, error, warn};
 use named_derive::{ContentFilename, HasImageMetadata, TryFromJsonStr};
 use ndarray::{
     concatenate, s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2,
@@ -14,6 +14,7 @@ use std::cmp::Ord;
 use std::fmt::Display;
 use std::iter::zip;
 use std::ops::AddAssign;
+use std::path::Path;
 use std::result::Result;
 use strum::VariantArray;
 use thiserror::Error;
@@ -84,6 +85,100 @@ impl From<&LabelMeData> for ImageMetadata {
             width,
             ..Default::default()
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum DicomError {
+    #[error("Read error")]
+    Read(#[from] dicom_object::ReadError),
+    #[error("Tag not found: {0}")]
+    MissingTag(String),
+    #[error("Convert error: {0}")]
+    Convert(String),
+}
+
+pub fn get_pixel_spacing(
+    obj: &dicom_object::DefaultDicomObject,
+) -> Result<Option<(f64, f64)>, DicomError> {
+    use dicom_dictionary_std::tags;
+    let spacing = obj.get(tags::PIXEL_SPACING);
+    if let Some(spacing) = spacing {
+        let spacing = spacing
+            .to_multi_float64()
+            .map_err(|e| DicomError::Convert(e.to_string()))?;
+        return Ok(Some((spacing[0], spacing[1])));
+    } else {
+        let spacing = obj.get(tags::IMAGER_PIXEL_SPACING);
+        if let Some(spacing) = spacing {
+            let spacing = spacing
+                .to_multi_float64()
+                .map_err(|e| DicomError::Convert(e.to_string()))?;
+            warn!("Using Imager Pixel Spacing (0018,1164) instead of Pixel Spacing (0028,0030)");
+            return Ok(Some((spacing[0], spacing[1])));
+        }
+    }
+    Ok(None)
+}
+
+impl TryFrom<&Path> for ImageMetadata {
+    type Error = DicomError;
+
+    fn try_from(path: &Path) -> Result<Self, DicomError> {
+        use dicom_dictionary_std::tags;
+        let obj = dicom_object::open_file(path)?;
+        let spacing = get_pixel_spacing(&obj)?;
+        let (spacing_xy, unit) = if let Some(spacing) = spacing {
+            (spacing, "mm".to_string())
+        } else {
+            warn!("Spacing not found. Using default spacing (1.0, 1.0)");
+            ((1.0, 1.0), "px".to_string())
+        };
+        let height = obj
+            .get(tags::ROWS)
+            .ok_or(DicomError::MissingTag("Rows (0028,0010)".to_string()))?
+            .to_int()
+            .map_err(|e| DicomError::Convert(e.to_string()))?;
+        let width = obj
+            .get(tags::COLUMNS)
+            .ok_or(DicomError::MissingTag("Columns (0028,0011)".to_string()))?
+            .to_int()
+            .map_err(|e| DicomError::Convert(e.to_string()))?;
+        Ok(Self {
+            width,
+            height,
+            path: path.to_string_lossy().to_string(),
+            spacing_xy,
+            unit,
+        })
+    }
+}
+
+pub trait PullImageMetadata {
+    fn pull_image_metadata(&mut self) -> Result<(), DicomError>;
+}
+
+impl<T> PullImageMetadata for T
+where
+    T: HasImageMetadata,
+{
+    fn pull_image_metadata(&mut self) -> Result<(), DicomError> {
+        let metadata = self.image_metadata_mut();
+        if metadata.path.ends_with(".dcm")
+            || metadata.path.ends_with(".DCM")
+            || metadata.path.ends_with(".dicom")
+            || metadata.path.ends_with(".DICOM")
+        {
+            if let Some(spacing) = get_pixel_spacing(&dicom_object::open_file(&metadata.path)?)? {
+                metadata.spacing_xy = spacing;
+                metadata.unit = "mm".to_string();
+            } else {
+                warn!("No pixel spacing found in dicom: {:?}", metadata.path);
+            }
+        } else {
+            warn!("No dicom: {:?}", metadata.path);
+        }
+        Ok(())
     }
 }
 

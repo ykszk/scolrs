@@ -4,10 +4,10 @@ use std::io::{self, BufRead, BufReader};
 use crate::neck::cli::ConvArgs;
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
-use log::warn;
 use scolrs::head_neck::{LateralPointsIR, LateralPointsIRLine, TryConvertContentFilename};
 use scolrs::{
-    CoronalPointsIR, CoronalPointsIRLine, HasImageMetadata, SagittalPointsIR, SagittalPointsIRLine,
+    CoronalPointsIR, CoronalPointsIRLine, DicomError, PullImageMetadata, SagittalPointsIR,
+    SagittalPointsIRLine,
 };
 
 use super::cli::ConvFormat;
@@ -58,47 +58,47 @@ trait PullIfImplemented {
     /// Pull image metadata if implemented
     ///
     /// Just return Ok(()) if not implemented
-    fn pull_if_implemented(&mut self) -> Result<()>;
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError>;
 }
 
 impl PullIfImplemented for LateralPointsIRLine {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
 }
 impl PullIfImplemented for CoronalPointsIRLine {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
 }
 impl PullIfImplemented for SagittalPointsIRLine {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
 }
 impl PullIfImplemented for LabelMeDataLine {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         Ok(())
     }
 }
 
 impl PullIfImplemented for LateralPointsIR {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
 }
 impl PullIfImplemented for CoronalPointsIR {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
 }
 impl PullIfImplemented for SagittalPointsIR {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
 }
 impl PullIfImplemented for LabelMeData {
-    fn pull_if_implemented(&mut self) -> Result<()> {
+    fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         Ok(())
     }
 }
@@ -148,52 +148,6 @@ fn process_ndjson(
         writeln!(&mut writer)?;
     }
     Ok(())
-}
-
-fn get_pixel_spacing(path: &str) -> Result<Option<(f64, f64)>> {
-    use dicom_dictionary_std::tags;
-    let obj = dicom_object::open_file(path)?;
-    let spacing = obj.get(tags::PIXEL_SPACING);
-    if let Some(spacing) = spacing {
-        let spacing = spacing.to_multi_float64()?;
-        return Ok(Some((spacing[0], spacing[1])));
-    } else {
-        let spacing = obj.get(tags::IMAGER_PIXEL_SPACING);
-        if let Some(spacing) = spacing {
-            let spacing = spacing.to_multi_float64()?;
-            warn!("Using Imager Pixel Spacing (0018,1164) instead of Pixel Spacing (0028,0030)");
-            return Ok(Some((spacing[0], spacing[1])));
-        }
-    }
-    Ok(None)
-}
-
-trait PullImageMetadata {
-    fn pull_image_metadata(&mut self) -> Result<()>;
-}
-
-impl<T> PullImageMetadata for T
-where
-    T: HasImageMetadata,
-{
-    fn pull_image_metadata(&mut self) -> Result<()> {
-        let metadata = self.image_metadata_mut();
-        if metadata.path.ends_with(".dcm")
-            || metadata.path.ends_with(".DCM")
-            || metadata.path.ends_with(".dicom")
-            || metadata.path.ends_with(".DICOM")
-        {
-            if let Some(spacing) = get_pixel_spacing(&metadata.path)? {
-                metadata.spacing_xy = spacing;
-                metadata.unit = "mm".to_string();
-            } else {
-                warn!("No pixel spacing found in dicom: {:?}", metadata.path);
-            }
-        } else {
-            warn!("No dicom: {:?}", metadata.path);
-        }
-        Ok(())
-    }
 }
 
 fn process_json(
