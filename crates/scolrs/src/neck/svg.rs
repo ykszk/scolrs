@@ -61,7 +61,10 @@ fn process_data(
     for component in neck_sagittal_components {
         debug!("Draw {:?}", component.id());
         match component.draw(&painter, label_colors, line_colors) {
-            Ok(g) => groups.push(g.into()),
+            Ok(g) => {
+                let g = g.set("visibility", "visible");
+                groups.push(g.into())
+            }
             Err(e) => match e {
                 scolrs::MeasureError::InvalidNumberOfPoints(err) => {
                     warn!("Skip point count error:{:?}", err);

@@ -45,10 +45,20 @@ function initializeMagnifier() {
                     let svg_id = cb.dataset.id;
                     const elm = popupContent.querySelector("#" + svg_id);
                     if (elm) {
-                        if (!elm.style.visibility) {
-                            cb.checked = true;
+                        let li = overlay.querySelector(`li#li_${svg_id}`);
+                        if (li) {
+                            li.style.display = '';
+                        }
+                        let visibility = elm.getAttribute('visibility');
+                        if (visibility) {
+                            cb.checked = visibility === "visible";
                         } else {
-                            cb.checked = elm.style.visibility === "visible";
+                            cb.checked = false;
+                        }
+                    } else {
+                        let li = overlay.querySelector(`li#li_${svg_id}`);
+                        if (li) {
+                            li.style.display = 'none';
                         }
                     }
                 });
@@ -63,7 +73,7 @@ function initializeMagnifier() {
     overlay.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.addEventListener('change', () => {
             let svg_id = cb.dataset.id;
-            console.log("Change visibility",svg_id);
+            console.log("Change visibility", svg_id);
             let visibility = cb.checked ? "visible" : "hidden";
             const elm = popupContent.querySelector("#" + svg_id);
             if (elm) {
