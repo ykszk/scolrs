@@ -131,7 +131,7 @@ fn measure_sagittal(
         .unwrap_or_else(SagittalMeasure::all_measures);
     let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
     for measure in measures {
-        let spinal_measure: Box<dyn MeasureComponent> = (measure, &sagittal_points).into();
+        let spinal_measure: Box<dyn MeasureComponent> = (&measure, &sagittal_points).into();
         results.insert(measure, spinal_measure.measure());
     }
     Ok(results)
@@ -155,9 +155,9 @@ fn measure_coronal(
         (cs, apexes)
     };
     let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
+    let data = (&coronal_points, &curve_set, &apex_set);
     for measure in measures {
-        let spinal_measure: Box<dyn MeasureComponent> =
-            (measure, &coronal_points, &curve_set, &apex_set).into();
+        let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
         results.insert(measure, spinal_measure.measure());
     }
     Ok(results)

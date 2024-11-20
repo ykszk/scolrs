@@ -4,19 +4,19 @@ use std::io::{BufRead, BufReader};
 use crate::neck::cli::SvgArgs;
 use anyhow::{Context, Result};
 use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage};
-use log::{debug, warn};
+use log::warn;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
-use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckSagittalComponent};
-use scolrs::{ColorPalette, DrawParam, Painter};
+use scolrs::head_neck::{LateralPoints, NeckLateralDraw};
+use scolrs::{draw_components, ColorPalette, ColorPalettes, DrawParam, Painter};
 use svg::node::element::{self, SVG};
 
 fn process_data(
     mut lateral_points: LateralPoints,
     args: &SvgArgs,
     draw_param: &DrawParam,
-    label_colors: &mut ColorPalette,
-    line_colors: &mut ColorPalette,
+    label_colors: ColorPalette,
+    line_colors: ColorPalette,
     neck_sagittal_draw: &[NeckLateralDraw],
 ) -> Result<SVG> {
     // use LabelMeDataWImage for resizing
@@ -52,30 +52,20 @@ fn process_data(
     let mut document = painter.doc_w_background(&data.image)?;
     document = document.add(style);
 
-    let neck_sagittal_components: Vec<Box<dyn NeckSagittalComponent>> = neck_sagittal_draw
-        .iter()
-        .map(|m| (m, &lateral_points).into())
-        .collect();
+    let palettes = ColorPalettes {
+        label_colors,
+        line_colors,
+    };
 
-    let mut groups = Vec::with_capacity(neck_sagittal_components.len());
-    for component in neck_sagittal_components {
-        debug!("Draw {:?}", component.id());
-        match component.draw(&painter, label_colors, line_colors) {
-            Ok(g) => {
-                let g = g.set("visibility", "visible");
-                groups.push(g.into())
-            }
-            Err(e) => match e {
-                scolrs::MeasureError::InvalidNumberOfPoints(err) => {
-                    warn!("Skip point count error:{:?}", err);
-                }
-                e => return Err(e.into()),
-            },
-        }
-    }
+    let groups = draw_components(
+        &lateral_points,
+        &lateral_points.image_metadata,
+        neck_sagittal_draw,
+        &Vec::new(),
+        &painter,
+        palettes,
+    )?;
 
-    let spacing = lateral_points.image_metadata.spacing_xy;
-    groups = scolrs::scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
     for g in groups {
         document = document.add(g);
     }
@@ -97,7 +87,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         DrawParam::default()
     };
 
-    let mut label_colors = if let Some(filename) = args.label_colors.as_ref() {
+    let label_colors = if let Some(filename) = args.label_colors.as_ref() {
         ColorPalette::new(
             labelme_rs::load_label_colors(filename)
                 .with_context(|| format!("Load label color {:?}", filename))?,
@@ -105,7 +95,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     } else {
         ColorPalette::new(labelme_rs::LabelColorsHex::default())
     };
-    let mut line_colors = if let Some(filename) = args.line_colors.as_ref() {
+    let line_colors = if let Some(filename) = args.line_colors.as_ref() {
         let reader = std::fs::File::open(filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
         ColorPalette::new(scolrs::load_line_colors(reader)?)
@@ -123,8 +113,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             lateral_points,
             &args,
             &draw_param,
-            &mut label_colors,
-            &mut line_colors,
+            label_colors,
+            line_colors,
             &neck_sagittal_draw,
         )?;
         std::fs::write(&args.output, document.to_string())
@@ -148,8 +138,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 lateral_points,
                 &args,
                 &draw_param,
-                &mut label_colors.clone(),
-                &mut line_colors.clone(),
+                label_colors.clone(),
+                line_colors.clone(),
                 &neck_sagittal_draw,
             );
             let document = match result {

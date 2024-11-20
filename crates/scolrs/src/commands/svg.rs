@@ -52,9 +52,9 @@ fn process_one(
                 hide.append(&mut (&group).into());
             }
             draw_coronal(
-                data,
+                data.image,
                 coronal_points,
-                (draws, hide),
+                (&draws, &hide),
                 svg_common.draw_param,
                 svg_size,
                 svg_common.palettes,
@@ -73,10 +73,10 @@ fn process_one(
                 .unwrap_or_else(SagittalMeasure::all_draws);
             let hide = subcommand.hide;
             draw_sagittal(
-                data,
+                data.image,
                 sagittal_points,
-                draws,
-                hide,
+                &draws,
+                &hide,
                 svg_common.draw_param,
                 svg_size,
                 svg_common.palettes,

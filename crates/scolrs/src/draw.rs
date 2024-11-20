@@ -3,7 +3,7 @@ use crate::{
     SagittalPoints, ValidateLength, CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
-use labelme_rs::LabelMeDataWImage;
+use labelme_rs::image::DynamicImage;
 use log::{debug, warn};
 use named_derive::Named;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
@@ -1925,8 +1925,8 @@ pub fn femoral_incidence_angle(
     Ok(angle_deg)
 }
 
-impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
-    fn from((measure, sagittal_points): (SagittalMeasure, &'a SagittalPoints)) -> Self {
+impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
+    fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
         match measure {
             SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
             SagittalMeasure::ProximalThoracicKyphosis => {
@@ -1953,8 +1953,8 @@ impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawComponent +
     }
 }
 
-impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponent + 'a> {
-    fn from((measure, sagittal_points): (SagittalMeasure, &'a SagittalPoints)) -> Self {
+impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponent + 'a> {
+    fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
         match measure {
             SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
             SagittalMeasure::ProximalThoracicKyphosis => {
@@ -1980,11 +1980,19 @@ impl<'a> From<(SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponen
     }
 }
 
-impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
-    for Box<dyn DrawComponent + 'a>
+impl<'a, 'b>
+    From<(
+        &'b CoronalMeasure,
+        &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
+    )> for Box<dyn DrawComponent + 'a>
 {
-    fn from(value: (CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)) -> Self {
-        let (measure, coronal_points, curve_set, apex_set) = value;
+    fn from(
+        value: (
+            &'b CoronalMeasure,
+            &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
+        ),
+    ) -> Self {
+        let (measure, (coronal_points, curve_set, apex_set)) = value;
         match measure {
             CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
             CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
@@ -2008,11 +2016,19 @@ impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
     }
 }
 
-impl<'a> From<(CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)>
-    for Box<dyn MeasureComponent + 'a>
+impl<'a, 'b>
+    From<(
+        &'b CoronalMeasure,
+        &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
+    )> for Box<dyn MeasureComponent + 'a>
 {
-    fn from(value: (CoronalMeasure, &'a CoronalPoints, &'a CurveSet, &'a ApexSet)) -> Self {
-        let (measure, coronal_points, curve_set, _apex_set) = value;
+    fn from(
+        value: (
+            &'b CoronalMeasure,
+            &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
+        ),
+    ) -> Self {
+        let (measure, (coronal_points, curve_set, _apex_set)) = value;
         match measure {
             CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
             CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
@@ -2039,30 +2055,28 @@ pub struct ColorPalettes {
 const VISIBILITY_HIDDEN: &str = "hidden";
 const VISIBILITY_VISIBLE: &str = "visible";
 
-pub fn draw_sagittal(
-    data: LabelMeDataWImage,
-    sagittal_points: SagittalPoints,
-    draws: Vec<SagittalMeasure>,
-    hide: Vec<SagittalMeasure>,
-    draw_param: DrawParam,
-    svg_size: (usize, usize),
+pub fn draw_components<'a, T, S>(
+    data: &'a T,
+    image_metadata: &crate::ImageMetadata,
+    draws: &[S],
+    hide: &[S],
+    painter: &Painter,
     palettes: ColorPalettes,
-) -> Result<element::SVG, DrawError> {
+) -> Result<Vec<Box<dyn Node>>, DrawError>
+where
+    for<'b> (&'b S, &'a T): Into<Box<dyn DrawComponent + 'a>>,
+    S: Clone + Copy + PartialEq,
+{
     let ColorPalettes {
         mut label_colors,
         mut line_colors,
     } = palettes;
-    let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
-    let style = element::Style::new(draw_param.style());
-    document = document.add(style);
-
     let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
-        let spinal_measure: Box<dyn DrawComponent> = (measure, &sagittal_points).into();
-        match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
+        let spinal_measure: Box<dyn DrawComponent> = (measure, data).into();
+        match spinal_measure.draw(painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
-                let visibility = if hide.contains(&measure) {
+                let visibility = if hide.contains(measure) {
                     VISIBILITY_HIDDEN
                 } else {
                     VISIBILITY_VISIBLE
@@ -2074,8 +2088,34 @@ pub fn draw_sagittal(
         }
     }
 
-    let spacing = sagittal_points.image_metadata.spacing_xy;
+    let spacing = image_metadata.spacing_xy;
     groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    Ok(groups)
+}
+
+pub fn draw_sagittal(
+    image: DynamicImage,
+    sagittal_points: SagittalPoints,
+    draws: &[SagittalMeasure],
+    hide: &[SagittalMeasure],
+    draw_param: DrawParam,
+    svg_size: (usize, usize),
+    palettes: ColorPalettes,
+) -> Result<element::SVG, DrawError> {
+    let style = element::Style::new(draw_param.style());
+    let painter = Painter::new(draw_param, svg_size);
+    let mut document = painter.doc_w_background(&image)?;
+    document = document.add(style);
+
+    let groups = draw_components(
+        &sagittal_points,
+        &sagittal_points.image_metadata,
+        draws,
+        hide,
+        &painter,
+        palettes,
+    )?;
+
     for g in groups {
         document = document.add(g);
     }
@@ -2084,23 +2124,19 @@ pub fn draw_sagittal(
 }
 
 pub fn draw_coronal(
-    data: LabelMeDataWImage,
+    image: DynamicImage,
     coronal_points: CoronalPoints,
-    draws_hide: (Vec<CoronalMeasure>, Vec<CoronalMeasure>),
+    draws_hide: (&[CoronalMeasure], &[CoronalMeasure]),
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
 ) -> Result<element::SVG, DrawError> {
-    let ColorPalettes {
-        mut label_colors,
-        mut line_colors,
-    } = palettes;
     let (draws, hide) = draws_hide;
 
-    let painter = Painter::new(draw_param.clone(), svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
     let style = element::Style::new(draw_param.style());
+    let painter = Painter::new(draw_param, svg_size);
+    let mut document = painter.doc_w_background(&image)?;
 
     document = document.add(style);
 
@@ -2110,27 +2146,17 @@ pub fn draw_coronal(
         (cs, apexes)
     });
 
-    let mut groups = Vec::with_capacity(draws.len());
-    for measure in draws {
-        let spinal_measure: Box<dyn DrawComponent> =
-            (measure, &coronal_points, &curve_set, &apex_set).into();
+    let data = (&coronal_points, &curve_set, &apex_set);
 
-        match spinal_measure.draw(&painter, &mut label_colors, &mut line_colors) {
-            Ok(g) => {
-                let visibility = if hide.contains(&measure) {
-                    VISIBILITY_HIDDEN
-                } else {
-                    VISIBILITY_VISIBLE
-                };
-                let g = g.set("visibility", visibility);
-                groups.push(g.into());
-            }
-            Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.id(), err),
-        }
-    }
+    let groups = draw_components(
+        &data,
+        &coronal_points.image_metadata,
+        draws,
+        hide,
+        &painter,
+        palettes,
+    )?;
 
-    let spacing = coronal_points.image_metadata.spacing_xy;
-    groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
     for g in groups {
         document = document.add(g);
     }

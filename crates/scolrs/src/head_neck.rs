@@ -1028,7 +1028,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureC
     }
 }
 
-#[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
+#[derive(
+    strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone, PartialEq,
+)]
 #[clap(rename_all = "PascalCase")]
 pub enum NeckLateralDraw {
     CervicalPoints,
@@ -1048,7 +1050,7 @@ impl NeckLateralDraw {
     }
 }
 
-impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn NeckSagittalComponent + 'a> {
+impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn DrawComponent + 'a> {
     fn from(value: (&NeckLateralDraw, &'a LateralPoints)) -> Self {
         let (draw, lateral_points) = value;
         match draw {
