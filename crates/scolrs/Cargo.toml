@@ -36,7 +36,7 @@ labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git" }
 log.workspace = true
 lyon_geom = "1.0.4"
 ndarray.workspace = true
-ndarray-stats = "0.5"
+ndarray-stats.workspace = true
 rulinalg = "0.4.2"                                               # replace with nalgebra?
 serde.workspace = true
 serde_repr = "0.1.17"

@@ -15,7 +15,7 @@ env_logger.workspace = true
 log.workspace = true
 ndarray.workspace = true
 ndarray-ndimage = "0.4.0"
-ndarray-stats = "0.6.0"
+ndarray-stats.workspace = true
 scolrs = { path = "../scolrs" }
 serde.workspace = true
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
