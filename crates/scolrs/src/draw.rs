@@ -646,6 +646,7 @@ pub trait Named {
     fn default_group_w_classes(&self, classes: &[&str]) -> element::Group {
         let mut classes = Vec::from(classes);
         classes.extend_from_slice(self.draw_type());
+        classes.push(self.id());
         self.ided_group().set("class", classes)
     }
 }

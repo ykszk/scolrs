@@ -5,7 +5,7 @@ members = [
     "crates/devsc",
     "crates/named_derive",
 ]
-default-members = ["crates/scolrs", "crates/pyscol"]
+default-members = ["crates/scolrs"]
 resolver = "2"
 
 [workspace.package]
