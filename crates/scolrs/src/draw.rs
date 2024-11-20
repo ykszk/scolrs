@@ -37,8 +37,8 @@ pub struct Painter {
     pub size: (usize, usize),
 }
 
-static X_ATTRS: [&str; 4] = ["x", "cx", "x1", "x2"];
-static Y_ATTRS: [&str; 4] = ["y", "cy", "y1", "y2"];
+const X_ATTRS: [&str; 4] = ["x", "cx", "x1", "x2"];
+const Y_ATTRS: [&str; 4] = ["y", "cy", "y1", "y2"];
 
 /// Scale the coordinates of the SVG node recursively
 fn _scale_coordinates(scale: (f64, f64), node: &mut Box<dyn Node>) {

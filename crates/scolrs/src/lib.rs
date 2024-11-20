@@ -528,7 +528,7 @@ impl TryFrom<LabelMeData> for CoronalPointsIR {
     }
 }
 
-static MAX_NUM_VERTS_IN_CURVE: usize = 10;
+const MAX_NUM_VERTS_IN_CURVE: usize = 10;
 
 impl CoronalPoints {
     pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
