@@ -321,12 +321,8 @@ where
     use rulinalg::matrix::{BaseMatrix, Matrix};
     use rulinalg::vector::Vector;
 
-    let vander = Matrix::new(
-        vander.nrows(),
-        vander.ncols(),
-        vander.into_raw_vec_and_offset().0,
-    );
-    let ys = Vector::new(ys.to_owned().into_raw_vec_and_offset().0);
+    let vander = Matrix::new(vander.nrows(), vander.ncols(), vander.into_raw_vec());
+    let ys = Vector::new(ys.to_owned().into_raw_vec());
     let a = vander.transpose() * &vander;
 
     let b = &vander.transpose() * &ys;

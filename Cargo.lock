@@ -312,7 +312,7 @@ dependencies = [
  "image 0.24.9",
  "log",
  "ndarray 0.15.6",
- "ndarray-stats 0.5.1",
+ "ndarray-stats",
  "num-traits",
  "thiserror 1.0.69",
 ]
@@ -523,9 +523,9 @@ dependencies = [
  "dicom-transfer-syntax-registry",
  "env_logger",
  "log",
- "ndarray 0.16.1",
+ "ndarray 0.15.6",
  "ndarray-ndimage",
- "ndarray-stats 0.6.0",
+ "ndarray-stats",
  "pretty_assertions",
  "scolrs",
  "serde",
@@ -1665,7 +1665,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e25f143f76f451ed1c8171c9fb87f0edf4942984d5782b0fb2657bff9fd2fe8"
 dependencies = [
  "ndarray 0.15.6",
- "ndarray-stats 0.5.1",
+ "ndarray-stats",
  "num-traits",
 ]
 
@@ -1678,21 +1678,6 @@ dependencies = [
  "indexmap 1.9.3",
  "itertools 0.10.5",
  "ndarray 0.15.6",
- "noisy_float",
- "num-integer",
- "num-traits",
- "rand",
-]
-
-[[package]]
-name = "ndarray-stats"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ebbe97acce52d06aebed4cd4a87c0941f4b2519b59b82b4feb5bd0ce003dfd"
-dependencies = [
- "indexmap 2.6.0",
- "itertools 0.13.0",
- "ndarray 0.16.1",
  "noisy_float",
  "num-integer",
  "num-traits",
@@ -2407,8 +2392,8 @@ dependencies = [
  "log",
  "lyon_geom",
  "named_derive",
- "ndarray 0.16.1",
- "ndarray-stats 0.6.0",
+ "ndarray 0.15.6",
+ "ndarray-stats",
  "pretty_assertions",
  "rayon",
  "regex",
