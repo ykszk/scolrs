@@ -4,10 +4,10 @@ use crate::{
     angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
     distanced_pair3, draw_incidence_angle, extract_points, femoral_incidence_angle,
     nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
-    ContentFilename, Corners, DrawComponent, DrawCorners, HasCornerPoints, HasImageMetadata,
-    ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, ScolError, ValidateLength,
-    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
-    CLASS_TEXT, CORNER_LABELS,
+    ContentFilename, Corners, DrawComponent, DrawCorners, DrawError, HasCornerPoints,
+    HasImageMetadata, ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, ScolError,
+    ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+    CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -427,7 +427,7 @@ impl<'a> DrawComponent for Sacs<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         self.0.posterior_dens.validate_length(1)?;
         self.0.lamina.validate_length(8)?;
         let color = line_colors.get_or_new(self.id());
@@ -556,7 +556,7 @@ impl<'a> DrawComponent for Adi<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         self.prep()?;
@@ -613,7 +613,7 @@ impl<'a> DrawComponent for OC2<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
@@ -659,7 +659,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let mut group = self.default_group();
         group = group.set("stroke", line_colors.get_or_new(self.id()));
         let wedge_lengths: Vec<_> = self
@@ -750,7 +750,7 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let intersection_c2_lower_middle = self.prep()?;
@@ -811,7 +811,7 @@ impl<'a> DrawComponent for ThoracicInletAngle<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let group = self.default_group().set("stroke", color).set("fill", color);
         let t1_top_plate = self.prep()?;
@@ -866,7 +866,7 @@ impl<'a> DrawComponent for NeckTilt<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (manubrium_to_t1, v_line_from_manubrium, angle) = self.prep()?;
@@ -918,7 +918,7 @@ impl<'a> DrawComponent for CervicalPoints<'a> {
         painter: &Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let mut group = self.default_group();
         group = self.draw_corners(group, painter, label_colors)?;
 
@@ -958,7 +958,7 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let mut group = self.default_group();
         let mut c2t1_corners = self.0.corners.0.clone();
         let dens = concatenate(

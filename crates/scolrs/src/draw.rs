@@ -552,7 +552,7 @@ where
 
 type ColorMap = HashMap<String, String>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ColorPalette {
     color_map: HashMap<String, String>,
     color_cycler: labelme_rs::ColorCycler,
@@ -627,12 +627,12 @@ pub enum DrawError {
 /// Use Named macro to implement this trait
 pub trait Named {
     /// Unique identifier for the component
-    fn id(&self) -> &'static str;
+    fn id(&self) -> &str;
     /// Labels for the component
-    fn label(&self) -> &'static str;
+    fn label(&self) -> &str;
     /// Short description for the component
-    fn description(&self) -> Option<&'static str>;
-    fn draw_type(&self) -> &[&'static str];
+    fn description(&self) -> Option<&str>;
+    fn draw_type(&self) -> &[&str];
     fn ided_group(&self) -> element::Group {
         let g = element::Group::new()
             .set("id", self.id())
@@ -656,7 +656,7 @@ pub trait DrawComponent: Named {
         painter: &Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError>;
+    ) -> Result<element::Group, DrawError>;
 }
 pub trait MeasureComponent: Named {
     fn measure(&self) -> Result<f64, MeasureError>;
@@ -683,6 +683,66 @@ pub trait SagittalComponent: DrawComponent + MeasureComponent {
     }
 }
 
+pub struct ImageOverlay {
+    id: String,
+    label: String,
+    description: Option<String>,
+    image: DynamicImage,
+}
+
+impl ImageOverlay {
+    pub fn new(
+        id: String,
+        label: String,
+        description: Option<String>,
+        image: DynamicImage,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            description,
+            image,
+        }
+    }
+}
+
+impl Named for ImageOverlay {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn label(&self) -> &str {
+        &self.label
+    }
+    fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+    fn draw_type(&self) -> &[&str] {
+        &["ImageOverlay"]
+    }
+}
+impl CommonComponent for ImageOverlay {}
+impl DrawComponent for ImageOverlay {
+    fn draw(
+        &self,
+        _painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let group = self.default_group();
+        let b64 = format!(
+            "data:image/jpeg;base64,{}",
+            labelme_rs::img2base64(&self.image, labelme_rs::image::ImageFormat::Jpeg)?
+        );
+        let layer = element::Image::new()
+            .set("x", 0i64)
+            .set("y", 0i64)
+            .set("width", self.image.width())
+            .set("height", self.image.height())
+            .set("xlink:href", b64);
+        Ok(group.add(layer))
+    }
+}
+
 /// Label text for each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
@@ -694,7 +754,7 @@ impl<'a> DrawComponent for VertebralLabels<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let mut g_vert_labels = self.default_group();
         let centroids = self.0.tl_centroids();
         for (coords, label) in
@@ -732,7 +792,7 @@ impl<'a> DrawComponent for VertebralPoints<'a> {
         painter: &Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let g = self.default_group();
         self.draw_corners(g, painter, label_colors)
     }
@@ -744,7 +804,7 @@ pub trait DrawCorners {
         group: element::Group,
         painter: &Painter,
         label_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError>;
+    ) -> Result<element::Group, DrawError>;
 }
 
 ///  Helper trait to provide default implementation for drawing corners
@@ -757,7 +817,7 @@ where
         group: element::Group,
         painter: &Painter,
         label_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let mut g_corners = group;
         for (points, label) in [
             self.top_left(),
@@ -804,7 +864,7 @@ impl<'a> DrawComponent for Centroids<'a> {
         painter: &Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let label = self.id();
         let color = label_colors.get_or_new(label);
         let mut g_centroids = self.default_group().set("stroke", color).set("fill", color);
@@ -834,9 +894,9 @@ macro_rules! impl_cobb_angle {
                 painter: &Painter,
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
-            ) -> Result<element::Group, MeasureError> {
+            ) -> Result<element::Group, DrawError> {
                 if self.1.is_none() {
-                    return Err(MeasureError::NoCurveFound);
+                    return Err(DrawError::MeasureError(MeasureError::NoCurveFound));
                 }
                 let coronal_points = self.0;
                 let (curve, _angle) = self.1.as_ref().unwrap();
@@ -900,7 +960,7 @@ impl<'a> DrawComponent for CurveApex<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         let apex_set = &self.1;
         let vert_discs = coronal_points.spine.tl_vert_disc_corners().0;
@@ -936,7 +996,7 @@ impl<'a> DrawComponent for SpinalLine<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let label = self.id();
         let g = self.default_group();
         let centroids = self.0.tl_centroids();
@@ -967,7 +1027,7 @@ impl<'a> DrawComponent for Csvl<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         let spine = &coronal_points.spine;
         let label = self.id();
@@ -999,7 +1059,7 @@ impl DrawComponent for T1TiltAngle<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         let spine = &coronal_points.spine;
         let label = self.id();
@@ -1013,7 +1073,7 @@ impl DrawComponent for T1TiltAngle<'_> {
         let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
         let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
         if l2r.l2norm() == 0.0 {
-            return Err(MeasureError::ZeroLengthLine);
+            return Err(DrawError::MeasureError(MeasureError::ZeroLengthLine));
         }
         let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
         g = g.add(painter.line(sup_line.view()));
@@ -1075,7 +1135,7 @@ impl DrawComponent for CoronalBalance<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
         let label = self.id();
         let points = self.prep(spine);
@@ -1110,7 +1170,7 @@ impl DrawComponent for ClavicleAngle<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         coronal_points.clavicle.0.validate_length(2)?;
         let label = self.id();
@@ -1146,7 +1206,7 @@ fn draw_difference_in_x(
     points: ArrayView2<f64>,
     painter: &Painter,
     unit: &str,
-) -> Result<element::Group, MeasureError> {
+) -> Result<element::Group, DrawError> {
     let dx = difference_in_x(points)?;
     let mut g = group;
     for c in points.axis_iter(Axis(0)) {
@@ -1188,7 +1248,7 @@ fn draw_difference_in_y(
     points: ArrayView2<f64>,
     painter: &Painter,
     unit: &str,
-) -> Result<element::Group, MeasureError> {
+) -> Result<element::Group, DrawError> {
     let dy = difference_in_y(points)?;
     let mut g = group;
     for c in points.axis_iter(Axis(0)) {
@@ -1218,7 +1278,7 @@ impl DrawComponent for ShoulderHeight<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let g = self.default_group().set("fill", color).set("stroke", color);
 
@@ -1287,7 +1347,7 @@ impl DrawComponent for PelvicObliquity<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         coronal_points.pelvis.0.validate_length(2)?;
         let label = self.id();
@@ -1315,7 +1375,7 @@ impl DrawComponent for SacralObliquity<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
         coronal_points.femoral_head.0.validate_length(2)?;
         let label = self.id();
@@ -1368,7 +1428,7 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let g = self.default_group().set("fill", color).set("stroke", color);
         draw_difference_in_y(
@@ -1435,7 +1495,7 @@ macro_rules! impl_kyophosis {
                 painter: &Painter,
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
-            ) -> Result<element::Group, MeasureError> {
+            ) -> Result<element::Group, DrawError> {
                 let label = self.id();
                 let aux_param = if $opposite {
                     CobbAux::opposite_default()
@@ -1540,7 +1600,7 @@ impl<'a> DrawComponent for LumbarLordosis<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
         let aux_param = CobbAux::default();
         let label = self.id();
@@ -1588,7 +1648,7 @@ impl<'a> DrawComponent for SagittalBalance<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let points = Self::prep(self.0);
         let label = self.id();
         let color = line_colors.get_or_new(label);
@@ -1635,7 +1695,7 @@ impl<'a> DrawComponent for LumbosacralAngle<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
         let label = self.id();
@@ -1668,7 +1728,7 @@ impl<'a> DrawComponent for PelvicIncidence<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         self.0.femoral_head.0.validate_length_more_than(1)?;
         let label = self.id();
         let sac_sup = self.0.spine.sacral_sup_plate();
@@ -1711,7 +1771,7 @@ impl<'a> DrawComponent for PelvicTilt<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let sagittal_points = self.0;
         let (sac2fem, v_line) = Self::prep(sagittal_points)?;
         let label = self.id();
@@ -1765,7 +1825,7 @@ impl<'a> DrawComponent for SacralSlope<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let sagittal_points = self.0;
         let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
         let label = self.id();
@@ -1810,7 +1870,7 @@ impl<'a> DrawComponent for L5IncidenceAngle<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         self.0.femoral_head.0.validate_length_more_than(1)?;
         let label = self.id();
         let l5_sup = self
@@ -1881,7 +1941,7 @@ impl<'a> DrawComponent for PelvicRadiusAngle<'a> {
         painter: &Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, MeasureError> {
+    ) -> Result<element::Group, DrawError> {
         let sagittal_points = self.0;
         let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
         let post_sac = sac_sup.index_axis(Axis(0), 1);

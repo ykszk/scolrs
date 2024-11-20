@@ -307,7 +307,7 @@ pub fn polyfit<S>(
     xs: ndarray::ArrayBase<S, ndarray::Ix1>,
     ys: ndarray::ArrayBase<S, ndarray::Ix1>,
     deg: usize,
-) -> Result<ndarray::Array1<f64>, rulinalg::error::Error>
+) -> Result<ndarray::Array1<f64>, ScolError>
 where
     S: ndarray::Data<Elem = f64>,
 {
@@ -326,8 +326,8 @@ where
     let a = vander.transpose() * &vander;
 
     let b = &vander.transpose() * &ys;
-    a.solve(b)
-        .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e))
+    Ok(a.solve(b)
+        .map(|c| ndarray::Array1::from_iter(c).mapv(|e| e))?)
 }
 
 /// Calculate polynomial curve points
@@ -364,7 +364,7 @@ impl Spine {
         self.c_c7tl.scale(scale_xy);
     }
 
-    pub fn fit_poly(&self) -> Result<Array1<f64>, rulinalg::error::Error> {
+    pub fn fit_poly(&self) -> Result<Array1<f64>, ScolError> {
         polyfit(
             self.c_c7tl.slice(s![1.., 1]),
             self.c_c7tl.slice(s![1.., 0]),
@@ -388,7 +388,7 @@ pub struct CoronalPoints {
 
 impl CoronalPoints {
     /// Scale all points by `scale_xy` and refit the polynomial curve
-    pub fn scale(&mut self) -> Result<(), rulinalg::error::Error> {
+    pub fn scale(&mut self) -> Result<(), ScolError> {
         if self.image_metadata.spacing_xy == (1.0, 1.0) {
             return Ok(());
         }

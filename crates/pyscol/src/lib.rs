@@ -1,6 +1,15 @@
+use std::collections::HashMap;
+
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
+use labelme_rs::image::{self, DynamicImage, GrayImage};
+use log::{debug, info};
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
+use scolrs::{
+    draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPoints, CoronalPointsIR,
+    DrawComponent, DrawError, DrawParam, MeasureError, Painter, ScolDesc,
+};
+use svg::node::element;
 
 #[pyfunction]
 #[pyo3(name = "trimming_box_with_resample")]
@@ -78,6 +87,153 @@ clahe_impl!(clahe_u16_u16, u16, u16);
 //         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
 // }
 
+#[derive(thiserror::Error, Debug)]
+pub enum PyScolError {
+    #[error("Error in scolrs: {0}")]
+    ScolError(#[from] scolrs::ScolError),
+    #[error("Error in labelme_rs: {0}")]
+    LabelMeError(#[from] labelme_rs::LabelMeDataError),
+    #[error("Error in drawing: {0}")]
+    DrawError(#[from] DrawError),
+    #[error("Error in measuring: {0}")]
+    MeasureError(#[from] MeasureError),
+    #[error("Error in json: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("Image must be 2D or 3D")]
+    ImageShape,
+    #[error("Channel has to be 3 for 3D array")]
+    ChannelMismatch,
+}
+
+impl From<PyScolError> for PyErr {
+    fn from(e: PyScolError) -> PyErr {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e))
+    }
+}
+
+fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicImage, PyScolError> {
+    let shape = arr.shape();
+    match shape.len() {
+        2 => {
+            let arr2d = arr.as_array().as_standard_layout().to_owned();
+            Ok(DynamicImage::ImageLuma8(
+                GrayImage::from_raw(shape[1] as u32, shape[0] as u32, arr2d.into_raw_vec())
+                    .unwrap(),
+            ))
+        }
+        3 => {
+            if shape[2] != 3 {
+                return Err(PyScolError::ImageShape);
+            }
+            let arr3d = arr.as_array().as_standard_layout().to_owned();
+            Ok(DynamicImage::ImageRgb8(
+                image::RgbImage::from_raw(shape[1] as u32, shape[0] as u32, arr3d.into_raw_vec())
+                    .unwrap(),
+            ))
+        }
+        _ => Err(PyScolError::ImageShape),
+    }
+}
+
+#[pyfunction]
+#[pyo3(name = "py_draw_coronal")]
+#[allow(clippy::too_many_arguments)]
+pub fn py_draw_coronal(
+    image: PyReadonlyArrayDyn<'_, u8>,
+    coronal_points_json: &str,
+    draws: Vec<String>,
+    hide: Vec<String>,
+    draw_param_json: &str,
+    svg_size: (usize, usize),
+    label_colors: HashMap<String, String>,
+    line_colors: HashMap<String, String>,
+    scol_desc_json: Option<&str>,
+    overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+) -> Result<String, PyScolError> {
+    let coronal_points: CoronalPointsIR = serde_json::from_str(coronal_points_json)?;
+    let mut coronal_points = CoronalPoints::try_from(coronal_points)?;
+    coronal_points.scale()?;
+    let draw_param: DrawParam = serde_json::from_str(draw_param_json)?;
+
+    let style = element::Style::new(draw_param.style());
+    let painter = Painter::new(draw_param, svg_size);
+
+    let mut line_colors = ColorPalette::new(line_colors);
+    let mut label_colors = ColorPalette::new(label_colors);
+
+    let dynamic_image = ndarray_to_dynamic_image(image)?;
+    info!(
+        "Dynamic image {}x{} in {:?}",
+        dynamic_image.width(),
+        dynamic_image.height(),
+        dynamic_image.color()
+    );
+    let mut document = painter.doc_w_background(&dynamic_image)?;
+
+    document = document.add(style);
+
+    if let Some(overlay) = overlay {
+        let overlay_image = ndarray_to_dynamic_image(overlay)?;
+        info!("Overlay image: {:?}", overlay_image);
+        let g = scolrs::ImageOverlay::new(
+            "heatmap".to_string(),
+            "heatmap".to_string(),
+            None,
+            overlay_image,
+        )
+        .draw(&painter, &mut label_colors, &mut line_colors)?;
+        document = document.add(g);
+    }
+    let palettes = ColorPalettes {
+        line_colors,
+        label_colors,
+    };
+
+    let (curve_set, apex_set) = match scol_desc_json {
+        Some(s) => {
+            let scol_desc: ScolDesc = serde_json::from_str(s)?;
+            (scol_desc.curves, scol_desc.apices)
+        }
+        None => {
+            let (cs, apexes, _major_curve) = coronal_points.identify_curves();
+            debug!("CurveSet: {:?}", cs);
+            (cs, apexes)
+        }
+    };
+
+    let data = (&coronal_points, &curve_set, &apex_set);
+
+    let draws = if draws.is_empty() {
+        CoronalMeasure::all_draws()
+    } else {
+        draws
+            .iter()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect()
+    };
+    let hide: Vec<CoronalMeasure> = hide
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+
+    let groups = draw_components(
+        &data,
+        &coronal_points.image_metadata,
+        &draws,
+        &hide,
+        &painter,
+        palettes,
+    )?;
+
+    for g in groups {
+        document = document.add(g);
+    }
+
+    let svg = document.to_string();
+
+    Ok(svg)
+}
+
 #[pymodule]
 fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     env_logger::init();
@@ -85,6 +241,7 @@ fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(clahe_u8_u8, m)?)?;
     m.add_function(wrap_pyfunction!(clahe_u16_u8, m)?)?;
     m.add_function(wrap_pyfunction!(clahe_u16_u16, m)?)?;
+    m.add_function(wrap_pyfunction!(py_draw_coronal, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u8_u8, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u16_u16, m)?)?;
     Ok(())

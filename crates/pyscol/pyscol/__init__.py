@@ -3,12 +3,15 @@ from pydantic import BaseModel
 from enum import Enum
 from typing import Optional
 
-from .pyscol import clahe_u8_u8, clahe_u16_u16, clahe_u16_u8, trimming_box_with_resample
+from .pyscol import clahe_u8_u8, clahe_u16_u16, clahe_u16_u8, trimming_box_with_resample, py_draw_coronal
+
+
 class TrimImageFilter(str, Enum):
-    Original = 'original',
+    Original = ('original',)
     SobelX = 'sobel_x'
     SobelY = 'sobel_y'
     Laplacian = 'laplacian'
+
 
 class TrimPredicateSource(BaseModel):
     filter: TrimImageFilter
@@ -33,7 +36,9 @@ def trimming_param(arr2d: np.ndarray, pred_source: list[TrimPredicateSource]):
     return trimming_box_with_resample(int16arr, pred_source_json, resample_step)
 
 
-def clahe(arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, tile_sample: float, u8_out: bool) -> np.ndarray:
+def clahe(
+    arr: np.ndarray, tile_width: int, tile_height: int, clip_limit: int, tile_sample: float, u8_out: bool
+) -> np.ndarray:
     '''
     Contrast Limited Adaptive Histogram Equalization
 
@@ -84,3 +89,29 @@ def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: 
         return ada_minmax_u8_u8(arr, tile_width, tile_height, tile_sample)
     else:
         raise ValueError(f"Unsupported dtype: {arr.dtype}")
+
+
+def draw_coronal(
+    image: np.ndarray,
+    coronal_points_json: str,
+    draws: list[str],
+    hide: list[str],
+    draw_param_json: str,
+    label_colors: dict[str, str],
+    line_colors: dict[str, str],
+    scol_desc_json: Optional[str],
+    overlay: Optional[np.ndarray],
+) -> str:
+    svg_size = image.shape[1], image.shape[0]
+    return py_draw_coronal(
+        image,
+        coronal_points_json,
+        draws,
+        hide,
+        draw_param_json,
+        svg_size,
+        label_colors,
+        line_colors,
+        scol_desc_json,
+        overlay,
+    )

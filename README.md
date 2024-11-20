@@ -6,6 +6,7 @@ scoliosis
 ```console
 cd crates/pyscol
 maturin develop --release
+RUST_LOG=info python3 -m unittest discover tests/
 ```
 
 # Development

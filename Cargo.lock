@@ -2118,10 +2118,15 @@ dependencies = [
  "clahe",
  "devsc",
  "env_logger",
+ "labelme-rs",
+ "log",
  "numpy",
  "pyo3",
+ "scolrs",
  "serde",
  "serde_json",
+ "svg",
+ "thiserror 2.0.3",
  "walkdir",
 ]
 

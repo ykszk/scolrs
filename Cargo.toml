@@ -5,7 +5,7 @@ members = [
     "crates/devsc",
     "crates/named_derive",
 ]
-default-members = ["crates/scolrs"]
+default-members = ["crates/scolrs", "crates/pyscol"]
 resolver = "2"
 
 [workspace.package]
@@ -23,3 +23,5 @@ ndarray = "0.15"
 ndarray-stats = "0.5"
 pretty_assertions = "1.4.1"
 serde = "1.0.213"
+svg = "0.18.0"
+thiserror = "2.0"
