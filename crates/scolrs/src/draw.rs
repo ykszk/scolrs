@@ -2133,8 +2133,8 @@ where
     } = palettes;
     let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
-        let spinal_measure: Box<dyn DrawComponent> = (measure, data).into();
-        match spinal_measure.draw(painter, &mut label_colors, &mut line_colors) {
+        let draw_component: Box<dyn DrawComponent> = (measure, data).into();
+        match draw_component.draw(painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
                 let visibility = if hide.contains(measure) {
                     VISIBILITY_HIDDEN
@@ -2144,13 +2144,41 @@ where
                 let g = g.set("visibility", visibility);
                 groups.push(g.into());
             }
-            Err(err) => warn!("Failed to draw {}: {:?}", spinal_measure.id(), err),
+            Err(err) => warn!("Failed to draw {}: {:?}", draw_component.id(), err),
         }
     }
 
     let spacing = image_metadata.spacing_xy;
     groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
     Ok(groups)
+}
+
+fn draw_on_image<'a, T, S>(
+    image: DynamicImage,
+    data: &'a T,
+    image_metadata: &crate::ImageMetadata,
+    draw_hide: (&[S], &[S]),
+    draw_param: DrawParam,
+    svg_size: (usize, usize),
+    palettes: ColorPalettes,
+) -> Result<element::SVG, DrawError>
+where
+    for<'b> (&'b S, &'a T): Into<Box<dyn DrawComponent + 'a>>,
+    S: Clone + Copy + PartialEq,
+{
+    let (draw, hide) = draw_hide;
+    let style = element::Style::new(draw_param.style());
+    let painter = Painter::new(draw_param, svg_size);
+    let mut document = painter.doc_w_background(&image)?;
+    document = document.add(style);
+
+    let groups = draw_components(data, image_metadata, draw, hide, &painter, palettes)?;
+
+    for g in groups {
+        document = document.add(g);
+    }
+
+    Ok(document)
 }
 
 pub fn draw_sagittal(
@@ -2162,25 +2190,15 @@ pub fn draw_sagittal(
     svg_size: (usize, usize),
     palettes: ColorPalettes,
 ) -> Result<element::SVG, DrawError> {
-    let style = element::Style::new(draw_param.style());
-    let painter = Painter::new(draw_param, svg_size);
-    let mut document = painter.doc_w_background(&image)?;
-    document = document.add(style);
-
-    let groups = draw_components(
+    draw_on_image(
+        image,
         &sagittal_points,
         &sagittal_points.image_metadata,
-        draws,
-        hide,
-        &painter,
+        (draws, hide),
+        draw_param,
+        svg_size,
         palettes,
-    )?;
-
-    for g in groups {
-        document = document.add(g);
-    }
-
-    Ok(document)
+    )
 }
 
 pub fn draw_coronal(
@@ -2192,14 +2210,6 @@ pub fn draw_coronal(
     palettes: ColorPalettes,
     curve_apex_set: Option<(CurveSet, ApexSet)>,
 ) -> Result<element::SVG, DrawError> {
-    let (draws, hide) = draws_hide;
-
-    let style = element::Style::new(draw_param.style());
-    let painter = Painter::new(draw_param, svg_size);
-    let mut document = painter.doc_w_background(&image)?;
-
-    document = document.add(style);
-
     let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
         let (cs, apexes, _major_curve) = coronal_points.identify_curves();
         debug!("CurveSet: {:?}", cs);
@@ -2208,18 +2218,13 @@ pub fn draw_coronal(
 
     let data = (&coronal_points, &curve_set, &apex_set);
 
-    let groups = draw_components(
+    draw_on_image(
+        image,
         &data,
         &coronal_points.image_metadata,
-        draws,
-        hide,
-        &painter,
+        draws_hide,
+        draw_param,
+        svg_size,
         palettes,
-    )?;
-
-    for g in groups {
-        document = document.add(g);
-    }
-
-    Ok(document)
+    )
 }

@@ -44,6 +44,8 @@ pub enum ScolError {
     InvalidPointCombo(String, String, usize, usize),
     #[error("Linalg error")]
     Linalg(#[from] rulinalg::error::Error),
+    #[error("Json error")]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -405,6 +407,48 @@ impl CoronalPoints {
 
         self.c_coefs = self.spine.fit_poly()?;
         Ok(())
+    }
+}
+
+pub trait TryFromJson {
+    type Error;
+
+    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
+    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
+}
+
+impl TryFromJson for CoronalPoints {
+    type Error = ScolError;
+
+    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
+        let ir: CoronalPointsIR = serde_json::from_str(json)?;
+        let cp = CoronalPoints::try_from(ir)?;
+        Ok(cp)
+    }
+
+    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
+        let data: LabelMeData = serde_json::from_str(json)?;
+        let cp = CoronalPoints::try_from(&data)?;
+        Ok(cp)
+    }
+}
+
+impl TryFromJson for SagittalPoints {
+    type Error = ScolError;
+
+    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
+        let ir: SagittalPointsIR = serde_json::from_str(json)?;
+        let sp = SagittalPoints::try_from(ir)?;
+        Ok(sp)
+    }
+    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
+        let data: LabelMeData = serde_json::from_str(json)?;
+        let sp = SagittalPoints::try_from(&data)?;
+        Ok(sp)
     }
 }
 

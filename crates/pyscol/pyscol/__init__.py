@@ -3,7 +3,14 @@ from pydantic import BaseModel
 from enum import Enum
 from typing import Optional
 
-from .pyscol import clahe_u8_u8, clahe_u16_u16, clahe_u16_u8, trimming_box_with_resample, py_draw_coronal
+from .pyscol import (
+    clahe_u8_u8,
+    clahe_u16_u16,
+    clahe_u16_u8,
+    trimming_box_with_resample,
+    py_draw_coronal,
+    py_draw_sagittal,
+)
 
 
 class TrimImageFilter(str, Enum):
@@ -113,5 +120,29 @@ def draw_coronal(
         label_colors,
         line_colors,
         scol_desc_json,
+        overlay,
+    )
+
+
+def draw_sagittal(
+    image: np.ndarray,
+    coronal_points_json: str,
+    draws: list[str],
+    hide: list[str],
+    draw_param_json: str,
+    label_colors: dict[str, str],
+    line_colors: dict[str, str],
+    overlay: Optional[np.ndarray],
+) -> str:
+    svg_size = image.shape[1], image.shape[0]
+    return py_draw_sagittal(
+        image,
+        coronal_points_json,
+        draws,
+        hide,
+        draw_param_json,
+        svg_size,
+        label_colors,
+        line_colors,
         overlay,
     )

@@ -63,24 +63,30 @@ class TestDrawCoronal(unittest.TestCase):
     def setUp(self):
         set_loglevel()
 
-    def test_draw_coronal(self):
+    def test_draw_case2(self):
         data_dir = Path("../../tests/data")
         indir = data_dir / "case2"
-        image = np.array(Image.open(indir / "frontal.jpg"))
-        with open(indir / "frontal_native.json") as f:
-            coronal_points_json = f.read()
-        draws = []
-        hide = []
-        draw_param_json = "{}"
-        label_colors = {}
-        line_colors = {}
-        svg = pyscol.draw_coronal(
-            image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None, None
-        )
+        for stem in ["frontal", "lateral"]:
+            image = np.array(Image.open(indir / f"{stem}.jpg"))
+            with open(indir / f"{stem}_native.json") as f:
+                coronal_points_json = f.read()
+            draws = []
+            hide = []
+            draw_param_json = "{}"
+            label_colors = {}
+            line_colors = {}
+            if stem == "frontal":
+                svg = pyscol.draw_coronal(
+                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None, None
+                )
+            else:
+                svg = pyscol.draw_sagittal(
+                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None
+                )
 
-        out_dir = test_output_dir()
-        if out_dir:
-            out_dir = out_dir / "python/case2"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            with open(out_dir / "coronal.svg", "w") as f:
-                f.write(svg)
+            out_dir = test_output_dir()
+            if out_dir:
+                out_dir = out_dir / "python/case2"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                with open(out_dir / f"{stem}.svg", "w") as f:
+                    f.write(svg)
