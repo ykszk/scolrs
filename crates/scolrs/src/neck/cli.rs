@@ -62,7 +62,7 @@ pub struct SvgArgs {
     pub measures: Option<Vec<NeckLateralDraw>>,
     /// Hide measurements.
     #[clap(long)]
-    pub hide: Option<Vec<NeckLateralDraw>>,
+    pub hide: Vec<NeckLateralDraw>,
     /// Maximum number of jobs to run in parallel
     #[clap(short, long)]
     pub jobs: Option<usize>,

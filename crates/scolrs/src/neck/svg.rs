@@ -61,7 +61,7 @@ fn process_data(
         &lateral_points,
         &lateral_points.image_metadata,
         neck_sagittal_draw,
-        &Vec::new(),
+        &args.hide,
         &painter,
         palettes,
     )?;
