@@ -14,26 +14,10 @@ use rayon::prelude::*;
 use scolrs::{
     draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, ContentFilename, CoronalMeasure,
     CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawError, DrawParam, HasImageMetadata,
-    ImageMetadata, MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
-    TryFromJson, UpdatePoints,
+    ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure, SagittalPoints,
+    SagittalPointsLine, Scalable, TryFromJson, UpdatePoints,
 };
 use svg::node::element;
-
-/// Maintain redundant point data in sync with scaling and resizing
-struct PointDataWithImage<T: UpdatePoints> {
-    data: T,
-    data_image: LabelMeDataWImage,
-}
-
-impl<T: UpdatePoints> PointDataWithImage<T> {
-    fn new(data: T, data_image: LabelMeDataWImage) -> Self {
-        Self { data, data_image }
-    }
-    fn resize(&mut self, param: &ResizeParam) {
-        self.data_image.resize(param);
-        self.data.update_points(&self.data_image.data);
-    }
-}
 
 trait AssociatedMeasureAndDraw {
     type Measure;

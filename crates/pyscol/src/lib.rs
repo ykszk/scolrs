@@ -3,14 +3,14 @@ use std::{collections::HashMap, error::Error, path::Path};
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
 use labelme_rs::{
     image::{self, DynamicImage, GrayImage},
-    LabelMeData, LabelMeDataWImage,
+    LabelMeData, LabelMeDataWImage, ResizeParam,
 };
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use scolrs::{
     draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPointsAndCurve,
     DrawComponent, DrawError, DrawParam, HasImageMetadata, MeasureAndDraw, MeasureError, Painter,
-    SagittalMeasure, SagittalPoints, Scalable, TryFromJson,
+    PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, TryFromJson, UpdatePoints,
 };
 use serde::de::DeserializeOwned;
 use svg::node::element;
@@ -111,6 +111,8 @@ pub enum PyScolError {
     Html(#[from] scolrs::HtmlWrapError),
     #[error("Error in image: {0}")]
     Image(#[from] labelme_rs::ImageError),
+    #[error("Uncategorized error: {0}")]
+    Uncategorized(String),
 }
 
 impl From<PyScolError> for PyErr {
@@ -224,10 +226,11 @@ fn draw_generic<T, S>(
     draw_param_json: &str,
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
+    resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError>
 where
-    T: TryFromJson + Clone,
+    T: TryFromJson + Clone + UpdatePoints,
     LabelMeData: From<T>,
     S: MeasureAndDraw + DeserializeOwned,
     Vec<String>: DeserializeAll<S>,
@@ -242,19 +245,28 @@ where
     let lm_data = LabelMeData::from(coronal_set.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(lm_data, Path::new(json_path))?;
 
+    let mut point_with_image = PointDataWithImage::<T>::new(coronal_set, data_w_image);
+
+    if let Some(resize) = resize {
+        let resize = ResizeParam::try_from(resize.as_str())
+            .map_err(|e| PyScolError::Uncategorized(format!("Error in resize: {}", e)))?;
+        point_with_image.resize(&resize);
+    }
+
+    let svg_size = (
+        point_with_image.data_image.image.width() as usize,
+        point_with_image.data_image.image.height() as usize,
+    );
+
     let draws = if draws.is_empty() {
         S::all_draws()
     } else {
         draws.deserialize_all()?
     };
-    let svg_size = (
-        data_w_image.image.width() as usize,
-        data_w_image.image.height() as usize,
-    );
     let hide: Vec<S> = hide.deserialize_all()?;
     draw_on_image(
-        data_w_image.image,
-        coronal_set,
+        point_with_image.data_image.image,
+        point_with_image.data,
         draws,
         hide,
         draw_param_json,
@@ -275,6 +287,7 @@ pub fn py_draw_coronal(
     draw_param_json: &str,
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
+    resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError> {
     draw_generic::<CoronalPointsAndCurve, CoronalMeasure>(
@@ -285,6 +298,7 @@ pub fn py_draw_coronal(
         draw_param_json,
         label_colors,
         line_colors,
+        resize,
         overlay,
     )
 }
@@ -299,6 +313,7 @@ pub fn py_draw_sagittal(
     draw_param_json: &str,
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
+    resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError> {
     draw_generic::<SagittalPoints, SagittalMeasure>(
@@ -309,6 +324,7 @@ pub fn py_draw_sagittal(
         draw_param_json,
         label_colors,
         line_colors,
+        resize,
         overlay,
     )
 }

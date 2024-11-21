@@ -1,6 +1,6 @@
 use clap::ValueEnum;
 use head_neck::TryConvertContentFilename;
-use labelme_rs::{LabelMeData, LabelMeDataLine};
+use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam};
 use log::{debug, error, warn};
 use named_derive::{ContentFilename, HasImageMetadata, TryFromJsonStr};
 use ndarray::{
@@ -1074,6 +1074,22 @@ impl UpdatePoints for SagittalPoints {
         let sp = SagittalPoints::try_from(data).unwrap();
         self.spine = sp.spine;
         self.femoral_head = sp.femoral_head;
+    }
+}
+
+/// Maintain redundant point data in sync with scaling and resizing
+pub struct PointDataWithImage<T: UpdatePoints> {
+    pub data: T,
+    pub data_image: LabelMeDataWImage,
+}
+
+impl<T: UpdatePoints> PointDataWithImage<T> {
+    pub fn new(data: T, data_image: LabelMeDataWImage) -> Self {
+        Self { data, data_image }
+    }
+    pub fn resize(&mut self, param: &ResizeParam) {
+        self.data_image.resize(param);
+        self.data.update_points(&self.data_image.data);
     }
 }
 

@@ -108,6 +108,7 @@ def draw_coronal(
     draw_param_json: str,
     label_colors: dict[str, str],
     line_colors: dict[str, str],
+    resize: Optional[str],
     overlay: Optional[np.ndarray],
 ) -> str:
     json_path = str(json_path)
@@ -119,6 +120,7 @@ def draw_coronal(
         draw_param_json,
         label_colors,
         line_colors,
+        resize,
         overlay,
     )
 
@@ -131,6 +133,7 @@ def draw_sagittal(
     draw_param_json: str,
     label_colors: dict[str, str],
     line_colors: dict[str, str],
+    resize: Optional[str],
     overlay: Optional[np.ndarray],
 ) -> str:
     json_path = str(json_path)
@@ -142,6 +145,7 @@ def draw_sagittal(
         draw_param_json,
         label_colors,
         line_colors,
+        resize,
         overlay,
     )
 

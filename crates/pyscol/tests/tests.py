@@ -75,13 +75,16 @@ class TestDrawCoronal(unittest.TestCase):
             draw_param_json = "{}"
             label_colors = {}
             line_colors = {}
+            resize = "1024x1024"
+            overlay = None
+            args = (coronal_points_json, str(json_path), draws, hide, draw_param_json, label_colors, line_colors, resize, overlay)
             if stem == "frontal":
                 svg = pyscol.draw_coronal(
-                    coronal_points_json, str(json_path), draws, hide, draw_param_json, label_colors, line_colors, None
+                    *args
                 )
             else:
                 svg = pyscol.draw_sagittal(
-                    coronal_points_json, json_path, draws, hide, draw_param_json, label_colors, line_colors, None
+                    *args
                 )
 
             out_dir = test_output_dir()
