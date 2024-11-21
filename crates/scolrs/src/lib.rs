@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use draw::MeasureError;
 use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam};
 use log::{debug, error, warn};
@@ -21,8 +22,7 @@ use strum::VariantArray;
 use thiserror::Error;
 mod defs;
 pub use defs::*;
-mod draw;
-pub use draw::*;
+pub mod draw;
 pub mod head_neck;
 use head_neck::Scale2DPoints;
 
@@ -237,7 +237,7 @@ where
     fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
         if self.len_of(Axis(0)) != expected_len {
             return Err(MeasureError::InvalidNumberOfPoints(
-                crate::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
+                draw::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
             ));
         }
         Ok(())
@@ -245,7 +245,7 @@ where
     fn validate_length_more_than(&self, min_len: usize) -> Result<(), MeasureError> {
         if self.len_of(Axis(0)) < min_len {
             return Err(MeasureError::InvalidNumberOfPoints(
-                crate::InvalidNumberOfPoints::TooFewPoints(min_len, self.len()),
+                draw::InvalidNumberOfPoints::TooFewPoints(min_len, self.len()),
             ));
         }
         Ok(())
@@ -384,6 +384,7 @@ impl Spine {
     }
 }
 
+/// Point sets extracted from a coronal radiograph
 #[derive(Debug, Clone)]
 pub struct CoronalPoints {
     pub spine: Spine,
@@ -462,6 +463,7 @@ impl TryFromJson for SagittalPoints {
     }
 }
 
+/// Intermediary representation for [CoronalPoints]
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
 )]
@@ -784,6 +786,7 @@ impl CoronalPoints {
     }
 }
 
+/// [`CoronalPointsIR`] in [`ContentFilename`] struct
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
 )]
@@ -800,6 +803,7 @@ impl TryFrom<LabelMeDataLine> for CoronalPointsIRLine {
     }
 }
 
+/// Point sets extracted from a sagittal radiograph
 #[derive(Debug, Clone, HasImageMetadata)]
 pub struct SagittalPoints {
     pub spine: Spine,
@@ -825,7 +829,7 @@ impl Scalable for SagittalPoints {
     }
 }
 
-/// Intermediate representation of `SagittalPoints` for serde
+/// Intermediate representation of [`SagittalPoints`] for serde
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
 )]
@@ -915,6 +919,7 @@ impl TryFrom<LabelMeDataLine> for SagittalPointsIRLine {
     }
 }
 
+/// [`SagittalPoints`] in [`ContentFilename`] struct
 #[derive(Clone, Debug, ContentFilename)]
 pub struct SagittalPointsLine {
     pub content: SagittalPoints,
@@ -1046,12 +1051,14 @@ impl TryFrom<&LabelMeData> for CurveDesc {
     }
 }
 
+/// [`CurveDesc`] in [`ContentFilename`] struct
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr)]
 pub struct ScolDescLine {
     pub content: CurveDesc,
     pub filename: String,
 }
 
+/// Data required for calculating scoliosis drawing
 #[derive(Debug, Clone)]
 pub struct CoronalPointsAndCurve {
     pub coronal_points: CoronalPoints,
@@ -1093,9 +1100,9 @@ impl<T: UpdatePoints> PointDataWithImage<T> {
     }
 }
 
-/// Intermediate representation of `CoronalPointsAndCurve`
+/// Intermediate representation of [`CoronalPointsAndCurve`]
 ///
-/// Because `curves` is optional, json of `CoronalPointsIR` can be used to create `CoronalPointsAndCurveIR`.
+/// Because `curves` is optional, json of [`CoronalPointsIR`] can be used to create [`CoronalPointsAndCurveIR`].
 /// If `curves` is not provided, it will be calculated from `coronal_points`.
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
 pub struct CoronalPointsAndCurveIR {
@@ -1104,6 +1111,7 @@ pub struct CoronalPointsAndCurveIR {
     pub curves: Option<CurveDesc>,
 }
 
+/// [`CoronalPointsAndCurveIRLine`] in [`ContentFilename`] struct
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
 )]
@@ -1112,6 +1120,7 @@ pub struct CoronalPointsAndCurveIRLine {
     pub filename: String,
 }
 
+/// [`CoronalPointsAndCurve`] in [`ContentFilename`] struct
 #[derive(Clone, Debug, ContentFilename)]
 pub struct CoronalPointsAndCurveLine {
     pub content: CoronalPointsAndCurve,
@@ -1121,6 +1130,7 @@ pub struct CoronalPointsAndCurveLine {
 impl TryFrom<&str> for CoronalPointsAndCurveLine {
     type Error = ScolError;
 
+    /// Load from json in native format
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let line: CoronalPointsAndCurveIRLine = serde_json::from_str(value)?;
         let content = CoronalPointsAndCurve::try_from(&line.content)?;
@@ -1280,7 +1290,7 @@ where
 }
 
 /// Angle between two lines in degrees
-/// TODO: Check the difference from [`angle_between`]?
+/// TODO: Check the difference from `angle_between`?
 pub fn angle_from_lines(line1: ArrayView2<f64>, line2: ArrayView2<f64>) -> Option<f64> {
     let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
     let v_inf = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
@@ -1518,7 +1528,7 @@ const FRONTAL_ANGLE_THRESH: f64 = 25.0_f64;
 const BEND_ANGLE_THRESH: f64 = 25.0_f64;
 const LATERAL_ANGLE_THRESH: f64 = 20.0_f64;
 
-/// Set of `Spine`s required for Lenke classification
+/// Set of [`Spine`]s required for Lenke classification
 pub struct Study {
     pub coronal: CoronalPoints,
     pub left_bend: Option<Spine>,

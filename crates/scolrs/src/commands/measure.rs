@@ -10,9 +10,9 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
+    draw::{MeasureComponent, MeasureError},
     CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveDesc, MeasureAndDraw,
-    MeasureComponent, MeasureError, SagittalMeasure, SagittalPoints, SagittalPointsIR,
-    SagittalPointsIRLine, ScolError,
+    SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine, ScolError,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 

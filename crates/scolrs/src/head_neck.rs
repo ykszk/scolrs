@@ -1,13 +1,16 @@
 use std::{convert::Infallible, ops::MulAssign};
 
 use crate::{
-    angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
-    distanced_pair3, draw_incidence_angle, extract_points, femoral_incidence_angle,
-    nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
-    ContentFilename, Corners, DrawComponent, DrawCorners, DrawError, HasCornerPoints,
-    HasImageMetadata, ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, Scalable,
-    ScolError, TryFromJson, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
-    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
+    draw::{
+        angle_between, distanced_pair3, draw_incidence_angle, femoral_incidence_angle, points2line,
+        CobbAux, ColorPalette, DrawComponent, DrawCorners, DrawError, MeasureError, Named, Painter,
+        CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
+        CLASS_TEXT,
+    },
+    extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
+    Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
+    ScolError, TryFromJson, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -1099,7 +1102,10 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
-    use crate::{CoronalPointsIRLine, SagittalPointsIRLine, CLASS_LINE, CLASS_MEASURE};
+    use crate::{
+        draw::{CLASS_LINE, CLASS_MEASURE},
+        CoronalPointsIRLine, SagittalPointsIRLine,
+    };
 
     #[test]
     fn test_derive_name() {

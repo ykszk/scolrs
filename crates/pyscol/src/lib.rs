@@ -8,8 +8,11 @@ use labelme_rs::{
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use scolrs::{
-    draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPointsAndCurve,
-    DrawComponent, DrawError, DrawParam, HasImageMetadata, MeasureAndDraw, MeasureError, Painter,
+    draw::{
+        draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, MeasureError,
+        Painter,
+    },
+    CoronalMeasure, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
     PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, TryFromJson, UpdatePoints,
 };
 use serde::de::DeserializeOwned;
@@ -108,7 +111,7 @@ pub enum PyScolError {
     #[error("Channel has to be 3 for 3D array")]
     ChannelMismatch,
     #[error("Error in html: {0}")]
-    Html(#[from] scolrs::HtmlWrapError),
+    Html(#[from] scolrs::draw::HtmlWrapError),
     #[error("Error in image: {0}")]
     Image(#[from] labelme_rs::ImageError),
     #[error("Uncategorized error: {0}")]
@@ -192,7 +195,7 @@ where
 
     if let Some(overlay) = overlay {
         let overlay_image = ndarray_to_dynamic_image(overlay)?;
-        let g = scolrs::ImageOverlay::new(
+        let g = scolrs::draw::ImageOverlay::new(
             "heatmap".to_string(),
             "heatmap".to_string(),
             None,
@@ -336,7 +339,7 @@ fn py_wrap_in_html(
     selector: Option<Vec<String>>,
 ) -> Result<String, PyScolError> {
     let selector = selector.unwrap_or_else(|| vec!["g.Component".to_string()]);
-    Ok(scolrs::wrap_in_html(svg, selector, title)?)
+    Ok(scolrs::draw::wrap_in_html(svg, selector, title)?)
 }
 
 #[pymodule]

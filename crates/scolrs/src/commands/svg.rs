@@ -12,10 +12,10 @@ use labelme_rs::{
 use log::debug;
 use rayon::prelude::*;
 use scolrs::{
-    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, ContentFilename, CoronalMeasure,
-    CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawError, DrawParam, HasImageMetadata,
-    ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure, SagittalPoints,
-    SagittalPointsLine, Scalable, TryFromJson, UpdatePoints,
+    draw::{draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
+    ContentFilename, CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
+    HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure,
+    SagittalPoints, SagittalPointsLine, Scalable, TryFromJson, UpdatePoints,
 };
 use svg::node::element;
 
@@ -247,9 +247,9 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<(ReadSvgArgCommon, SvgSubComma
     let line_colors = if let Some(filename) = args.line_colors {
         let reader = std::fs::File::open(&filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
-        ColorPalette::new(scolrs::load_line_colors(reader)?)
+        ColorPalette::new(scolrs::draw::load_line_colors(reader)?)
     } else {
-        ColorPalette::new(scolrs::LineColors::default())
+        ColorPalette::new(scolrs::draw::LineColors::default())
     };
 
     let palettes = ColorPalettes {

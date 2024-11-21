@@ -3,7 +3,7 @@ use std::io::{BufWriter, Write};
 
 use crate::neck::cli::HtmlArgs;
 use anyhow::{Context, Result};
-use scolrs::wrap_in_html;
+use scolrs::draw::wrap_in_html;
 
 pub fn cmd(args: HtmlArgs) -> Result<()> {
     let svg = std::fs::read_to_string(args.input.as_path())

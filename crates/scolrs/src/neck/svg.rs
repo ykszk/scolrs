@@ -8,7 +8,10 @@ use log::warn;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
 use scolrs::head_neck::{LateralPoints, NeckLateralDraw};
-use scolrs::{draw_on_image, ColorPalette, ColorPalettes, DrawParam};
+use scolrs::{
+    draw::{draw_on_image, ColorPalette, ColorPalettes},
+    DrawParam,
+};
 use svg::node::element::SVG;
 
 fn process_data(
@@ -88,9 +91,9 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     let line_colors = if let Some(filename) = args.line_colors.as_ref() {
         let reader = std::fs::File::open(filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
-        ColorPalette::new(scolrs::load_line_colors(reader)?)
+        ColorPalette::new(scolrs::draw::load_line_colors(reader)?)
     } else {
-        ColorPalette::new(scolrs::LineColors::default())
+        ColorPalette::new(scolrs::draw::LineColors::default())
     };
 
     let neck_sagittal_draw = args.measures.clone().unwrap_or_else(NeckLateralDraw::all);

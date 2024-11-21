@@ -37,7 +37,7 @@ fn measure_all(
                 results.insert(measure.id().to_string(), result);
             }
             Err(e) => match e {
-                scolrs::MeasureError::InvalidNumberOfPoints(err) => {
+                scolrs::draw::MeasureError::InvalidNumberOfPoints(err) => {
                     warn!("Skip point count error for {}: {:?}", measure.id(), err);
                 }
                 e => return Err(e.into()),
