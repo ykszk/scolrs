@@ -8,8 +8,8 @@ use log::warn;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
 use scolrs::head_neck::{LateralPoints, NeckLateralDraw};
-use scolrs::{draw_components, ColorPalette, ColorPalettes, DrawParam, Painter};
-use svg::node::element::{self, SVG};
+use scolrs::{draw_on_image, ColorPalette, ColorPalettes, DrawParam};
+use svg::node::element::SVG;
 
 fn process_data(
     mut lateral_points: LateralPoints,
@@ -45,28 +45,21 @@ fn process_data(
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
     let draw_param = draw_param.clone();
-    let style = element::Style::new(draw_param.style());
-    let painter = Painter::new(draw_param, svg_size);
-    let mut document = painter.doc_w_background(&data.image)?;
-    document = document.add(style);
 
     let palettes = ColorPalettes {
         label_colors,
         line_colors,
     };
 
-    let groups = draw_components(
+    let svg = draw_on_image(
+        data.image,
         lateral_points,
-        neck_sagittal_draw,
-        &args.hide,
-        &painter,
+        (neck_sagittal_draw, &args.hide),
+        draw_param,
+        svg_size,
         palettes,
     )?;
-
-    for g in groups {
-        document = document.add(g);
-    }
-    Ok(document)
+    Ok(svg)
 }
 
 pub fn cmd(args: SvgArgs) -> Result<()> {

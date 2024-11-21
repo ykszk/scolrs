@@ -2159,7 +2159,7 @@ where
 /// Draw the given components on the image.
 ///
 /// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
-fn draw_on_image<'a, T, S>(
+pub fn draw_on_image<'a, T, S>(
     image: DynamicImage,
     data: T,
     draw_hide: (&[S], &[S]),
