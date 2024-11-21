@@ -3,66 +3,109 @@ use std::{
     path::Path,
 };
 
-use crate::cli::{Plane, SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
+use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
 use labelme_rs::{
-    image::GenericImageView, LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam,
+    image::{DynamicImage, GenericImageView},
+    LabelMeData, LabelMeDataWImage, ResizeParam,
 };
 use log::debug;
 use rayon::prelude::*;
 use scolrs::{
-    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, CoronalMeasure,
-    CoronalPointsAndCurve, CoronalPointsAndCurveIR, CoronalPointsAndCurveIRLine, DrawParam,
-    ImageMetadata, MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsIR,
-    SagittalPointsIRLine,
+    draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, ContentFilename, CoronalMeasure,
+    CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawError, DrawParam, HasImageMetadata,
+    ImageMetadata, MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
+    TryFromJson, UpdatePoints,
 };
-
-enum PointData {
-    Coronal(Box<CoronalPointsAndCurve>),
-    Sagittal(Box<SagittalPoints>),
-}
+use svg::node::element;
 
 /// Maintain redundant point data in sync with scaling and resizing
-struct PointDataWithImage {
-    data: PointData,
+struct PointDataWithImage<T: UpdatePoints> {
+    data: T,
     data_image: LabelMeDataWImage,
 }
 
-impl PointDataWithImage {
+impl<T: UpdatePoints> PointDataWithImage<T> {
+    fn new(data: T, data_image: LabelMeDataWImage) -> Self {
+        Self { data, data_image }
+    }
     fn resize(&mut self, param: &ResizeParam) {
         self.data_image.resize(param);
-        match &mut self.data {
-            PointData::Coronal(cp) => {
-                cp.coronal_points = (&self.data_image.data).try_into().unwrap()
-            }
-            PointData::Sagittal(sp) => {
-                *sp = SagittalPoints::try_from(&self.data_image.data)
-                    .unwrap()
-                    .into()
-            }
-        }
-    }
-
-    fn new_coronal(data: CoronalPointsAndCurve, data_image: LabelMeDataWImage) -> Self {
-        Self {
-            data: PointData::Coronal(data.into()),
-            data_image,
-        }
-    }
-
-    fn new_sagittal(data: SagittalPoints, data_image: LabelMeDataWImage) -> Self {
-        Self {
-            data: PointData::Sagittal(data.into()),
-            data_image,
-        }
+        self.data.update_points(&self.data_image.data);
     }
 }
 
-fn process_one(
+trait AssociatedMeasureAndDraw {
+    type Measure;
+    fn draw(
+        image: DynamicImage,
+        sagittal_points: Self,
+        draws: &[Self::Measure],
+        hide: &[Self::Measure],
+        draw_param: DrawParam,
+        svg_size: (usize, usize),
+        palettes: ColorPalettes,
+    ) -> Result<element::SVG, DrawError>;
+}
+
+impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
+    type Measure = CoronalMeasure;
+
+    fn draw(
+        image: DynamicImage,
+        sagittal_points: Self,
+        draws: &[Self::Measure],
+        hide: &[Self::Measure],
+        draw_param: DrawParam,
+        svg_size: (usize, usize),
+        palettes: ColorPalettes,
+    ) -> Result<element::SVG, DrawError> {
+        draw_coronal(
+            image,
+            sagittal_points,
+            (draws, hide),
+            draw_param,
+            svg_size,
+            palettes,
+        )
+    }
+}
+
+impl AssociatedMeasureAndDraw for SagittalPoints {
+    type Measure = SagittalMeasure;
+
+    fn draw(
+        image: DynamicImage,
+        sagittal_points: Self,
+        draws: &[Self::Measure],
+        hide: &[Self::Measure],
+        draw_param: DrawParam,
+        svg_size: (usize, usize),
+        palettes: ColorPalettes,
+    ) -> Result<element::SVG, DrawError> {
+        draw_sagittal(
+            image,
+            sagittal_points,
+            draws,
+            hide,
+            draw_param,
+            svg_size,
+            palettes,
+        )
+    }
+}
+
+fn process_one<T>(
     svg_common: ReadSvgArgCommon,
-    mut point_with_image: PointDataWithImage,
+    mut point_with_image: PointDataWithImage<T>,
+    draws: &[T::Measure],
+    hide: &[T::Measure],
     output: &std::path::Path,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: UpdatePoints + AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
+    <T as AssociatedMeasureAndDraw>::Measure: MeasureAndDraw + Clone + Copy + PartialEq,
+{
     if let Some(resize_param) = svg_common.resize_param {
         point_with_image.resize(&resize_param);
     }
@@ -76,116 +119,111 @@ fn process_one(
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let document = match svg_common.subcommand {
-        SvgSubCommands::Coronal(subcommand) => {
-            let draws = subcommand
-                .measures
-                .unwrap_or_else(CoronalMeasure::all_draws);
-            let mut hide = subcommand.hide;
-            for group in subcommand.hide_group {
-                hide.append(&mut (&group).into());
-            }
-            let coronal_set = match point_with_image.data {
-                PointData::Coronal(cp) => cp,
-                _ => unreachable!(),
-            };
-            draw_coronal(
-                point_with_image.data_image.image,
-                *coronal_set,
-                (&draws, &hide),
-                svg_common.draw_param,
-                svg_size,
-                svg_common.palettes,
-            )
-        }
-        SvgSubCommands::Sagittal(subcommand) => {
-            let draws = subcommand
-                .measures
-                .unwrap_or_else(SagittalMeasure::all_draws);
-            let hide = subcommand.hide;
-            let sagittal_points = match point_with_image.data {
-                PointData::Sagittal(sp) => sp,
-                _ => unreachable!(),
-            };
-            draw_sagittal(
-                point_with_image.data_image.image,
-                *sagittal_points,
-                &draws,
-                &hide,
-                svg_common.draw_param,
-                svg_size,
-                svg_common.palettes,
-            )
-        }
-    };
+    let document = T::draw(
+        point_with_image.data_image.image,
+        point_with_image.data,
+        draws,
+        hide,
+        svg_common.draw_param,
+        svg_size,
+        svg_common.palettes,
+    )?;
 
     debug!("Save to {:?}", output);
 
-    std::fs::write(output, document?.to_string())?;
+    std::fs::write(output, document.to_string())?;
     Ok(())
 }
 
-pub fn cmd(args: SvgArgs) -> Result<()> {
-    let svg_common = load_svg_common(args.svg_args)?;
-    let point_data_with_image: PointDataWithImage = if svg_common.labelme {
-        let data: LabelMeDataWImage = args
-            .input
-            .as_path()
-            .try_into()
-            .with_context(|| format!("Load LabelMeData from {:?}", &args.input))?;
-        let image_data = if svg_common.pull_spacing {
-            Some(ImageMetadata::try_from(Path::new(&data.data.imagePath))?)
-        } else {
-            None
-        };
+fn load_from_native_json_file<T>(path: &Path) -> Result<PointDataWithImage<T>>
+where
+    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone,
 
-        match svg_common.direction {
-            Plane::Coronal => {
-                let mut cp: CoronalPointsAndCurve = (&data.data).try_into()?;
-                if let Some(image_data) = image_data {
-                    cp.coronal_points.image_metadata = image_data;
-                }
-                PointDataWithImage::new_coronal(cp, data)
-            }
-            Plane::Sagittal => {
-                let mut sp: SagittalPoints = (&data.data).try_into()?;
-                if let Some(image_data) = image_data {
-                    sp.image_metadata = image_data;
-                }
-                PointDataWithImage::new_sagittal(sp, data)
-            }
-        }
-    } else {
-        let json_str = std::fs::read_to_string(&args.input)
-            .with_context(|| format!("Load native format data from {:?}", &args.input))?;
-        load_native_format(json_str, &args.input, svg_common.direction)?
-    };
-
-    debug!("Loading {:?}", args.input);
-    process_one(svg_common, point_data_with_image, &args.output)
+    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+    LabelMeData: From<T>,
+{
+    let json = std::fs::read_to_string(path)?;
+    let cp = T::try_from_ir_json(&json)?;
+    let data = LabelMeData::from(cp.clone());
+    let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;
+    Ok(PointDataWithImage::new(cp, data_w_image))
 }
 
-fn load_native_format(
-    json_str: String,
-    json_path: &Path,
-    direction: Plane,
-) -> Result<PointDataWithImage> {
-    Ok(match direction {
-        Plane::Coronal => {
-            let ir: CoronalPointsAndCurveIR = serde_json::from_str(&json_str)?;
-            let cp = CoronalPointsAndCurve::try_from(&ir)?;
-            let data = LabelMeData::from(ir.coronal_points);
-            let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, json_path)?;
-            PointDataWithImage::new_coronal(cp, data_w_image)
+fn load_from_labelme_json_file<T>(path: &Path, pull_spacing: bool) -> Result<PointDataWithImage<T>>
+where
+    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone + 'static,
+
+    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error,
+    <T as scolrs::TryFromJson>::Error: 'static,
+    for<'a> T: TryFrom<&'a LabelMeData>,
+    for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
+        std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+{
+    let data_image: LabelMeDataWImage = path
+        .try_into()
+        .with_context(|| format!("Load LabelMeData from {:?}", path))?;
+
+    let mut cp = T::try_from(&data_image.data)?;
+    if pull_spacing {
+        let metadata = ImageMetadata::try_from(Path::new(&data_image.data.imagePath))?;
+        *cp.image_metadata_mut() = metadata;
+    }
+    Ok(PointDataWithImage::new(cp, data_image))
+}
+
+fn load_native_or_lableme_json_file<T>(
+    path: &Path,
+    labelme: bool,
+    pull_spacing: bool,
+) -> Result<PointDataWithImage<T>>
+where
+    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone + 'static,
+
+    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+    LabelMeData: From<T>,
+    for<'a> T: TryFrom<&'a LabelMeData>,
+    for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
+        std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+{
+    if labelme {
+        load_from_labelme_json_file(path, pull_spacing)
+    } else {
+        load_from_native_json_file(path)
+    }
+}
+
+pub fn cmd(args: SvgArgs) -> Result<()> {
+    let (svg_common, subcommand) = load_svg_common(args.svg_args)?;
+    match subcommand {
+        SvgSubCommands::Coronal(svg_sub_coronal_args) => {
+            let data: PointDataWithImage<CoronalPointsAndCurve> = load_native_or_lableme_json_file(
+                &args.input,
+                svg_common.labelme,
+                svg_common.pull_spacing,
+            )?;
+            let draws = svg_sub_coronal_args
+                .measures
+                .unwrap_or_else(CoronalMeasure::all_draws);
+            let mut hide = svg_sub_coronal_args.hide;
+            for group in svg_sub_coronal_args.hide_group {
+                hide.append(&mut (&group).into());
+            }
+            process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
-        Plane::Sagittal => {
-            let ir: SagittalPointsIR = serde_json::from_str(&json_str)?;
-            let data = LabelMeData::from(ir.clone());
-            let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, json_path)?;
-            let sp: SagittalPoints = ir.try_into()?;
-            PointDataWithImage::new_sagittal(sp, data_w_image)
+        SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
+            let data: PointDataWithImage<SagittalPoints> = load_native_or_lableme_json_file(
+                &args.input,
+                svg_common.labelme,
+                svg_common.pull_spacing,
+            )?;
+            let draws = svg_sub_sagittall_args
+                .measures
+                .unwrap_or_else(SagittalMeasure::all_draws);
+            let hide = svg_sub_sagittall_args.hide;
+            process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
-    })
+    };
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -194,13 +232,11 @@ struct ReadSvgArgCommon {
     resize_param: Option<labelme_rs::ResizeParam>,
     svg_size_param: Option<labelme_rs::ResizeParam>,
     palettes: ColorPalettes,
-    direction: Plane,
-    subcommand: SvgSubCommands,
     labelme: bool,
     pull_spacing: bool,
 }
 
-fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
+fn load_svg_common(args: SvgArgsCommon) -> Result<(ReadSvgArgCommon, SvgSubCommands)> {
     let draw_param = if let Some(filename) = args.config.as_ref() {
         let s = std::fs::read_to_string(filename)
             .with_context(|| format!("Load config file {:?}", filename))?;
@@ -237,21 +273,41 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<ReadSvgArgCommon> {
         line_colors,
     };
 
-    let direction = match args.subcommand {
-        SvgSubCommands::Coronal(_) => Plane::Coronal,
-        SvgSubCommands::Sagittal(_) => Plane::Sagittal,
-    };
+    Ok((
+        ReadSvgArgCommon {
+            draw_param,
+            resize_param,
+            svg_size_param,
+            palettes,
+            labelme: args.labelme,
+            pull_spacing: args.pull_spacing,
+        },
+        args.subcommand,
+    ))
+}
 
-    Ok(ReadSvgArgCommon {
-        draw_param,
-        resize_param,
-        svg_size_param,
-        palettes,
-        direction,
-        subcommand: args.subcommand,
-        labelme: args.labelme,
-        pull_spacing: args.pull_spacing,
-    })
+fn load_from_native_json_line<'a, S>(
+    json: &'a str,
+    path: &Path,
+) -> Result<(
+    PointDataWithImage<<S as ContentFilename>::ContentType>,
+    String,
+)>
+where
+    S: ContentFilename,
+    S: TryFrom<&'a str>,
+    <S as ContentFilename>::ContentType: TryFromJson + UpdatePoints + HasImageMetadata + Clone,
+    S: TryFrom<&'a str>,
+    <S as TryFrom<&'a str>>::Error:
+        std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+
+    LabelMeData: From<<S as ContentFilename>::ContentType>,
+{
+    let content_filename = S::try_from(json)?;
+    let (content, filename) = content_filename.content_filename();
+    let data = LabelMeData::from(content.clone());
+    let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;
+    Ok((PointDataWithImage::new(content, data_w_image), filename))
 }
 
 pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
@@ -261,7 +317,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
             .build_global()?;
     }
 
-    let svg_common = load_svg_common(args.svg_args)?;
+    let (svg_common, subcommand) = load_svg_common(args.svg_args)?;
 
     let reader = if args.input.as_os_str() == "-" {
         Box::new(BufReader::new(std::io::stdin())) as Box<dyn BufRead>
@@ -270,75 +326,47 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     };
     let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
     lines.into_par_iter().try_for_each(|line| -> Result<()> {
-        let (point_with_image_data, filename): (PointDataWithImage, String) = if svg_common.labelme
-        {
-            let data_line: LabelMeDataLine = line.as_str().try_into()?;
-            let data = LabelMeDataWImage::try_from_data_and_path(data_line.content, &args.input)?;
-            let image_data = if svg_common.pull_spacing {
-                Some(ImageMetadata::try_from(Path::new(&data.data.imagePath))?)
-            } else {
-                None
-            };
-            match svg_common.direction {
-                Plane::Coronal => {
-                    let mut cp = CoronalPointsAndCurve::try_from(&data.data)?;
-                    if let Some(image_data) = image_data {
-                        cp.coronal_points.image_metadata = image_data;
-                    }
-                    (
-                        PointDataWithImage::new_coronal(cp, data),
-                        data_line.filename,
-                    )
+        match subcommand.clone() {
+            SvgSubCommands::Coronal(svg_sub_coronal_args) => {
+                let (data, filename) =
+                    load_from_native_json_line::<CoronalPointsAndCurveLine>(&line, &args.input)?;
+                let draws = svg_sub_coronal_args
+                    .measures
+                    .unwrap_or_else(CoronalMeasure::all_draws);
+                let mut hide = svg_sub_coronal_args.hide;
+                for group in svg_sub_coronal_args.hide_group {
+                    hide.append(&mut (&group).into());
                 }
-                Plane::Sagittal => {
-                    let mut sp = SagittalPoints::try_from(&data.data)?;
-                    if let Some(image_data) = image_data {
-                        sp.image_metadata = image_data;
-                    }
-                    (
-                        PointDataWithImage::new_sagittal(sp, data),
-                        data_line.filename,
-                    )
-                }
+
+                let output = args.output.join(
+                    Path::new(filename.as_str())
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                        + ".svg",
+                );
+                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
             }
-        } else {
-            let json_str = line.as_str();
-            match svg_common.direction {
-                Plane::Coronal => {
-                    let ir_line: CoronalPointsAndCurveIRLine = serde_json::from_str(json_str)?;
-                    let cp = CoronalPointsAndCurve::try_from(&ir_line.content)?;
-                    let data = LabelMeData::from(ir_line.content.coronal_points);
-                    let data_w_image =
-                        LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
-                    (
-                        PointDataWithImage::new_coronal(cp, data_w_image),
-                        ir_line.filename,
-                    )
-                }
-                Plane::Sagittal => {
-                    let ir: SagittalPointsIRLine = serde_json::from_str(json_str)?;
-                    let data = LabelMeData::from(ir.content.clone());
-                    let data_w_image =
-                        LabelMeDataWImage::try_from_data_and_path(data, &args.input)?;
-                    let sp: SagittalPoints = ir.content.try_into()?;
-                    (
-                        PointDataWithImage::new_sagittal(sp, data_w_image),
-                        ir.filename,
-                    )
-                }
+            SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
+                let (data, filename) =
+                    load_from_native_json_line::<SagittalPointsLine>(&line, &args.input)?;
+                let draws = svg_sub_sagittall_args
+                    .measures
+                    .unwrap_or_else(SagittalMeasure::all_draws);
+                let hide = svg_sub_sagittall_args.hide;
+
+                let output = args.output.join(
+                    Path::new(filename.as_str())
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                        + ".svg",
+                );
+                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
             }
         };
-        debug!("Processing {:?}", filename);
-
-        let output = args.output.join(
-            Path::new(filename.as_str())
-                .file_stem()
-                .unwrap()
-                .to_string_lossy()
-                .to_string()
-                + ".svg",
-        );
-        process_one(svg_common.clone(), point_with_image_data, &output)?;
         Ok(())
     })?;
     Ok(())

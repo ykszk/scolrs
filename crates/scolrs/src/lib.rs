@@ -915,6 +915,25 @@ impl TryFrom<LabelMeDataLine> for SagittalPointsIRLine {
     }
 }
 
+#[derive(Clone, Debug, ContentFilename)]
+pub struct SagittalPointsLine {
+    pub content: SagittalPoints,
+    pub filename: String,
+}
+
+impl TryFrom<&str> for SagittalPointsLine {
+    type Error = ScolError;
+
+    fn try_from(json: &str) -> Result<Self, Self::Error> {
+        let line: SagittalPointsIRLine = serde_json::from_str(json)?;
+        let content = SagittalPoints::try_from(line.content)?;
+        Ok(SagittalPointsLine {
+            content,
+            filename: line.filename,
+        })
+    }
+}
+
 /// Spinal curve represented by superior and inferior indices of vertebrae
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Curve {
@@ -1039,6 +1058,29 @@ pub struct CoronalPointsAndCurve {
     pub curves: CurveDesc,
 }
 
+pub trait UpdatePoints {
+    fn update_points(&mut self, data: &LabelMeData);
+}
+
+impl UpdatePoints for CoronalPointsAndCurve {
+    fn update_points(&mut self, data: &LabelMeData) {
+        self.coronal_points = CoronalPoints::try_from(data).unwrap();
+        self.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
+    }
+}
+
+impl UpdatePoints for SagittalPoints {
+    fn update_points(&mut self, data: &LabelMeData) {
+        let sp = SagittalPoints::try_from(data).unwrap();
+        self.spine = sp.spine;
+        self.femoral_head = sp.femoral_head;
+    }
+}
+
+/// Intermediate representation of `CoronalPointsAndCurve`
+///
+/// Because `curves` is optional, json of `CoronalPointsIR` can be used to create `CoronalPointsAndCurveIR`.
+/// If `curves` is not provided, it will be calculated from `coronal_points`.
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
 pub struct CoronalPointsAndCurveIR {
     #[serde(flatten)]
@@ -1052,6 +1094,25 @@ pub struct CoronalPointsAndCurveIR {
 pub struct CoronalPointsAndCurveIRLine {
     pub content: CoronalPointsAndCurveIR,
     pub filename: String,
+}
+
+#[derive(Clone, Debug, ContentFilename)]
+pub struct CoronalPointsAndCurveLine {
+    pub content: CoronalPointsAndCurve,
+    pub filename: String,
+}
+
+impl TryFrom<&str> for CoronalPointsAndCurveLine {
+    type Error = ScolError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let line: CoronalPointsAndCurveIRLine = serde_json::from_str(value)?;
+        let content = CoronalPointsAndCurve::try_from(&line.content)?;
+        Ok(CoronalPointsAndCurveLine {
+            content,
+            filename: line.filename,
+        })
+    }
 }
 
 // impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveIRLine {
