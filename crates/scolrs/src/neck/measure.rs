@@ -8,8 +8,9 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::warn;
 use scolrs::head_neck::{
-    LateralPoints, LateralPointsIR, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent,
+    LateralPoints, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent,
 };
+use scolrs::TryFromJson;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -67,9 +68,11 @@ fn process_data(
 }
 
 fn process_json(args: MeasureArgs) -> Result<()> {
-    let data_ir = LateralPointsIR::try_from(std::fs::read_to_string(&args.input)?.as_str())
-        .with_context(|| format!("Loading {:?}", args.input))?;
-    let data = LateralPoints::try_from(&data_ir)?;
+    let data = LateralPoints::try_from_ir_json(
+        std::fs::read_to_string(&args.input)
+            .with_context(|| format!("Loading {:?}", args.input))?
+            .as_str(),
+    )?;
     let measures = args.measures.unwrap_or_else(NeckLateralMeasure::all);
     let results = process_data(data, &measures)?;
     if let Some(output) = args.output {
@@ -169,9 +172,8 @@ mod tests {
         let data_dir = PathBuf::from("../../tests/data/");
 
         let input = data_dir.join("neck_case1/lateral_lateral_points.json");
-        let mut lateral_points = LateralPoints::try_from(&LateralPointsIR::try_from(
-            std::fs::read_to_string(&input)?.as_str(),
-        )?)?;
+        let mut lateral_points =
+            LateralPoints::try_from_ir_json(std::fs::read_to_string(&input)?.as_str())?;
         lateral_points.image_metadata.spacing_xy = (0.5, 0.5);
         let mut non_scaled = lateral_points.clone();
         non_scaled.image_metadata.spacing_xy = (1.0, 1.0);

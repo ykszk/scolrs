@@ -6,8 +6,8 @@ use crate::{
     nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
     ContentFilename, Corners, DrawComponent, DrawCorners, DrawError, HasCornerPoints,
     HasImageMetadata, ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, ScolError,
-    ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
-    CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    TryFromJson, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
+    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -122,6 +122,22 @@ impl LateralPoints {
         self.posterior_hard_palate.scale(scale_xy.view());
         self.chin.scale(scale_xy.view());
         self.manubrium.scale(scale_xy.view());
+    }
+}
+
+impl TryFromJson for LateralPoints {
+    type Error = ScolError;
+
+    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
+        let lateral_points_ir: LateralPointsIR = serde_json::from_str(json)?;
+        let lp = LateralPoints::try_from(&lateral_points_ir)?;
+        Ok(lp)
+    }
+
+    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
+        let data: LabelMeData = serde_json::from_str(json)?;
+        let lp = LateralPoints::try_from(&data)?;
+        Ok(lp)
     }
 }
 

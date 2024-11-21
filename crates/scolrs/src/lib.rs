@@ -46,6 +46,8 @@ pub enum ScolError {
     Linalg(#[from] rulinalg::error::Error),
     #[error("Json error")]
     Json(#[from] serde_json::Error),
+    #[error("Array shape error")]
+    ArrayShape(#[from] ndarray::ShapeError),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
