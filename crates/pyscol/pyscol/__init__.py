@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 from pydantic import BaseModel
 from enum import Enum
@@ -10,6 +11,7 @@ from .pyscol import (
     trimming_box_with_resample,
     py_draw_coronal,
     py_draw_sagittal,
+    py_wrap_in_html,
 )
 
 
@@ -99,8 +101,8 @@ def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: 
 
 
 def draw_coronal(
-    image: np.ndarray,
     coronal_points_and_curve_json: str,
+    json_path: str | Path,
     draws: list[str],
     hide: list[str],
     draw_param_json: str,
@@ -108,14 +110,13 @@ def draw_coronal(
     line_colors: dict[str, str],
     overlay: Optional[np.ndarray],
 ) -> str:
-    svg_size = image.shape[1], image.shape[0]
+    json_path = str(json_path)
     return py_draw_coronal(
-        image,
         coronal_points_and_curve_json,
+        json_path,
         draws,
         hide,
         draw_param_json,
-        svg_size,
         label_colors,
         line_colors,
         overlay,
@@ -123,8 +124,8 @@ def draw_coronal(
 
 
 def draw_sagittal(
-    image: np.ndarray,
     coronal_points_json: str,
+    json_path: str | Path,
     draws: list[str],
     hide: list[str],
     draw_param_json: str,
@@ -132,15 +133,18 @@ def draw_sagittal(
     line_colors: dict[str, str],
     overlay: Optional[np.ndarray],
 ) -> str:
-    svg_size = image.shape[1], image.shape[0]
+    json_path = str(json_path)
     return py_draw_sagittal(
-        image,
         coronal_points_json,
+        json_path,
         draws,
         hide,
         draw_param_json,
-        svg_size,
         label_colors,
         line_colors,
         overlay,
     )
+
+
+def wrap_in_html(svg: str, title: str) -> str:
+    return py_wrap_in_html(svg, title)

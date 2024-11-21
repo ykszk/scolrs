@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveDesc,
+    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveDesc, MeasureAndDraw,
     MeasureComponent, MeasureError, SagittalMeasure, SagittalPoints, SagittalPointsIR,
     SagittalPointsIRLine, ScolError,
 };

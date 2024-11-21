@@ -517,6 +517,13 @@ fn create_shapes(label_points: &[(&str, Vec<Point2d>)]) -> Vec<labelme_rs::Shape
     shapes
 }
 
+impl From<CoronalPoints> for LabelMeData {
+    fn from(cp: CoronalPoints) -> Self {
+        let ir = CoronalPointsIR::from(&cp);
+        LabelMeData::from(ir)
+    }
+}
+
 impl From<CoronalPointsIR> for LabelMeData {
     fn from(ir: CoronalPointsIR) -> Self {
         let mut data = LabelMeData {
@@ -851,6 +858,13 @@ impl From<SagittalPointsIR> for LabelMeData {
     }
 }
 
+impl From<SagittalPoints> for LabelMeData {
+    fn from(sp: SagittalPoints) -> Self {
+        let ir = SagittalPointsIR::from(&sp);
+        LabelMeData::from(ir)
+    }
+}
+
 impl From<&SagittalPoints> for SagittalPointsIR {
     fn from(cp: &SagittalPoints) -> Self {
         let spine = array3_to_nested_vec(cp.spine.c7tls.0.clone());
@@ -1115,6 +1129,19 @@ impl TryFromJson for CoronalPointsAndCurve {
         let cp = CoronalPoints::try_from(&data)?;
         let curves = cp.identify_curves();
         Ok(CoronalPointsAndCurve::new(cp, curves))
+    }
+}
+
+impl From<CoronalPointsAndCurve> for LabelMeData {
+    fn from(cp: CoronalPointsAndCurve) -> Self {
+        let mut data = LabelMeData::from(cp.coronal_points);
+        data.shapes.push(labelme_rs::Shape {
+            label: "Curves".to_string(),
+            points: vec![],
+            shape_type: "curve".to_string(),
+            ..Default::default()
+        });
+        data
     }
 }
 
@@ -2008,18 +2035,28 @@ pub enum CoronalMeasure {
     LegLengthDiscrepancy,
 }
 
-impl CoronalMeasure {
-    pub fn all_draws() -> Vec<Self> {
+pub trait MeasureAndDraw {
+    fn all_draws() -> Vec<Self>
+    where
+        Self: std::marker::Sized;
+    fn is_measure(&self) -> bool;
+    fn all_measures() -> Vec<Self>
+    where
+        Self: std::marker::Sized;
+}
+
+impl MeasureAndDraw for CoronalMeasure {
+    fn all_draws() -> Vec<Self> {
         CoronalMeasure::VARIANTS.to_vec()
     }
-    pub fn is_measure(&self) -> bool {
+    fn is_measure(&self) -> bool {
         use CoronalMeasure::*;
         !matches!(
             self,
             VertebralLabels | VertebralPoints | Centroids | SpinalLine | CurveApex | CSVL
         )
     }
-    pub fn all_measures() -> Vec<Self> {
+    fn all_measures() -> Vec<Self> {
         CoronalMeasure::VARIANTS
             .iter()
             .filter(|&m| m.is_measure())
@@ -2064,15 +2101,15 @@ pub enum SagittalMeasure {
     LumbosacralAngle,
 }
 
-impl SagittalMeasure {
-    pub fn all_draws() -> Vec<Self> {
+impl MeasureAndDraw for SagittalMeasure {
+    fn all_draws() -> Vec<Self> {
         SagittalMeasure::VARIANTS.to_vec()
     }
-    pub fn is_measure(&self) -> bool {
+    fn is_measure(&self) -> bool {
         use SagittalMeasure::*;
         !matches!(self, VertebralLabels | VertebralPoints)
     }
-    pub fn all_measures() -> Vec<Self> {
+    fn all_measures() -> Vec<Self> {
         SagittalMeasure::VARIANTS
             .iter()
             .filter(|&m| m.is_measure())

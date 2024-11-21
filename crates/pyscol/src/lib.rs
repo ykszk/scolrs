@@ -1,14 +1,18 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error, path::Path};
 
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
-use labelme_rs::image::{self, DynamicImage, GrayImage};
+use labelme_rs::{
+    image::{self, DynamicImage, GrayImage},
+    LabelMeData, LabelMeDataWImage,
+};
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use scolrs::{
     draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPointsAndCurve,
-    DrawComponent, DrawError, DrawParam, HasImageMetadata, MeasureError, Painter, SagittalMeasure,
-    SagittalPoints, Scalable, TryFromJson,
+    DrawComponent, DrawError, DrawParam, HasImageMetadata, MeasureAndDraw, MeasureError, Painter,
+    SagittalMeasure, SagittalPoints, Scalable, TryFromJson,
 };
+use serde::de::DeserializeOwned;
 use svg::node::element;
 
 #[pyfunction]
@@ -103,11 +107,15 @@ pub enum PyScolError {
     ImageShape(String),
     #[error("Channel has to be 3 for 3D array")]
     ChannelMismatch,
+    #[error("Error in html: {0}")]
+    Html(#[from] scolrs::HtmlWrapError),
+    #[error("Error in image: {0}")]
+    Image(#[from] labelme_rs::ImageError),
 }
 
 impl From<PyScolError> for PyErr {
     fn from(e: PyScolError) -> PyErr {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e))
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}: {:?}", e, e.source()))
     }
 }
 
@@ -152,7 +160,7 @@ impl<T> DeserializeAll<T> for Vec<String> {
 
 #[allow(clippy::too_many_arguments)]
 fn draw_on_image<'a, T, S>(
-    image: PyReadonlyArrayDyn<'_, u8>,
+    image: DynamicImage,
     data: T,
     draws: Vec<S>,
     hide: Vec<S>,
@@ -176,9 +184,7 @@ where
     let mut line_colors = ColorPalette::new(line_colors);
     let mut label_colors = ColorPalette::new(label_colors);
 
-    let dynamic_image = ndarray_to_dynamic_image(image)?;
-
-    let mut document = painter.doc_w_background(&dynamic_image)?;
+    let mut document = painter.doc_w_background(&image)?;
 
     document = document.add(style);
 
@@ -209,29 +215,45 @@ where
     Ok(svg)
 }
 
-#[pyfunction]
 #[allow(clippy::too_many_arguments)]
-pub fn py_draw_coronal(
-    image: PyReadonlyArrayDyn<'_, u8>,
+fn draw_generic<T, S>(
     coronal_points_json: &str,
+    json_path: &str,
     draws: Vec<String>,
     hide: Vec<String>,
     draw_param_json: &str,
-    svg_size: (usize, usize),
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
-) -> Result<String, PyScolError> {
-    let coronal_set = CoronalPointsAndCurve::try_from_ir_json(coronal_points_json)?;
+) -> Result<String, PyScolError>
+where
+    T: TryFromJson + Clone,
+    LabelMeData: From<T>,
+    S: MeasureAndDraw + DeserializeOwned,
+    Vec<String>: DeserializeAll<S>,
+    PyScolError: std::convert::From<<T as scolrs::TryFromJson>::Error>,
+
+    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
+    S: Clone + Copy + PartialEq,
+    T: HasImageMetadata + Scalable,
+    <T as Scalable>::Error: std::fmt::Debug,
+{
+    let coronal_set = T::try_from_ir_json(coronal_points_json)?;
+    let lm_data = LabelMeData::from(coronal_set.clone());
+    let data_w_image = LabelMeDataWImage::try_from_data_and_path(lm_data, Path::new(json_path))?;
 
     let draws = if draws.is_empty() {
-        CoronalMeasure::all_draws()
+        S::all_draws()
     } else {
         draws.deserialize_all()?
     };
-    let hide: Vec<CoronalMeasure> = hide.deserialize_all()?;
+    let svg_size = (
+        data_w_image.image.width() as usize,
+        data_w_image.image.height() as usize,
+    );
+    let hide: Vec<S> = hide.deserialize_all()?;
     draw_on_image(
-        image,
+        data_w_image.image,
         coronal_set,
         draws,
         hide,
@@ -245,36 +267,60 @@ pub fn py_draw_coronal(
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-pub fn py_draw_sagittal(
-    image: PyReadonlyArrayDyn<'_, u8>,
+pub fn py_draw_coronal(
     coronal_points_json: &str,
+    json_path: &str,
     draws: Vec<String>,
     hide: Vec<String>,
     draw_param_json: &str,
-    svg_size: (usize, usize),
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError> {
-    let sagittal_points = SagittalPoints::try_from_ir_json(coronal_points_json)?;
-
-    let draws = if draws.is_empty() {
-        SagittalMeasure::all_draws()
-    } else {
-        draws.deserialize_all()?
-    };
-    let hide: Vec<SagittalMeasure> = hide.deserialize_all()?;
-    draw_on_image(
-        image,
-        sagittal_points,
+    draw_generic::<CoronalPointsAndCurve, CoronalMeasure>(
+        coronal_points_json,
+        json_path,
         draws,
         hide,
         draw_param_json,
-        svg_size,
         label_colors,
         line_colors,
         overlay,
     )
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn py_draw_sagittal(
+    coronal_points_json: &str,
+    json_path: &str,
+    draws: Vec<String>,
+    hide: Vec<String>,
+    draw_param_json: &str,
+    label_colors: HashMap<String, String>,
+    line_colors: HashMap<String, String>,
+    overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+) -> Result<String, PyScolError> {
+    draw_generic::<SagittalPoints, SagittalMeasure>(
+        coronal_points_json,
+        json_path,
+        draws,
+        hide,
+        draw_param_json,
+        label_colors,
+        line_colors,
+        overlay,
+    )
+}
+
+#[pyfunction]
+fn py_wrap_in_html(
+    svg: String,
+    title: String,
+    selector: Option<Vec<String>>,
+) -> Result<String, PyScolError> {
+    let selector = selector.unwrap_or_else(|| vec!["g.Component".to_string()]);
+    Ok(scolrs::wrap_in_html(svg, selector, title)?)
 }
 
 #[pymodule]
@@ -286,6 +332,7 @@ fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(clahe_u16_u16, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_coronal, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_sagittal, m)?)?;
+    m.add_function(wrap_pyfunction!(py_wrap_in_html, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u8_u8, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u16_u16, m)?)?;
     Ok(())

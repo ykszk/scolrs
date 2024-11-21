@@ -13,7 +13,8 @@ use rayon::prelude::*;
 use scolrs::{
     draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, CoronalMeasure,
     CoronalPointsAndCurve, CoronalPointsAndCurveIR, CoronalPointsAndCurveIRLine, DrawParam,
-    ImageMetadata, SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine,
+    ImageMetadata, MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsIR,
+    SagittalPointsIRLine,
 };
 
 enum PointData {

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::cli::ListArgs;
 use anyhow::Result;
-use scolrs::{CoronalMeasure, SagittalMeasure};
+use scolrs::{CoronalMeasure, MeasureAndDraw, SagittalMeasure};
 
 fn print_measures<T: Display>(title: &str, measures: Vec<T>) {
     println!("{}", title);

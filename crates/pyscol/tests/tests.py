@@ -67,8 +67,8 @@ class TestDrawCoronal(unittest.TestCase):
         data_dir = Path("../../tests/data")
         indir = data_dir / "case2"
         for stem in ["frontal", "lateral"]:
-            image = np.array(Image.open(indir / f"{stem}.jpg"))
-            with open(indir / f"{stem}_native.json") as f:
+            json_path = indir / f"{stem}_native.json"
+            with open(json_path) as f:
                 coronal_points_json = f.read()
             draws = []
             hide = []
@@ -77,11 +77,11 @@ class TestDrawCoronal(unittest.TestCase):
             line_colors = {}
             if stem == "frontal":
                 svg = pyscol.draw_coronal(
-                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None
+                    coronal_points_json, str(json_path), draws, hide, draw_param_json, label_colors, line_colors, None
                 )
             else:
                 svg = pyscol.draw_sagittal(
-                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None
+                    coronal_points_json, json_path, draws, hide, draw_param_json, label_colors, line_colors, None
                 )
 
             out_dir = test_output_dir()
@@ -90,3 +90,7 @@ class TestDrawCoronal(unittest.TestCase):
                 out_dir.mkdir(parents=True, exist_ok=True)
                 with open(out_dir / f"{stem}.svg", "w") as f:
                     f.write(svg)
+
+                html = pyscol.wrap_in_html(svg, "test case2")
+                with open(out_dir / f"{stem}.html", "w") as f:
+                    f.write(html)
