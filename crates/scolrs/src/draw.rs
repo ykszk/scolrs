@@ -2223,3 +2223,70 @@ pub fn draw_coronal(
         palettes,
     )
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum HtmlWrapError {
+    #[error("Failed to find `id` attribute")]
+    IdNotFound,
+    #[error("Failed to render template: {0}")]
+    Tera(#[from] tera::Error),
+}
+
+/// Wrap the SVG in HTML with visibility toggles
+pub fn wrap_in_html(
+    svg: String,
+    selector: Vec<String>,
+    title: String,
+) -> Result<String, HtmlWrapError> {
+    let document = scraper::Html::parse_document(&svg);
+
+    let mut templates = tera::Tera::default();
+    templates.autoescape_on(vec![]);
+    templates
+        .add_raw_templates(vec![
+            ("html.jinja", include_str!("templates/html.jinja")),
+            ("checkbox.jinja", include_str!("templates/checkbox.jinja")),
+        ])
+        .unwrap();
+    let javascript = include_str!("templates/capture.js");
+    let mut elements: Vec<_> = Vec::new();
+    for selector in selector {
+        let selector = scraper::Selector::parse(&selector).unwrap_or_else(|_| {
+            panic!("Failed to parse selector: {}", &selector);
+        });
+        elements.extend(document.select(&selector));
+    }
+
+    let mut checkboxes = vec![];
+    for element in elements {
+        let mut context = tera::Context::new();
+        let id = element
+            .value()
+            .attr("id")
+            .ok_or(HtmlWrapError::IdNotFound)?;
+        context.insert("id", &id);
+        context.insert("label", &element.value().attr("data-label").unwrap_or(id));
+        context.insert(
+            "description",
+            &element.value().attr("data-description").unwrap_or(""),
+        );
+        let visibility = element.value().attr("visibility").unwrap_or("visible");
+        let checked = if visibility == "visible" {
+            "checked"
+        } else {
+            ""
+        };
+        context.insert("checked", checked);
+        checkboxes.push(templates.render("checkbox.jinja", &context)?);
+    }
+
+    let mut context = tera::Context::new();
+    context.insert("svg", &svg);
+    context.insert("checkboxes", &checkboxes.join("\n"));
+    context.insert("title", &title);
+    context.insert("javascript", &javascript);
+    context.insert("save_module", &include_str!("templates/save_module.html"));
+
+    let html = templates.render("html.jinja", &context)?;
+    Ok(html)
+}
