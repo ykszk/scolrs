@@ -100,26 +100,24 @@ def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: 
 
 def draw_coronal(
     image: np.ndarray,
-    coronal_points_json: str,
+    coronal_points_and_curve_json: str,
     draws: list[str],
     hide: list[str],
     draw_param_json: str,
     label_colors: dict[str, str],
     line_colors: dict[str, str],
-    scol_desc_json: Optional[str],
     overlay: Optional[np.ndarray],
 ) -> str:
     svg_size = image.shape[1], image.shape[0]
     return py_draw_coronal(
         image,
-        coronal_points_json,
+        coronal_points_and_curve_json,
         draws,
         hide,
         draw_param_json,
         svg_size,
         label_colors,
         line_colors,
-        scol_desc_json,
         overlay,
     )
 

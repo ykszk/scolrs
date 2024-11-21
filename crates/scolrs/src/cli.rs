@@ -140,9 +140,6 @@ pub struct SvgArgs {
     /// Output svg filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
-    /// Use specified curves instaed of calculating from the points
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub curve_set: Option<PathBuf>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
 }
@@ -155,9 +152,6 @@ pub struct SvgNdjsonArgs {
     /// Output directory
     #[arg(value_hint = ValueHint::DirPath)]
     pub output: PathBuf,
-    /// Use specified curves from ndjson instaed of calculating from the points
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub curve_set: Option<PathBuf>,
     /// Maximum number of jobs to run in parallel
     #[clap(short, long)]
     pub jobs: Option<usize>,

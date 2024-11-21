@@ -7,10 +7,11 @@ use crate::neck::cli::MeasureArgs;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::warn;
-use scolrs::head_neck::{
-    LateralPoints, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent,
-};
 use scolrs::TryFromJson;
+use scolrs::{
+    head_neck::{LateralPoints, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent},
+    Scalable,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -54,7 +55,7 @@ fn process_data(
     if lateral_points.image_metadata.spacing_xy.0 != 1.0
         || lateral_points.image_metadata.spacing_xy.1 != 1.0
     {
-        lateral_points.scale();
+        lateral_points.scale()?;
     }
     let measures: Vec<Box<dyn NeckMeasureComponent>> = measures
         .iter()

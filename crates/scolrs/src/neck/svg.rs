@@ -34,8 +34,6 @@ fn process_data(
     lateral_points = LateralPoints::try_from(&data.data)?;
     lateral_points.image_metadata = original_image_data;
 
-    lateral_points.scale();
-
     let svg_size = if let Some(size) = args.size.as_ref() {
         let size_param = labelme_rs::ResizeParam::try_from(size.as_str())?;
         data.data
@@ -58,8 +56,7 @@ fn process_data(
     };
 
     let groups = draw_components(
-        &lateral_points,
-        &lateral_points.image_metadata,
+        lateral_points,
         neck_sagittal_draw,
         &args.hide,
         &painter,

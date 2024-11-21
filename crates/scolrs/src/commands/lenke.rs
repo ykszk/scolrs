@@ -22,14 +22,14 @@ fn load_coronal_points<P: AsRef<Path>>(filename: P) -> Result<CoronalPoints> {
 pub fn cmd(args: LenkeArgs) -> Result<()> {
     let coronal = load_coronal_points(&args.coronal)?;
 
-    let (curve_set, apex_set, major_curve) = coronal.identify_curves();
+    let curve_desc = coronal.identify_curves();
     let left = args.left.map(load_spine).transpose()?;
     let right = args.right.map(load_spine).transpose()?;
     let sagittal = args.sagittal.map(load_spine).transpose()?;
 
     let study = Study::new(coronal, left, right, sagittal);
 
-    let chart = study.chart(&curve_set, major_curve.unwrap());
+    let chart = study.chart(&curve_desc.curves, curve_desc.major_curve.unwrap());
     println!("chart:\n{}", chart);
     match chart.classify() {
         Ok(cls) => println!("Curve type: {:?}", cls),
@@ -41,7 +41,7 @@ pub fn cmd(args: LenkeArgs) -> Result<()> {
             }
         }
     }
-    if let Some(apex) = apex_set.tll {
+    if let Some(apex) = curve_desc.apices.tll {
         println!("Lumbar modifier:{:?}", study.coronal.lumbar_modifier(apex));
     }
     if let Some(sagittal) = study.sagittal {

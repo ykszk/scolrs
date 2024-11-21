@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
 use labelme_rs::image::{self, DynamicImage, GrayImage};
-use log::debug;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use scolrs::{
-    draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPoints, DrawComponent,
-    DrawError, DrawParam, ImageMetadata, MeasureError, Painter, SagittalMeasure, SagittalPoints,
-    ScolDesc, TryFromJson,
+    draw_components, ColorPalette, ColorPalettes, CoronalMeasure, CoronalPointsAndCurve,
+    DrawComponent, DrawError, DrawParam, HasImageMetadata, MeasureError, Painter, SagittalMeasure,
+    SagittalPoints, Scalable, TryFromJson,
 };
 use svg::node::element;
 
@@ -154,8 +153,7 @@ impl<T> DeserializeAll<T> for Vec<String> {
 #[allow(clippy::too_many_arguments)]
 fn draw_on_image<'a, T, S>(
     image: PyReadonlyArrayDyn<'_, u8>,
-    data: &'a T,
-    image_metadata: &ImageMetadata,
+    data: T,
     draws: Vec<S>,
     hide: Vec<S>,
     draw_param_json: &str,
@@ -165,8 +163,10 @@ fn draw_on_image<'a, T, S>(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError>
 where
-    for<'b> (&'b S, &'a T): Into<Box<dyn DrawComponent + 'a>>,
+    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
+    T: HasImageMetadata + Scalable,
+    <T as Scalable>::Error: std::fmt::Debug,
 {
     let draw_param: DrawParam = serde_json::from_str(draw_param_json)?;
 
@@ -198,7 +198,7 @@ where
         label_colors,
     };
 
-    let groups = draw_components(data, image_metadata, &draws, &hide, &painter, palettes)?;
+    let groups = draw_components(data, &draws, &hide, &painter, palettes)?;
 
     for g in groups {
         document = document.add(g);
@@ -220,25 +220,9 @@ pub fn py_draw_coronal(
     svg_size: (usize, usize),
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
-    scol_desc_json: Option<&str>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError> {
-    let mut coronal_points = CoronalPoints::try_from_ir_json(coronal_points_json)?;
-    coronal_points.scale()?;
-
-    let (curve_set, apex_set) = match scol_desc_json {
-        Some(s) => {
-            let scol_desc: ScolDesc = serde_json::from_str(s)?;
-            (scol_desc.curves, scol_desc.apices)
-        }
-        None => {
-            let (cs, apexes, _major_curve) = coronal_points.identify_curves();
-            debug!("CurveSet: {:?}", cs);
-            (cs, apexes)
-        }
-    };
-
-    let data = (&coronal_points, &curve_set, &apex_set);
+    let coronal_set = CoronalPointsAndCurve::try_from_ir_json(coronal_points_json)?;
 
     let draws = if draws.is_empty() {
         CoronalMeasure::all_draws()
@@ -248,8 +232,7 @@ pub fn py_draw_coronal(
     let hide: Vec<CoronalMeasure> = hide.deserialize_all()?;
     draw_on_image(
         image,
-        &data,
-        &coronal_points.image_metadata,
+        coronal_set,
         draws,
         hide,
         draw_param_json,
@@ -273,8 +256,7 @@ pub fn py_draw_sagittal(
     line_colors: HashMap<String, String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError> {
-    let mut sagittal_points = SagittalPoints::try_from_ir_json(coronal_points_json)?;
-    sagittal_points.scale();
+    let sagittal_points = SagittalPoints::try_from_ir_json(coronal_points_json)?;
 
     let draws = if draws.is_empty() {
         SagittalMeasure::all_draws()
@@ -284,8 +266,7 @@ pub fn py_draw_sagittal(
     let hide: Vec<SagittalMeasure> = hide.deserialize_all()?;
     draw_on_image(
         image,
-        &sagittal_points,
-        &sagittal_points.image_metadata,
+        sagittal_points,
         draws,
         hide,
         draw_param_json,

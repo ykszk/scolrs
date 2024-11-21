@@ -11,6 +11,7 @@ use ndarray_stats::QuantileExt;
 pub use serde;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ord;
+use std::convert::Infallible;
 use std::fmt::Display;
 use std::iter::zip;
 use std::ops::AddAssign;
@@ -62,6 +63,12 @@ pub struct ImageMetadata {
 pub trait HasImageMetadata {
     fn image_metadata(&self) -> &ImageMetadata;
     fn image_metadata_mut(&mut self) -> &mut ImageMetadata;
+}
+
+/// Scale the points by internal spacing data
+pub trait Scalable {
+    type Error;
+    fn scale(&mut self) -> Result<(), Self::Error>;
 }
 
 impl Default for ImageMetadata {
@@ -390,9 +397,10 @@ pub struct CoronalPoints {
     pub image_metadata: ImageMetadata,
 }
 
-impl CoronalPoints {
+impl Scalable for CoronalPoints {
+    type Error = ScolError;
     /// Scale all points by `scale_xy` and refit the polynomial curve
-    pub fn scale(&mut self) -> Result<(), ScolError> {
+    fn scale(&mut self) -> Result<(), ScolError> {
         if self.image_metadata.spacing_xy == (1.0, 1.0) {
             return Ok(());
         }
@@ -716,7 +724,7 @@ impl CoronalPoints {
         }
     }
 
-    pub fn identify_curves(&self) -> (CurveSet, ApexSet, Option<MajorCurve>) {
+    pub fn identify_curves(&self) -> CurveDesc {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
         if let Some(largest_curve) = self.find_largest_curve() {
@@ -749,7 +757,7 @@ impl CoronalPoints {
             };
         }
         let apices = curves.apices(self);
-        (curves, apices, major_curve)
+        CurveDesc::new(curves, apices, major_curve)
     }
 
     pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {
@@ -785,7 +793,7 @@ impl TryFrom<LabelMeDataLine> for CoronalPointsIRLine {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, HasImageMetadata)]
 pub struct SagittalPoints {
     pub spine: Spine,
     pub femoral_head: AtMost2<Array2<f64>>,
@@ -793,10 +801,11 @@ pub struct SagittalPoints {
     pub image_metadata: ImageMetadata,
 }
 
-impl SagittalPoints {
-    pub fn scale(&mut self) {
+impl Scalable for SagittalPoints {
+    type Error = Infallible;
+    fn scale(&mut self) -> Result<(), Self::Error> {
         if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return;
+            return Ok(());
         }
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
@@ -805,6 +814,7 @@ impl SagittalPoints {
 
         self.spine.scale(scale_xy.view());
         self.femoral_head.0.scale(scale_xy.view());
+        Ok(())
     }
 }
 
@@ -976,15 +986,15 @@ pub enum MajorCurve {
     TLL,
 }
 
-/// Descriptor for scoliosis consisting of curves, apices, and major-curve-kind (MT or TLL)
+/// Descriptor for curves of scoliosis consisting of curves, apices, and major-curve-kind (MT or TLL)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct ScolDesc {
+pub struct CurveDesc {
     pub curves: CurveSet,
     pub apices: ApexSet,
     pub major_curve: Option<MajorCurve>,
 }
 
-impl ScolDesc {
+impl CurveDesc {
     pub fn new(curves: CurveSet, apices: ApexSet, major_curve: Option<MajorCurve>) -> Self {
         Self {
             curves,
@@ -994,20 +1004,118 @@ impl ScolDesc {
     }
 }
 
-impl TryFrom<&LabelMeData> for ScolDesc {
+impl TryFrom<&LabelMeData> for CurveDesc {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let coronal_points = CoronalPoints::try_from(data)?;
-        let (curves, apex_set, major_curve) = coronal_points.identify_curves();
-        Ok(ScolDesc::new(curves, apex_set, major_curve))
+        Ok(coronal_points.identify_curves())
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr)]
 pub struct ScolDescLine {
-    pub content: ScolDesc,
+    pub content: CurveDesc,
     pub filename: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoronalPointsAndCurve {
+    pub coronal_points: CoronalPoints,
+    pub curves: CurveDesc,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
+pub struct CoronalPointsAndCurveIR {
+    #[serde(flatten)]
+    pub coronal_points: CoronalPointsIR,
+    pub curves: Option<CurveDesc>,
+}
+
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
+)]
+pub struct CoronalPointsAndCurveIRLine {
+    pub content: CoronalPointsAndCurveIR,
+    pub filename: String,
+}
+
+// impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveIRLine {
+//     type Error = ScolError;
+
+//     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+//         TryConvertContentFilename::try_convert_from(data)
+//     }
+// }
+
+impl CoronalPointsAndCurve {
+    pub fn new(coronal_points: CoronalPoints, curves: CurveDesc) -> Self {
+        Self {
+            coronal_points,
+            curves,
+        }
+    }
+
+    // pub fn update_curve(&mut self) {
+    //     self.curves = self.coronal_points.identify_curves();
+    // }
+}
+
+impl Scalable for CoronalPointsAndCurve {
+    type Error = ScolError;
+    fn scale(&mut self) -> Result<(), Self::Error> {
+        self.coronal_points.scale()
+    }
+}
+
+impl HasImageMetadata for CoronalPointsAndCurve {
+    fn image_metadata(&self) -> &ImageMetadata {
+        &self.coronal_points.image_metadata
+    }
+    fn image_metadata_mut(&mut self) -> &mut ImageMetadata {
+        &mut self.coronal_points.image_metadata
+    }
+}
+
+impl TryFrom<&LabelMeData> for CoronalPointsAndCurve {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let coronal_points = CoronalPoints::try_from(data)?;
+        let curves = coronal_points.identify_curves();
+        Ok(CoronalPointsAndCurve::new(coronal_points, curves))
+    }
+}
+
+impl TryFrom<&CoronalPointsAndCurveIR> for CoronalPointsAndCurve {
+    type Error = ScolError;
+
+    fn try_from(ir: &CoronalPointsAndCurveIR) -> Result<Self, Self::Error> {
+        let coronal_points = CoronalPoints::try_from(ir.coronal_points.clone())?;
+        let curves = if let Some(curves) = &ir.curves {
+            curves.clone()
+        } else {
+            coronal_points.identify_curves()
+        };
+        Ok(CoronalPointsAndCurve::new(coronal_points, curves))
+    }
+}
+
+impl TryFromJson for CoronalPointsAndCurve {
+    type Error = ScolError;
+
+    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
+        let ir: CoronalPointsAndCurveIR = serde_json::from_str(json)?;
+        let cp = CoronalPointsAndCurve::try_from(&ir)?;
+        Ok(cp)
+    }
+
+    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
+        let data: LabelMeData = serde_json::from_str(json)?;
+        let cp = CoronalPoints::try_from(&data)?;
+        let curves = cp.identify_curves();
+        Ok(CoronalPointsAndCurve::new(cp, curves))
+    }
 }
 
 /// Trait that enables `arr.l2norm()` to a vector (Array1 or ArrayView1)

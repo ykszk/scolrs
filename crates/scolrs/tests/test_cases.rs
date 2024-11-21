@@ -47,7 +47,9 @@ fn test_curve(
     let json_filename = data_directory().join(json_filename);
     let scol = load_lateral_points(&json_filename)?;
 
-    let (curve_set, apex_set, major_curve_result) = scol.identify_curves();
+    let curve_desc = scol.identify_curves();
+    let (curve_set, apex_set, major_curve_result) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
     assert_eq!(major_curve_result.unwrap(), major_curve);
     let (mt_curve, _angle) = curve_set.mt.unwrap();
     assert_eq!(mt_curve.sup, sup as usize);
@@ -77,7 +79,9 @@ fn test_curves_case2() -> Result<()> {
     let json_filename = data_directory().join("case2/frontal.json");
     let scol = load_lateral_points(&json_filename)?;
 
-    let (curve_set, apex_set, major_curve) = scol.identify_curves();
+    let curve_desc = scol.identify_curves();
+    let (curve_set, apex_set, major_curve) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
     // no strict testing of curve positions because case 2 is hard to determine curve with some certainty.
     assert!(curve_set.pt.is_none());
     assert!(curve_set.mt.is_some());
@@ -169,7 +173,9 @@ fn test_lenke_case1() -> Result<()> {
         Some("case1/left_lateral_bend.json"),
         Some("case1/right_lateral_bend.json"),
     )?;
-    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
+    let curve_desc = study.coronal.identify_curves();
+    let (curve_set, apex_set, major_curve) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -254,7 +260,9 @@ fn test_lenke_case1() -> Result<()> {
 fn test_lenke_case2() -> Result<()> {
     setup();
     let study = load_study("case2/frontal.json", Some("case2/lateral.json"), None, None)?;
-    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
+    let curve_desc = study.coronal.identify_curves();
+    let (curve_set, apex_set, major_curve) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -297,7 +305,9 @@ fn test_lenke_case2() -> Result<()> {
 fn test_lenke_case3() -> Result<()> {
     setup();
     let study = load_study("case3/frontal.json", Some("case3/lateral.json"), None, None)?;
-    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
+    let curve_desc = study.coronal.identify_curves();
+    let (curve_set, apex_set, major_curve) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 
@@ -371,7 +381,9 @@ fn test_lenke_case4() -> Result<()> {
     let sagittal_points = scolrs::SagittalPoints::try_from(&data)?;
     assert_eq!(sagittal_points.femoral_head.0.len_of(Axis(0)), 2);
 
-    let (curve_set, apex_set, major_curve) = study.coronal.identify_curves();
+    let curve_desc = study.coronal.identify_curves();
+    let (curve_set, apex_set, major_curve) =
+        (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
 
     let chart = study.chart(&curve_set, major_curve.unwrap());
 

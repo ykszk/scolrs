@@ -10,9 +10,9 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, MeasureComponent,
-    MeasureError, SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine,
-    ScolDesc, ScolError,
+    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveDesc,
+    MeasureComponent, MeasureError, SagittalMeasure, SagittalPoints, SagittalPointsIR,
+    SagittalPointsIRLine, ScolError,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -148,11 +148,11 @@ fn measure_coronal(
     let (curve_set, apex_set) = if let Some(curve_set) = curve_set_path.as_ref() {
         let reader = std::fs::File::open(curve_set)
             .with_context(|| format!("Load curve set {:?}", curve_set))?;
-        let cs: ScolDesc = serde_json::from_reader(reader)?;
+        let cs: CurveDesc = serde_json::from_reader(reader)?;
         (cs.curves, cs.apices)
     } else {
-        let (cs, apexes, _major_curve) = coronal_points.identify_curves();
-        (cs, apexes)
+        let curve_desc = coronal_points.identify_curves();
+        (curve_desc.curves, curve_desc.apices)
     };
     let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
     let data = (&coronal_points, &curve_set, &apex_set);

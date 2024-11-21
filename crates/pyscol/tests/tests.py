@@ -77,7 +77,7 @@ class TestDrawCoronal(unittest.TestCase):
             line_colors = {}
             if stem == "frontal":
                 svg = pyscol.draw_coronal(
-                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None, None
+                    image, coronal_points_json, draws, hide, draw_param_json, label_colors, line_colors, None
                 )
             else:
                 svg = pyscol.draw_sagittal(

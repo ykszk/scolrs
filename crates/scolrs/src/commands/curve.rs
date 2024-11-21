@@ -3,21 +3,21 @@ use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
-use scolrs::{CoronalPoints, CoronalPointsIR, Curve, ScolDesc, VertebraDiscIndex};
+use scolrs::{CoronalPoints, CoronalPointsIR, Curve, CurveDesc, Scalable, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoLine {
-    pub content: ScolDesc,
+    pub content: CurveDesc,
     pub filename: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoAll {
     #[serde(flatten)]
-    pub info: ScolDesc,
+    pub info: CurveDesc,
     pub all_curves: Vec<(Curve, f64, VertebraDiscIndex)>,
 }
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,8 +31,7 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let coronal_points = CoronalPoints::try_from(data)?;
-        let (curves, apex_set, major_curve) = coronal_points.identify_curves();
-        let info = ScolDesc::new(curves, apex_set, major_curve);
+        let info = coronal_points.identify_curves();
         let all_curves = coronal_points.find_all_curves();
         let all_curves: Vec<_> = all_curves
             .into_iter()
@@ -49,7 +48,7 @@ impl TryFrom<&LabelMeDataLine> for CurveInfoLine {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeDataLine) -> Result<Self, Self::Error> {
-        let content: ScolDesc = (&data.content).try_into()?;
+        let content: CurveDesc = (&data.content).try_into()?;
         Ok(CurveInfoLine {
             content,
             filename: data.filename.clone(),
@@ -109,7 +108,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
             let info: CurveInfoAll = (&data).try_into()?;
             println!("{}", serde_json::to_string(&info)?);
         } else {
-            let info: ScolDesc = (&data).try_into()?;
+            let info: CurveDesc = (&data).try_into()?;
             println!("{}", serde_json::to_string(&info)?);
         }
     }

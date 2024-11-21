@@ -1,6 +1,7 @@
 use crate::{
-    angle_from_lines, CoronalMeasure, CoronalPoints, HasCornerPoints, L2Norm, SagittalMeasure,
-    SagittalPoints, ValidateLength, CORNER_LABELS,
+    angle_from_lines, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, HasCornerPoints,
+    HasImageMetadata, L2Norm, SagittalMeasure, SagittalPoints, Scalable, ValidateLength,
+    CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::image::DynamicImage;
@@ -2041,19 +2042,12 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn Measure
     }
 }
 
-impl<'a, 'b>
-    From<(
-        &'b CoronalMeasure,
-        &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
-    )> for Box<dyn DrawComponent + 'a>
-{
-    fn from(
-        value: (
-            &'b CoronalMeasure,
-            &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
-        ),
-    ) -> Self {
-        let (measure, (coronal_points, curve_set, apex_set)) = value;
+impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)> for Box<dyn DrawComponent + 'a> {
+    fn from(value: (&'b CoronalMeasure, &'a CoronalPointsAndCurve)) -> Self {
+        let (measure, coronal_set) = value;
+        let coronal_points = &coronal_set.coronal_points;
+        let curve_set = &coronal_set.curves.curves;
+        let apex_set = &coronal_set.curves.apices;
         match measure {
             CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
             CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
@@ -2116,25 +2110,32 @@ pub struct ColorPalettes {
 const VISIBILITY_HIDDEN: &str = "hidden";
 const VISIBILITY_VISIBLE: &str = "visible";
 
+/// Draw the given components
+///
+/// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
 pub fn draw_components<'a, T, S>(
-    data: &'a T,
-    image_metadata: &crate::ImageMetadata,
+    data: T,
     draws: &[S],
     hide: &[S],
     painter: &Painter,
     palettes: ColorPalettes,
 ) -> Result<Vec<Box<dyn Node>>, DrawError>
 where
-    for<'b> (&'b S, &'a T): Into<Box<dyn DrawComponent + 'a>>,
+    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
+    T: HasImageMetadata + Scalable,
+    <T as Scalable>::Error: std::fmt::Debug,
 {
+    let mut data = data;
+    data.scale()
+        .map_err(|e| MeasureError::UnableToMeasure(format!("Failed to scale: {:?}", e)))?;
     let ColorPalettes {
         mut label_colors,
         mut line_colors,
     } = palettes;
     let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
-        let draw_component: Box<dyn DrawComponent> = (measure, data).into();
+        let draw_component: Box<dyn DrawComponent> = (measure, &data).into();
         match draw_component.draw(painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
                 let visibility = if hide.contains(measure) {
@@ -2149,23 +2150,28 @@ where
         }
     }
 
-    let spacing = image_metadata.spacing_xy;
-    groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    let spacing = data.image_metadata().spacing_xy;
+    let groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+
     Ok(groups)
 }
 
+/// Draw the given components on the image.
+///
+/// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
 fn draw_on_image<'a, T, S>(
     image: DynamicImage,
-    data: &'a T,
-    image_metadata: &crate::ImageMetadata,
+    data: T,
     draw_hide: (&[S], &[S]),
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
 ) -> Result<element::SVG, DrawError>
 where
-    for<'b> (&'b S, &'a T): Into<Box<dyn DrawComponent + 'a>>,
+    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
+    T: HasImageMetadata + Scalable,
+    <T as Scalable>::Error: std::fmt::Debug,
 {
     let (draw, hide) = draw_hide;
     let style = element::Style::new(draw_param.style());
@@ -2173,12 +2179,11 @@ where
     let mut document = painter.doc_w_background(&image)?;
     document = document.add(style);
 
-    let groups = draw_components(data, image_metadata, draw, hide, &painter, palettes)?;
+    let groups = draw_components(data, draw, hide, &painter, palettes)?;
 
     for g in groups {
         document = document.add(g);
     }
-
     Ok(document)
 }
 
@@ -2193,8 +2198,7 @@ pub fn draw_sagittal(
 ) -> Result<element::SVG, DrawError> {
     draw_on_image(
         image,
-        &sagittal_points,
-        &sagittal_points.image_metadata,
+        sagittal_points,
         (draws, hide),
         draw_param,
         svg_size,
@@ -2204,25 +2208,15 @@ pub fn draw_sagittal(
 
 pub fn draw_coronal(
     image: DynamicImage,
-    coronal_points: CoronalPoints,
+    coronal_set: CoronalPointsAndCurve,
     draws_hide: (&[CoronalMeasure], &[CoronalMeasure]),
     draw_param: DrawParam,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
-    curve_apex_set: Option<(CurveSet, ApexSet)>,
 ) -> Result<element::SVG, DrawError> {
-    let (curve_set, apex_set) = curve_apex_set.unwrap_or_else(|| {
-        let (cs, apexes, _major_curve) = coronal_points.identify_curves();
-        debug!("CurveSet: {:?}", cs);
-        (cs, apexes)
-    });
-
-    let data = (&coronal_points, &curve_set, &apex_set);
-
     draw_on_image(
         image,
-        &data,
-        &coronal_points.image_metadata,
+        coronal_set,
         draws_hide,
         draw_param,
         svg_size,

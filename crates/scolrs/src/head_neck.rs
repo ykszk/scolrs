@@ -1,13 +1,13 @@
-use std::ops::MulAssign;
+use std::{convert::Infallible, ops::MulAssign};
 
 use crate::{
     angle_between, angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
     distanced_pair3, draw_incidence_angle, extract_points, femoral_incidence_angle,
     nested_vec_to_array3, points2line, vec_points_to_array2, Centroids, CobbAux, ColorPalette,
     ContentFilename, Corners, DrawComponent, DrawCorners, DrawError, HasCornerPoints,
-    HasImageMetadata, ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, ScolError,
-    TryFromJson, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
-    CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
+    HasImageMetadata, ImageMetadata, L2Norm, MeasureError, Named, Painter, Point2d, Scalable,
+    ScolError, TryFromJson, ValidateLength, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE,
+    CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -79,7 +79,7 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, HasImageMetadata)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
     pub lamina: Array2<f64>,
@@ -99,11 +99,12 @@ pub struct LateralPoints {
     pub image_metadata: ImageMetadata,
 }
 
-impl LateralPoints {
+impl Scalable for LateralPoints {
+    type Error = Infallible;
     // Scale point coordinates using image_data.spacing_xy
-    pub fn scale(&mut self) {
+    fn scale(&mut self) -> Result<(), Self::Error> {
         if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return;
+            return Ok(());
         }
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
@@ -122,6 +123,7 @@ impl LateralPoints {
         self.posterior_hard_palate.scale(scale_xy.view());
         self.chin.scale(scale_xy.view());
         self.manubrium.scale(scale_xy.view());
+        Ok(())
     }
 }
 
