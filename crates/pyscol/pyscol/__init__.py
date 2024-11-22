@@ -100,11 +100,28 @@ def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: 
         raise ValueError(f"Unsupported dtype: {arr.dtype}")
 
 
+def default_coronal_hide() -> list[str]:
+    return [
+        "CSVL",
+        "T1TiltAngle",
+        "CoronalBalance",
+        "ClavicleAngle",
+        "ShoulderHeight",
+        "PelvicObliquity",
+        "SacralObliquity",
+        "LegLengthDiscrepancy",
+    ]
+
+
+def default_sagittal_hide() -> list[str]:
+    return []
+
+
 def draw_coronal(
     coronal_points_and_curve_json: str,
     json_path: str | Path,
     draws: list[str],
-    hide: list[str],
+    hide: Optional[list[str]],
     draw_param_json: str,
     label_colors: dict[str, str],
     line_colors: dict[str, str],
@@ -112,6 +129,8 @@ def draw_coronal(
     overlay: Optional[np.ndarray],
 ) -> str:
     json_path = str(json_path)
+    if hide is None:
+        hide = default_coronal_hide()
     return py_draw_coronal(
         coronal_points_and_curve_json,
         json_path,
@@ -129,7 +148,7 @@ def draw_sagittal(
     coronal_points_json: str,
     json_path: str | Path,
     draws: list[str],
-    hide: list[str],
+    hide: Optional[list[str]],
     draw_param_json: str,
     label_colors: dict[str, str],
     line_colors: dict[str, str],
@@ -137,6 +156,8 @@ def draw_sagittal(
     overlay: Optional[np.ndarray],
 ) -> str:
     json_path = str(json_path)
+    if hide is None:
+        hide = default_sagittal_hide()
     return py_draw_sagittal(
         coronal_points_json,
         json_path,

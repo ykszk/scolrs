@@ -71,7 +71,7 @@ class TestDrawCoronal(unittest.TestCase):
             with open(json_path) as f:
                 coronal_points_json = f.read()
             draws = []
-            hide = []
+            hide = None
             draw_param_json = "{}"
             label_colors = {}
             line_colors = {}

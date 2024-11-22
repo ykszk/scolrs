@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, path::Path};
+use std::{collections::HashMap, error::Error, path::Path, str::FromStr};
 
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
 use labelme_rs::{
@@ -15,7 +15,6 @@ use scolrs::{
     CoronalMeasure, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
     PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, TryFromJson, UpdatePoints,
 };
-use serde::de::DeserializeOwned;
 use svg::node::element;
 
 #[pyfunction]
@@ -164,17 +163,24 @@ fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicIm
 }
 
 trait DeserializeAll<T> {
-    fn deserialize_all(&self) -> Result<Vec<T>, serde_json::Error>
+    fn deserialize_all(&self) -> Result<Vec<T>, PyScolError>
     where
-        T: for<'a> serde::de::Deserialize<'a>;
+        T: MeasureAndDraw + FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Display;
 }
 
 impl<T> DeserializeAll<T> for Vec<String> {
-    fn deserialize_all(&self) -> Result<Vec<T>, serde_json::Error>
+    fn deserialize_all(&self) -> Result<Vec<T>, PyScolError>
     where
-        T: for<'a> serde::de::Deserialize<'a>,
+        T: MeasureAndDraw + FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Display,
     {
-        self.iter().map(|s| serde_json::from_str(s)).collect()
+        self.iter()
+            .map(|s| {
+                s.parse()
+                    .map_err(|e| PyScolError::Uncategorized(format!("{}", e)))
+            })
+            .collect()
     }
 }
 
@@ -217,6 +223,7 @@ where
             overlay_image,
         )
         .draw(&painter, &mut label_colors, &mut line_colors)?;
+        let g = g.set("visibility", "hidden");
         document = document.add(g);
     }
     let palettes = ColorPalettes {
@@ -250,8 +257,8 @@ fn draw_generic<T, S>(
 where
     T: TryFromJson + Clone + UpdatePoints,
     LabelMeData: From<T>,
-    S: MeasureAndDraw + DeserializeOwned,
-    Vec<String>: DeserializeAll<S>,
+    S: MeasureAndDraw + FromStr,
+    <S as std::str::FromStr>::Err: std::fmt::Display,
     PyScolError: std::convert::From<<T as scolrs::TryFromJson>::Error>,
 
     for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,

@@ -16,7 +16,7 @@ gdcm = ["labelme-rs/gdcm"]
 [dependencies]
 env_logger.workspace = true
 numpy = "0.21"
-pyo3 = "0.21"
+pyo3 = { version = "0.21", features = ["extension-module"] }
 scolrs = { path = "../scolrs" }
 devsc = { path = "../devsc" }
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
