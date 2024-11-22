@@ -6,6 +6,8 @@ scoliosis
 ```console
 cd crates/pyscol
 maturin develop --release
+# or below to enable dicom input
+# maturin develop --release --features gdcm
 RUST_LOG=info python3 -m unittest discover tests/
 ```
 

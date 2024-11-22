@@ -152,3 +152,9 @@ def draw_sagittal(
 
 def wrap_in_html(svg: str, title: str) -> str:
     return py_wrap_in_html(svg, title)
+
+
+def calc_resize(image_shape: tuple[int, int], resize_param: str) -> tuple[int, int]:
+    from .pyscol import py_calc_resize
+
+    return py_calc_resize(image_shape, resize_param)

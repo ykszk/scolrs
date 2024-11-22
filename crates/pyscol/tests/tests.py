@@ -77,15 +77,21 @@ class TestDrawCoronal(unittest.TestCase):
             line_colors = {}
             resize = "1024x1024"
             overlay = None
-            args = (coronal_points_json, str(json_path), draws, hide, draw_param_json, label_colors, line_colors, resize, overlay)
+            args = (
+                coronal_points_json,
+                str(json_path),
+                draws,
+                hide,
+                draw_param_json,
+                label_colors,
+                line_colors,
+                resize,
+                overlay,
+            )
             if stem == "frontal":
-                svg = pyscol.draw_coronal(
-                    *args
-                )
+                svg = pyscol.draw_coronal(*args)
             else:
-                svg = pyscol.draw_sagittal(
-                    *args
-                )
+                svg = pyscol.draw_sagittal(*args)
 
             out_dir = test_output_dir()
             if out_dir:
@@ -97,3 +103,13 @@ class TestDrawCoronal(unittest.TestCase):
                 html = pyscol.wrap_in_html(svg, "test case2")
                 with open(out_dir / f"{stem}.html", "w") as f:
                     f.write(html)
+
+
+class TestResize(unittest.TestCase):
+    def setUp(self):
+        set_loglevel()
+
+    def test_resize(self):
+        resize_param = "1024x1024"
+        image_shape = (512, 768)
+        self.assertEqual(pyscol.calc_resize(image_shape, resize_param), (683, 1024))

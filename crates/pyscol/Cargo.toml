@@ -10,6 +10,9 @@ description.workspace = true
 name = "pyscol"
 crate-type = ["cdylib"]
 
+[features]
+gdcm = ["labelme-rs/gdcm"]
+
 [dependencies]
 env_logger.workspace = true
 numpy = "0.21"

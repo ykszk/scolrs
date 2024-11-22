@@ -108,8 +108,8 @@ pub enum PyScolError {
     Json(#[from] serde_json::Error),
     #[error("Image must be 2D or 3D: {0}")]
     ImageShape(String),
-    #[error("Channel has to be 3 for 3D array")]
-    ChannelMismatch,
+    #[error("Channel has to be 3 or 4 for 3D array. Found {0}")]
+    ChannelMismatch(usize),
     #[error("Error in html: {0}")]
     Html(#[from] scolrs::draw::HtmlWrapError),
     #[error("Error in image: {0}")]
@@ -134,16 +134,31 @@ fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicIm
                     .unwrap(),
             ))
         }
-        3 => {
-            if shape[2] != 3 {
-                return Err(PyScolError::ImageShape(format!("{:?}", shape)));
-            }
-            let arr3d = arr.as_array().as_standard_layout().to_owned();
-            Ok(DynamicImage::ImageRgb8(
-                image::RgbImage::from_raw(shape[1] as u32, shape[0] as u32, arr3d.into_raw_vec())
+        3 => match shape[2] {
+            3 => {
+                let arr3d = arr.as_array().as_standard_layout().to_owned();
+                Ok(DynamicImage::ImageRgb8(
+                    image::RgbImage::from_raw(
+                        shape[1] as u32,
+                        shape[0] as u32,
+                        arr3d.into_raw_vec(),
+                    )
                     .unwrap(),
-            ))
-        }
+                ))
+            }
+            4 => {
+                let arr3d = arr.as_array().as_standard_layout().to_owned();
+                Ok(DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_raw(
+                        shape[1] as u32,
+                        shape[0] as u32,
+                        arr3d.into_raw_vec(),
+                    )
+                    .unwrap(),
+                ))
+            }
+            _ => Err(PyScolError::ChannelMismatch(shape[2])),
+        },
         _ => Err(PyScolError::ImageShape(format!("{:?}", shape))),
     }
 }
@@ -342,6 +357,16 @@ fn py_wrap_in_html(
     Ok(scolrs::draw::wrap_in_html(svg, selector, title)?)
 }
 
+#[pyfunction]
+fn py_calc_resize(
+    image_shape_xy: (u32, u32),
+    resize_param: &str,
+) -> Result<(u32, u32), PyScolError> {
+    let resize_param = ResizeParam::try_from(resize_param)
+        .map_err(|e| PyScolError::Uncategorized(format!("Error in resize: {}", e)))?;
+    Ok(resize_param.size(image_shape_xy.0, image_shape_xy.1))
+}
+
 #[pymodule]
 fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     env_logger::init();
@@ -352,6 +377,7 @@ fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_draw_coronal, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_sagittal, m)?)?;
     m.add_function(wrap_pyfunction!(py_wrap_in_html, m)?)?;
+    m.add_function(wrap_pyfunction!(py_calc_resize, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u8_u8, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u16_u16, m)?)?;
     Ok(())
