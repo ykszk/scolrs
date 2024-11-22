@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub struct Measurements {
     pub measurements: IndexMap<String, Vec<f64>>,
-    pub unit: String,
+    pub unit_of_length: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,7 +64,7 @@ fn process_data(
     let measures = measure_all(measures)?;
     Ok(Measurements {
         measurements: measures,
-        unit: lateral_points.image_metadata.unit.clone(),
+        unit_of_length: lateral_points.image_metadata.unit.clone(),
     })
 }
 

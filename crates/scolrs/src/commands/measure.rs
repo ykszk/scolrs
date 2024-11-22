@@ -16,7 +16,16 @@ use scolrs::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-type MeasureResult = std::result::Result<f64, MeasureError>;
+type Measurements = std::result::Result<f64, MeasureError>;
+
+#[derive(Serialize, Deserialize)]
+pub struct MeasureResult<V>
+where
+    V: std::hash::Hash + Eq + std::cmp::Ord,
+{
+    pub measurements: IndexMap<V, Measurements>,
+    pub unit_of_length: String,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct MeasureLine<V>
@@ -24,7 +33,7 @@ where
     V: std::hash::Hash + Eq + std::cmp::Ord,
 {
     pub filename: String,
-    pub content: IndexMap<V, MeasureResult>,
+    pub content: MeasureResult<V>,
 }
 
 type SagittalMeasureLine = MeasureLine<SagittalMeasure>;
@@ -135,23 +144,27 @@ fn process_json(args: MeasureArgs) -> Result<()> {
 fn measure_sagittal(
     sagittal_points: SagittalPoints,
     subcommand: MeasureSubSagittallArgs,
-) -> Result<IndexMap<SagittalMeasure, MeasureResult>, anyhow::Error> {
+) -> Result<MeasureResult<SagittalMeasure>, anyhow::Error> {
     let measures = subcommand
         .measures
         .unwrap_or_else(SagittalMeasure::all_measures);
-    let mut results: IndexMap<SagittalMeasure, MeasureResult> = Default::default();
+    let mut measurements: IndexMap<SagittalMeasure, Measurements> = Default::default();
     for measure in measures {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &sagittal_points).into();
-        results.insert(measure, spinal_measure.measure());
+        measurements.insert(measure, spinal_measure.measure());
     }
-    Ok(results)
+    let result = MeasureResult {
+        measurements,
+        unit_of_length: sagittal_points.image_metadata.unit,
+    };
+    Ok(result)
 }
 
 fn measure_coronal(
     coronal_points: CoronalPoints,
     subcommand: MeasureSubCoronalArgs,
     curve_set_path: &Option<PathBuf>,
-) -> Result<IndexMap<CoronalMeasure, MeasureResult>, anyhow::Error> {
+) -> Result<MeasureResult<CoronalMeasure>, anyhow::Error> {
     let measures = subcommand
         .measures
         .unwrap_or_else(CoronalMeasure::all_measures);
@@ -164,13 +177,17 @@ fn measure_coronal(
         let curve_desc = coronal_points.identify_curves();
         (curve_desc.curves, curve_desc.apices)
     };
-    let mut results: IndexMap<CoronalMeasure, MeasureResult> = Default::default();
+    let mut measurements: IndexMap<CoronalMeasure, Measurements> = Default::default();
     let data = (&coronal_points, &curve_set, &apex_set);
     for measure in measures {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
-        results.insert(measure, spinal_measure.measure());
+        measurements.insert(measure, spinal_measure.measure());
     }
-    Ok(results)
+    let result = MeasureResult {
+        measurements,
+        unit_of_length: coronal_points.image_metadata.unit,
+    };
+    Ok(result)
 }
 
 pub fn cmd(args: MeasureArgs) -> Result<()> {
