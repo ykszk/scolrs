@@ -732,8 +732,8 @@ impl DrawComponent for ImageOverlay {
     ) -> Result<element::Group, DrawError> {
         let group = self.default_group();
         let b64 = format!(
-            "data:image/jpeg;base64,{}",
-            labelme_rs::img2base64(&self.image, labelme_rs::image::ImageFormat::Jpeg)?
+            "data:image/png;base64,{}",
+            labelme_rs::img2base64(&self.image, labelme_rs::image::ImageFormat::Png)?
         );
         let layer = element::Image::new()
             .set("x", 0i64)

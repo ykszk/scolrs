@@ -1071,16 +1071,26 @@ pub trait UpdatePoints {
 
 impl UpdatePoints for CoronalPointsAndCurve {
     fn update_points(&mut self, data: &LabelMeData) {
+        // preserve image metadata
+        let image_metadata = self.coronal_points.image_metadata.clone();
+
         self.coronal_points = CoronalPoints::try_from(data).unwrap();
         self.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
+
+        self.coronal_points.image_metadata = image_metadata;
     }
 }
 
 impl UpdatePoints for SagittalPoints {
     fn update_points(&mut self, data: &LabelMeData) {
+        // preserve image metadata
+        let image_metadata = self.image_metadata.clone();
+
         let sp = SagittalPoints::try_from(data).unwrap();
         self.spine = sp.spine;
         self.femoral_head = sp.femoral_head;
+
+        self.image_metadata = image_metadata;
     }
 }
 
