@@ -187,11 +187,14 @@ pub struct MeasureSubSagittallArgs {
     pub measures: Option<Vec<SagittalMeasure>>,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 pub struct MeasureArgs {
     /// Input labelme json filename or ndjson. Specify '-' for stdin with ndjson format
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
+    /// Output json/ndjson filename
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
     /// Use specified curves instaed of calculating from the points
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub curve_set: Option<PathBuf>,

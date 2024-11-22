@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -36,6 +36,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
     } else {
         Box::new(BufReader::new(File::open(&args.input)?))
     };
+    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
+        Box::new(BufWriter::new(File::create(output)?))
+    } else {
+        Box::new(std::io::stdout())
+    };
     for line in reader.lines() {
         match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {
@@ -51,7 +56,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     filename: data_line.filename,
                     content: results,
                 };
-                println!("{}", serde_json::to_string(&line)?);
+                writeln!(writer, "{}", serde_json::to_string(&line)?)?;
             }
             MeasureSubCommands::Sagittal(subcommand) => {
                 let data_line: SagittalPointsIRLine = load_labelme_or_native::<
@@ -65,7 +70,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     filename: data_line.filename,
                     content: results,
                 };
-                println!("{}", serde_json::to_string(&line)?);
+                writeln!(writer, "{}", serde_json::to_string(&line)?)?;
             }
         }
     }
@@ -98,6 +103,11 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     debug!("Loading {:?}", args.input);
     let data_str = std::fs::read_to_string(&args.input)?;
 
+    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
+        Box::new(BufWriter::new(File::create(output)?))
+    } else {
+        Box::new(std::io::stdout())
+    };
     match args.subcommand {
         MeasureSubCommands::Coronal(subcommand) => {
             let data = load_labelme_or_native::<CoronalPointsIR, LabelMeData>(
@@ -106,7 +116,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                 &data_str,
             )?;
             let results = measure_coronal(data.try_into()?, subcommand, &args.curve_set)?;
-            println!("{}", serde_json::to_string_pretty(&results)?);
+            writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Sagittal(subcommand) => {
             let data = load_labelme_or_native::<SagittalPointsIR, LabelMeData>(
@@ -115,7 +125,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                 &data_str,
             )?;
             let results = measure_sagittal(data.try_into()?, subcommand)?;
-            println!("{}", serde_json::to_string_pretty(&results)?);
+            writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
     };
 
@@ -184,18 +194,39 @@ mod tests {
         path
     }
 
+    fn output_path(name: &str) -> Result<PathBuf> {
+        if let Ok(dir) = std::env::var("TEST_OUTPUT_DIR") {
+            let path = PathBuf::from(dir).join("scol").join(name);
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            return Ok(path);
+        }
+        let devnull = PathBuf::from("/dev/null");
+        if devnull.exists() {
+            Ok(devnull)
+        } else {
+            Ok(PathBuf::from("NUL".to_string()))
+        }
+    }
+
     fn _test_case(case_dir: &str, labelme: bool) -> Result<()> {
         // Just test if the command runs without errors
         let data_dir = test_data_directory();
-        let input = if labelme {
-            data_dir.join(case_dir).join("lateral.json")
+        let (input, output) = if labelme {
+            (
+                data_dir.join(case_dir).join("lateral.json"),
+                output_path(&format!("{}_lateral.json", case_dir))?,
+            )
         } else {
-            data_dir.join(case_dir).join("lateral_native.json")
+            (
+                data_dir.join(case_dir).join("lateral_native.json"),
+                output_path(&format!("{}_lateral_native.json", case_dir))?,
+            )
         };
         let curve_set = None;
         let subcommand = MeasureSubCommands::Sagittal(MeasureSubSagittallArgs::default());
         let args = MeasureArgs {
             input,
+            output: Some(output),
             curve_set,
             labelme,
             subcommand,
@@ -204,15 +235,22 @@ mod tests {
 
         // TODO: Test correct measurements
 
-        let input = if labelme {
-            data_dir.join(case_dir).join("frontal.json")
+        let (input, output) = if labelme {
+            (
+                data_dir.join(case_dir).join("frontal.json"),
+                output_path(&format!("{}_frontal.json", case_dir))?,
+            )
         } else {
-            data_dir.join(case_dir).join("frontal_native.json")
+            (
+                data_dir.join(case_dir).join("frontal_native.json"),
+                output_path(&format!("{}_frontal_native.json", case_dir))?,
+            )
         };
         let curve_set = None;
         let subcommand = MeasureSubCommands::Coronal(MeasureSubCoronalArgs::default());
         let args = MeasureArgs {
             input,
+            output: Some(output),
             curve_set,
             labelme,
             subcommand,
