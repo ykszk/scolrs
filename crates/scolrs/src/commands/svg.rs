@@ -17,6 +17,7 @@ use scolrs::{
     HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure,
     SagittalPoints, SagittalPointsLine, Scalable, TryFromJson, UpdatePoints,
 };
+use serde::Deserialize;
 use svg::node::element;
 
 trait AssociatedMeasureAndDraw {
@@ -127,7 +128,7 @@ where
     LabelMeData: From<T>,
 {
     let json = std::fs::read_to_string(path)?;
-    let cp = T::try_from_ir_json(&json)?;
+    let cp = T::try_from_native_json(&json).with_context(|| format!("Load {:?}", path))?;
     let data = LabelMeData::from(cp.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;
     Ok(PointDataWithImage::new(cp, data_w_image))
@@ -270,8 +271,8 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<(ReadSvgArgCommon, SvgSubComma
     ))
 }
 
-fn load_from_native_json_line<'a, S>(
-    json: &'a str,
+fn load_from_native_json_line<S>(
+    json: &str,
     path: &Path,
 ) -> Result<(
     PointDataWithImage<<S as ContentFilename>::ContentType>,
@@ -279,15 +280,12 @@ fn load_from_native_json_line<'a, S>(
 )>
 where
     S: ContentFilename,
-    S: TryFrom<&'a str>,
+    for<'de> S: Deserialize<'de>,
     <S as ContentFilename>::ContentType: TryFromJson + UpdatePoints + HasImageMetadata + Clone,
-    S: TryFrom<&'a str>,
-    <S as TryFrom<&'a str>>::Error:
-        std::marker::Sync + std::marker::Send + std::error::Error + 'static,
-
     LabelMeData: From<<S as ContentFilename>::ContentType>,
 {
-    let content_filename = S::try_from(json)?;
+    // let content_filename = S::try_from(json)?;
+    let content_filename: S = serde_json::from_str(json)?;
     let (content, filename) = content_filename.content_filename();
     let data = LabelMeData::from(content.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;

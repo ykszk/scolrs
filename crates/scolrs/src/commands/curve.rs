@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
-use scolrs::{CoronalPoints, CoronalPointsIR, Curve, CurveDesc, Scalable, VertebraDiscIndex};
+use scolrs::{CoronalPoints, Curve, CurveDesc, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
@@ -98,11 +98,8 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
         let data: LabelMeData = if args.labelme {
             s.try_into()?
         } else {
-            let ir = CoronalPointsIR::try_from(s.as_str())?;
-            let mut cp = CoronalPoints::try_from(ir)?;
-            cp.scale()?;
-            let ir = CoronalPointsIR::from(&cp);
-            ir.into()
+            let cp: CoronalPoints = serde_json::from_str(&s)?;
+            cp.into()
         };
         if args.all {
             let info: CurveInfoAll = (&data).try_into()?;

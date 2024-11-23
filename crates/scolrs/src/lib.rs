@@ -85,8 +85,8 @@ impl Default for ImageMetadata {
     }
 }
 
-impl From<&LabelMeData> for ImageMetadata {
-    fn from(data: &LabelMeData) -> Self {
+impl From<LabelMeData> for ImageMetadata {
+    fn from(data: LabelMeData) -> Self {
         let path = data.imagePath.clone();
         let height = data.imageHeight;
         let width = data.imageWidth;
@@ -221,7 +221,7 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f64>, ScolEr
     Ok(arr)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AtMost2<T>(pub T);
 
 trait ValidateLength {
@@ -358,7 +358,7 @@ where
 }
 
 /// Point sets representing a spine
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Spine {
     pub c7tls: C7TLS,
 
@@ -385,7 +385,7 @@ impl Spine {
 }
 
 /// Point sets extracted from a coronal radiograph
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct CoronalPoints {
     pub spine: Spine,
     pub clavicle: AtMost2<Array2<f64>>,
@@ -396,6 +396,39 @@ pub struct CoronalPoints {
     pub c_coefs: Array1<f64>,
 
     pub image_metadata: ImageMetadata,
+}
+
+/// Intermediary representation for [CoronalPoints]
+#[derive(
+    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
+)]
+struct CoronalPointsIR {
+    pub spine: Vec<Vec<Point2d>>,
+    pub clavicle: Vec<Point2d>,
+    pub shoulder: Vec<Point2d>,
+    pub pelvis: Vec<Point2d>,
+    pub femoral_head: Vec<Point2d>,
+
+    pub image_metadata: ImageMetadata,
+}
+
+impl Serialize for CoronalPoints {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CoronalPointsIR::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for CoronalPoints {
+    fn deserialize<D>(deserializer: D) -> Result<CoronalPoints, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let ir = CoronalPointsIR::deserialize(deserializer)?;
+        CoronalPoints::try_from(ir).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Scalable for CoronalPoints {
@@ -421,10 +454,26 @@ impl Scalable for CoronalPoints {
     }
 }
 
+/// [`CoronalPoints`] in [`ContentFilename`] struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ContentFilename)]
+pub struct CoronalPointsLine {
+    pub content: CoronalPoints,
+    pub filename: String,
+}
+
+impl TryFrom<LabelMeDataLine> for CoronalPointsLine {
+    // type Error = <CoronalPointsLine as TryConvertContentFilename<CoronalPointsLine>>::Error;
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        CoronalPointsLine::try_convert_from(data)
+    }
+}
+
 pub trait TryFromJson {
     type Error;
 
-    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error>
+    fn try_from_native_json(json: &str) -> Result<Self, Self::Error>
     where
         Self: Sized;
     fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error>
@@ -435,15 +484,14 @@ pub trait TryFromJson {
 impl TryFromJson for CoronalPoints {
     type Error = ScolError;
 
-    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
-        let ir: CoronalPointsIR = serde_json::from_str(json)?;
-        let cp = CoronalPoints::try_from(ir)?;
+    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
+        let cp: CoronalPoints = serde_json::from_str(json)?;
         Ok(cp)
     }
 
     fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
         let data: LabelMeData = serde_json::from_str(json)?;
-        let cp = CoronalPoints::try_from(&data)?;
+        let cp = CoronalPoints::try_from(data)?;
         Ok(cp)
     }
 }
@@ -451,30 +499,15 @@ impl TryFromJson for CoronalPoints {
 impl TryFromJson for SagittalPoints {
     type Error = ScolError;
 
-    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
-        let ir: SagittalPointsIR = serde_json::from_str(json)?;
-        let sp = SagittalPoints::try_from(ir)?;
+    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
+        let sp: SagittalPoints = serde_json::from_str(json)?;
         Ok(sp)
     }
     fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
         let data: LabelMeData = serde_json::from_str(json)?;
-        let sp = SagittalPoints::try_from(&data)?;
+        let sp = SagittalPoints::try_from(data)?;
         Ok(sp)
     }
-}
-
-/// Intermediary representation for [CoronalPoints]
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
-)]
-pub struct CoronalPointsIR {
-    pub spine: Vec<Vec<Point2d>>,
-    pub clavicle: Vec<Point2d>,
-    pub shoulder: Vec<Point2d>,
-    pub pelvis: Vec<Point2d>,
-    pub femoral_head: Vec<Point2d>,
-
-    pub image_metadata: ImageMetadata,
 }
 
 type CornerPoints = (
@@ -557,7 +590,7 @@ impl TryFrom<CoronalPointsIR> for CoronalPoints {
     fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
         let image_data = ir.image_metadata.clone();
         let data = LabelMeData::from(ir);
-        let mut cp = CoronalPoints::try_from(&data)?;
+        let mut cp = CoronalPoints::try_from(data)?;
         cp.image_metadata = image_data;
         Ok(cp)
     }
@@ -578,16 +611,6 @@ impl From<&CoronalPoints> for CoronalPointsIR {
             femoral_head,
             image_metadata: cp.image_metadata.clone(),
         }
-    }
-}
-
-impl TryFrom<LabelMeData> for CoronalPointsIR {
-    type Error = ScolError;
-
-    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
-        let coronal_points = CoronalPoints::try_from(&data)?;
-        let coronal_points_ir = CoronalPointsIR::from(&coronal_points);
-        Ok(coronal_points_ir)
     }
 }
 
@@ -786,30 +809,32 @@ impl CoronalPoints {
     }
 }
 
-/// [`CoronalPointsIR`] in [`ContentFilename`] struct
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
-)]
-pub struct CoronalPointsIRLine {
-    pub content: CoronalPointsIR,
-    pub filename: String,
-}
-
-impl TryFrom<LabelMeDataLine> for CoronalPointsIRLine {
-    type Error = ScolError;
-
-    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
-        TryConvertContentFilename::try_convert_from(data)
-    }
-}
-
 /// Point sets extracted from a sagittal radiograph
-#[derive(Debug, Clone, HasImageMetadata)]
+#[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct SagittalPoints {
     pub spine: Spine,
     pub femoral_head: AtMost2<Array2<f64>>,
 
     pub image_metadata: ImageMetadata,
+}
+
+impl Serialize for SagittalPoints {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SagittalPointsIR::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SagittalPoints {
+    fn deserialize<D>(deserializer: D) -> Result<SagittalPoints, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let ir = SagittalPointsIR::deserialize(deserializer)?;
+        SagittalPoints::try_from(ir).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Scalable for SagittalPoints {
@@ -833,7 +858,7 @@ impl Scalable for SagittalPoints {
 #[derive(
     Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
 )]
-pub struct SagittalPointsIR {
+struct SagittalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub femoral_head: Vec<Point2d>,
 
@@ -885,7 +910,7 @@ impl TryFrom<LabelMeData> for SagittalPointsIR {
     type Error = ScolError;
 
     fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
-        let coronal_points = SagittalPoints::try_from(&data)?;
+        let coronal_points = SagittalPoints::try_from(data)?;
         let coronal_points_ir = SagittalPointsIR::from(&coronal_points);
         Ok(coronal_points_ir)
     }
@@ -897,45 +922,25 @@ impl TryFrom<SagittalPointsIR> for SagittalPoints {
     fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
         let image_data = ir.image_metadata.clone();
         let data = LabelMeData::from(ir);
-        let mut sp = SagittalPoints::try_from(&data)?;
+        let mut sp = SagittalPoints::try_from(data)?;
         sp.image_metadata = image_data;
         Ok(sp)
     }
 }
 
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
-)]
-pub struct SagittalPointsIRLine {
-    pub content: SagittalPointsIR,
-    pub filename: String,
-}
-
-impl TryFrom<LabelMeDataLine> for SagittalPointsIRLine {
-    type Error = ScolError;
-
-    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
-        TryConvertContentFilename::try_convert_from(data)
-    }
-}
-
 /// [`SagittalPoints`] in [`ContentFilename`] struct
-#[derive(Clone, Debug, ContentFilename)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ContentFilename)]
 pub struct SagittalPointsLine {
     pub content: SagittalPoints,
     pub filename: String,
 }
 
-impl TryFrom<&str> for SagittalPointsLine {
+impl TryFrom<LabelMeDataLine> for SagittalPointsLine {
+    // type Error = <CoronalPointsLine as TryConvertContentFilename<CoronalPointsLine>>::Error;
     type Error = ScolError;
 
-    fn try_from(json: &str) -> Result<Self, Self::Error> {
-        let line: SagittalPointsIRLine = serde_json::from_str(json)?;
-        let content = SagittalPoints::try_from(line.content)?;
-        Ok(SagittalPointsLine {
-            content,
-            filename: line.filename,
-        })
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        SagittalPointsLine::try_convert_from(data)
     }
 }
 
@@ -1046,7 +1051,7 @@ impl TryFrom<&LabelMeData> for CurveDesc {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let coronal_points = CoronalPoints::try_from(data)?;
+        let coronal_points = CoronalPoints::try_from(data.clone())?;
         Ok(coronal_points.identify_curves())
     }
 }
@@ -1059,10 +1064,34 @@ pub struct ScolDescLine {
 }
 
 /// Data required for calculating scoliosis drawing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CoronalPointsAndCurve {
+    #[serde(flatten)]
     pub coronal_points: CoronalPoints,
     pub curves: CurveDesc,
+}
+
+impl<'de> Deserialize<'de> for CoronalPointsAndCurve {
+    fn deserialize<D>(deserializer: D) -> Result<CoronalPointsAndCurve, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let ir: CoronalPointsAndCurveIR = CoronalPointsAndCurveIR::deserialize(deserializer)?;
+        if let Some(curves) = ir.curves {
+            Ok(CoronalPointsAndCurve::new(ir.coronal_points, curves))
+        } else {
+            let curves = ir.coronal_points.identify_curves();
+            Ok(CoronalPointsAndCurve::new(ir.coronal_points, curves))
+        }
+    }
+}
+
+/// Data required for calculating scoliosis drawing
+#[derive(Debug, Clone, Deserialize)]
+pub struct CoronalPointsAndCurveIR {
+    #[serde(flatten)]
+    pub coronal_points: CoronalPoints,
+    pub curves: Option<CurveDesc>,
 }
 
 pub trait UpdatePoints {
@@ -1074,7 +1103,7 @@ impl UpdatePoints for CoronalPointsAndCurve {
         // preserve image metadata
         let image_metadata = self.coronal_points.image_metadata.clone();
 
-        self.coronal_points = CoronalPoints::try_from(data).unwrap();
+        self.coronal_points = CoronalPoints::try_from(data.clone()).unwrap();
         self.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
 
         self.coronal_points.image_metadata = image_metadata;
@@ -1086,7 +1115,7 @@ impl UpdatePoints for SagittalPoints {
         // preserve image metadata
         let image_metadata = self.image_metadata.clone();
 
-        let sp = SagittalPoints::try_from(data).unwrap();
+        let sp = SagittalPoints::try_from(data.clone()).unwrap();
         self.spine = sp.spine;
         self.femoral_head = sp.femoral_head;
 
@@ -1110,54 +1139,35 @@ impl<T: UpdatePoints> PointDataWithImage<T> {
     }
 }
 
-/// Intermediate representation of [`CoronalPointsAndCurve`]
-///
-/// Because `curves` is optional, json of [`CoronalPointsIR`] can be used to create [`CoronalPointsAndCurveIR`].
-/// If `curves` is not provided, it will be calculated from `coronal_points`.
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr)]
-pub struct CoronalPointsAndCurveIR {
-    #[serde(flatten)]
-    pub coronal_points: CoronalPointsIR,
-    pub curves: Option<CurveDesc>,
-}
-
-/// [`CoronalPointsAndCurveIRLine`] in [`ContentFilename`] struct
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr,
-)]
-pub struct CoronalPointsAndCurveIRLine {
-    pub content: CoronalPointsAndCurveIR,
-    pub filename: String,
-}
-
 /// [`CoronalPointsAndCurve`] in [`ContentFilename`] struct
-#[derive(Clone, Debug, ContentFilename)]
+#[derive(Clone, Debug, Serialize, Deserialize, ContentFilename)]
 pub struct CoronalPointsAndCurveLine {
     pub content: CoronalPointsAndCurve,
     pub filename: String,
 }
 
-impl TryFrom<&str> for CoronalPointsAndCurveLine {
-    type Error = ScolError;
-
-    /// Load from json in native format
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let line: CoronalPointsAndCurveIRLine = serde_json::from_str(value)?;
-        let content = CoronalPointsAndCurve::try_from(&line.content)?;
-        Ok(CoronalPointsAndCurveLine {
-            content,
-            filename: line.filename,
-        })
-    }
-}
-
-// impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveIRLine {
+// impl TryFrom<&str> for CoronalPointsAndCurveLine {
 //     type Error = ScolError;
 
-//     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
-//         TryConvertContentFilename::try_convert_from(data)
+//     /// Load from json in native format
+//     fn try_from(value: &str) -> Result<Self, Self::Error> {
+//         let line: CoronalPointsAndCurveIRLine = serde_json::from_str(value)?;
+//         let content = CoronalPointsAndCurve::try_from(&line.content)?;
+//         Ok(CoronalPointsAndCurveLine {
+//             content,
+//             filename: line.filename,
+//         })
 //     }
 // }
+
+impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveLine {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        let converted = TryConvertContentFilename::try_convert_from(data)?;
+        Ok(converted)
+    }
+}
 
 impl CoronalPointsAndCurve {
     pub fn new(coronal_points: CoronalPoints, curves: CurveDesc) -> Self {
@@ -1192,40 +1202,31 @@ impl TryFrom<&LabelMeData> for CoronalPointsAndCurve {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let coronal_points = CoronalPoints::try_from(data)?;
+        let coronal_points = CoronalPoints::try_from(data.clone())?;
         let curves = coronal_points.identify_curves();
         Ok(CoronalPointsAndCurve::new(coronal_points, curves))
     }
 }
 
-impl TryFrom<&CoronalPointsAndCurveIR> for CoronalPointsAndCurve {
+impl TryFrom<LabelMeData> for CoronalPointsAndCurve {
     type Error = ScolError;
 
-    fn try_from(ir: &CoronalPointsAndCurveIR) -> Result<Self, Self::Error> {
-        let coronal_points = CoronalPoints::try_from(ir.coronal_points.clone())?;
-        let curves = if let Some(curves) = &ir.curves {
-            curves.clone()
-        } else {
-            coronal_points.identify_curves()
-        };
-        Ok(CoronalPointsAndCurve::new(coronal_points, curves))
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        CoronalPointsAndCurve::try_from(&data)
     }
 }
 
 impl TryFromJson for CoronalPointsAndCurve {
     type Error = ScolError;
 
-    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
-        let ir: CoronalPointsAndCurveIR = serde_json::from_str(json)?;
-        let cp = CoronalPointsAndCurve::try_from(&ir)?;
+    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
+        let cp = serde_json::from_str(json)?;
         Ok(cp)
     }
 
     fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
         let data: LabelMeData = serde_json::from_str(json)?;
-        let cp = CoronalPoints::try_from(&data)?;
-        let curves = cp.identify_curves();
-        Ok(CoronalPointsAndCurve::new(cp, curves))
+        CoronalPointsAndCurve::try_from(&data)
     }
 }
 
@@ -1409,16 +1410,16 @@ fn _new_at_most2(data: &LabelMeData, label: &str) -> Result<AtMost2<Array2<f64>>
     Ok(AtMost2(points))
 }
 
-impl TryFrom<&LabelMeData> for CoronalPoints {
+impl TryFrom<LabelMeData> for CoronalPoints {
     type Error = ScolError;
 
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let spine = Spine::try_from(data)?;
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let spine = Spine::try_from(&data)?;
         // TODO: accept invalid number of points and let later functions handle it
-        let clavicle = _new_at_most2(data, "Clavicle")?;
-        let shoulder = _new_at_most2(data, "Shoulder")?;
-        let pelvis = _new_at_most2(data, "Pelvis")?;
-        let femoral_head = _new_at_most2(data, "FemoralHead")?;
+        let clavicle = _new_at_most2(&data, "Clavicle")?;
+        let shoulder = _new_at_most2(&data, "Shoulder")?;
+        let pelvis = _new_at_most2(&data, "Pelvis")?;
+        let femoral_head = _new_at_most2(&data, "FemoralHead")?;
 
         let c_coefs = spine.fit_poly()?;
 
@@ -1436,12 +1437,20 @@ impl TryFrom<&LabelMeData> for CoronalPoints {
     }
 }
 
-impl TryFrom<&LabelMeData> for SagittalPoints {
+impl TryFrom<&LabelMeData> for CoronalPoints {
     type Error = ScolError;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let spine = Spine::try_from(data)?;
-        let femoral_head = _new_at_most2(data, "FemoralHead")?;
+        CoronalPoints::try_from(data.clone())
+    }
+}
+
+impl TryFrom<LabelMeData> for SagittalPoints {
+    type Error = ScolError;
+
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let spine = Spine::try_from(&data)?;
+        let femoral_head = _new_at_most2(&data, "FemoralHead")?;
 
         let image_data = ImageMetadata::from(data);
 
@@ -1453,14 +1462,22 @@ impl TryFrom<&LabelMeData> for SagittalPoints {
     }
 }
 
+impl TryFrom<&LabelMeData> for SagittalPoints {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        SagittalPoints::try_from(data.clone())
+    }
+}
+
 /// Corner points of all C7, thoracic, and lumbar vertebrae and sacrum top plate.
 ///
 /// Note: sacrum corners = (TL, TR, copy of TL, copy of TR)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct C7TLS(pub Array3<f64>);
 
 /// C7, thoracic and lumber vertebrae
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VertebraeC7TL(pub Array3<f64>);
 
 /// Thoracic and lumber vertebrae

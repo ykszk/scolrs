@@ -11,8 +11,8 @@ use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
     draw::{MeasureComponent, MeasureError},
-    CoronalMeasure, CoronalPoints, CoronalPointsIR, CoronalPointsIRLine, CurveDesc, MeasureAndDraw,
-    SagittalMeasure, SagittalPoints, SagittalPointsIR, SagittalPointsIRLine, ScolError,
+    CoronalMeasure, CoronalPoints, CoronalPointsLine, CurveDesc, MeasureAndDraw, SagittalMeasure,
+    SagittalPoints, SagittalPointsLine,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -53,14 +53,13 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
     for line in reader.lines() {
         match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {
-                let data_line: CoronalPointsIRLine = load_labelme_or_native::<
-                    CoronalPointsIRLine,
+                let data_line: CoronalPointsLine = load_labelme_or_native::<
+                    CoronalPointsLine,
                     LabelMeDataLine,
                 >(
                     args.labelme, &args.input, &line?
                 )?;
-                let results =
-                    measure_coronal(data_line.content.try_into()?, subcommand, &args.curve_set)?;
+                let results = measure_coronal(data_line.content, subcommand, &args.curve_set)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -68,13 +67,13 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                 writeln!(writer, "{}", serde_json::to_string(&line)?)?;
             }
             MeasureSubCommands::Sagittal(subcommand) => {
-                let data_line: SagittalPointsIRLine = load_labelme_or_native::<
-                    SagittalPointsIRLine,
+                let data_line: SagittalPointsLine = load_labelme_or_native::<
+                    SagittalPointsLine,
                     LabelMeDataLine,
                 >(
                     args.labelme, &args.input, &line?
                 )?;
-                let results = measure_sagittal(data_line.content.try_into()?, subcommand)?;
+                let results = measure_sagittal(data_line.content, subcommand)?;
                 let line = SagittalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -93,7 +92,9 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
 fn load_labelme_or_native<IR, LM>(labelme: bool, input: &Path, json_str: &str) -> Result<IR>
 where
     IR: DeserializeOwned,
-    IR: TryFrom<LM, Error = ScolError>,
+    IR: TryFrom<LM>,
+    <IR as std::convert::TryFrom<LM>>::Error:
+        std::error::Error + std::marker::Send + std::marker::Sync + 'static,
     LM: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
 {
     if labelme {
@@ -119,21 +120,21 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     };
     match args.subcommand {
         MeasureSubCommands::Coronal(subcommand) => {
-            let data = load_labelme_or_native::<CoronalPointsIR, LabelMeData>(
+            let data = load_labelme_or_native::<CoronalPoints, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_coronal(data.try_into()?, subcommand, &args.curve_set)?;
+            let results = measure_coronal(data, subcommand, &args.curve_set)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Sagittal(subcommand) => {
-            let data = load_labelme_or_native::<SagittalPointsIR, LabelMeData>(
+            let data = load_labelme_or_native::<SagittalPoints, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_sagittal(data.try_into()?, subcommand)?;
+            let results = measure_sagittal(data, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
     };

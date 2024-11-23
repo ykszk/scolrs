@@ -133,7 +133,7 @@ impl Scalable for LateralPoints {
 impl TryFromJson for LateralPoints {
     type Error = ScolError;
 
-    fn try_from_ir_json(json: &str) -> Result<Self, Self::Error> {
+    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
         let lateral_points_ir: LateralPointsIR = serde_json::from_str(json)?;
         let lp = LateralPoints::try_from(&lateral_points_ir)?;
         Ok(lp)
@@ -141,28 +141,28 @@ impl TryFromJson for LateralPoints {
 
     fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
         let data: LabelMeData = serde_json::from_str(json)?;
-        let lp = LateralPoints::try_from(&data)?;
+        let lp = LateralPoints::try_from(data)?;
         Ok(lp)
     }
 }
 
-impl TryFrom<&LabelMeData> for LateralPoints {
+impl TryFrom<LabelMeData> for LateralPoints {
     type Error = ScolError;
 
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let corners = VertebralCornerPoints::try_from(data)?;
-        let lamina = extract_points(data, "Lamina")?;
-        let brow = extract_points(data, "Brow")?;
-        let sella = extract_points(data, "Sella")?;
-        let orbit = extract_points(data, "Orbit")?;
-        let external_auditory_canal = extract_points(data, "ExternalAuditoryCanal")?;
-        let occipital = extract_points(data, "Occipital")?;
-        let anterior_c1_arch = extract_points(data, "AnteriorC1Arch")?;
-        let anterior_dens = extract_points(data, "AnteriorDens")?;
-        let posterior_dens = extract_points(data, "PosteriorDens")?;
-        let posterior_hard_palate = extract_points(data, "PosteriorHardPalate")?;
-        let chin = extract_points(data, "Chin")?;
-        let manubrium = extract_points(data, "Manubrium")?;
+    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
+        let corners = VertebralCornerPoints::try_from(&data)?;
+        let lamina = extract_points(&data, "Lamina")?;
+        let brow = extract_points(&data, "Brow")?;
+        let sella = extract_points(&data, "Sella")?;
+        let orbit = extract_points(&data, "Orbit")?;
+        let external_auditory_canal = extract_points(&data, "ExternalAuditoryCanal")?;
+        let occipital = extract_points(&data, "Occipital")?;
+        let anterior_c1_arch = extract_points(&data, "AnteriorC1Arch")?;
+        let anterior_dens = extract_points(&data, "AnteriorDens")?;
+        let posterior_dens = extract_points(&data, "PosteriorDens")?;
+        let posterior_hard_palate = extract_points(&data, "PosteriorHardPalate")?;
+        let chin = extract_points(&data, "Chin")?;
+        let manubrium = extract_points(&data, "Manubrium")?;
 
         let image_data = ImageMetadata::from(data);
 
@@ -182,6 +182,14 @@ impl TryFrom<&LabelMeData> for LateralPoints {
             manubrium,
             image_metadata: image_data,
         })
+    }
+}
+
+impl TryFrom<&LabelMeData> for LateralPoints {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        LateralPoints::try_from(data.clone())
     }
 }
 
@@ -357,7 +365,7 @@ impl TryFrom<LabelMeData> for LateralPointsIR {
     type Error = ScolError;
 
     fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
-        let lateral_points = LateralPoints::try_from(&data)?;
+        let lateral_points = LateralPoints::try_from(data)?;
         let lateral_points_ir = LateralPointsIR::from(&lateral_points);
         Ok(lateral_points_ir)
     }
@@ -1102,10 +1110,8 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
-    use crate::{
-        draw::{CLASS_LINE, CLASS_MEASURE},
-        CoronalPointsIRLine, SagittalPointsIRLine,
-    };
+    use crate::draw::{CLASS_LINE, CLASS_MEASURE};
+    use crate::{CoronalPointsLine, SagittalPointsLine};
 
     #[test]
     fn test_derive_name() {
@@ -1160,9 +1166,9 @@ pub(crate) mod tests {
             let original_data_line =
                 LabelMeDataLine::new(original_data.clone(), filename.to_string());
             let coronal_points_line =
-                CoronalPointsIRLine::try_convert_from(original_data_line.clone())?;
+                CoronalPointsLine::try_convert_from(original_data_line.clone())?;
             let data_line2 = LabelMeDataLine::try_convert_from(coronal_points_line.clone())?;
-            let coronal_poins_line2 = CoronalPointsIRLine::try_convert_from(data_line2.clone())?;
+            let coronal_poins_line2 = CoronalPointsLine::try_convert_from(data_line2.clone())?;
             assert_eq!(coronal_points_line, coronal_poins_line2);
             let data_line3 = LabelMeDataLine::try_convert_from(coronal_poins_line2.clone())?;
             assert_eq!(data_line2, data_line3);
@@ -1186,9 +1192,9 @@ pub(crate) mod tests {
             let original_data_line =
                 LabelMeDataLine::new(original_data.clone(), filename.to_string());
             let lateral_points_line =
-                SagittalPointsIRLine::try_convert_from(original_data_line.clone())?;
+                SagittalPointsLine::try_convert_from(original_data_line.clone())?;
             let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
-            let lateral_poins_line2 = SagittalPointsIRLine::try_convert_from(data_line2.clone())?;
+            let lateral_poins_line2 = SagittalPointsLine::try_convert_from(data_line2.clone())?;
             assert_eq!(lateral_points_line, lateral_poins_line2);
             let data_line3 = LabelMeDataLine::try_convert_from(lateral_poins_line2.clone())?;
             assert_eq!(data_line2, data_line3);

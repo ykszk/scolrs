@@ -6,8 +6,8 @@ use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use scolrs::head_neck::{LateralPointsIR, LateralPointsIRLine, TryConvertContentFilename};
 use scolrs::{
-    CoronalPointsIR, CoronalPointsIRLine, DicomError, PullImageMetadata, SagittalPointsIR,
-    SagittalPointsIRLine,
+    CoronalPoints, CoronalPointsLine, DicomError, PullImageMetadata, SagittalPoints,
+    SagittalPointsLine,
 };
 
 use super::cli::ConvFormat;
@@ -22,9 +22,9 @@ where
     <To as scolrs::head_neck::TryConvertContentFilename<From>>::Error: 'static,
     To: serde::Serialize + PullIfImplemented,
     From: scolrs::ContentFilename,
-    From: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
+    for<'de> From: serde::Deserialize<'de>,
 {
-    let from = From::try_from(from_str.as_str())?;
+    let from: From = serde_json::from_str(from_str.as_str())?;
     let mut to: To = TryConvertContentFilename::try_convert_from(from)?;
     if pull_spacing {
         to.pull_if_implemented()?;
@@ -42,9 +42,9 @@ where
     To: TryFrom<From, Error: std::error::Error + Send + Sync>,
     <To as TryFrom<From>>::Error: 'static,
     To: serde::Serialize + PullIfImplemented,
-    From: for<'a> TryFrom<&'a str, Error = serde_json::Error>,
+    for<'de> From: serde::Deserialize<'de>,
 {
-    let from = From::try_from(from_str.as_str())?;
+    let from: From = serde_json::from_str(from_str.as_str())?;
     let mut to: To = To::try_from(from)?;
     if pull_spacing {
         to.pull_if_implemented()?;
@@ -66,12 +66,12 @@ impl PullIfImplemented for LateralPointsIRLine {
         self.content.pull_image_metadata()
     }
 }
-impl PullIfImplemented for CoronalPointsIRLine {
+impl PullIfImplemented for CoronalPointsLine {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
 }
-impl PullIfImplemented for SagittalPointsIRLine {
+impl PullIfImplemented for SagittalPointsLine {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
@@ -87,12 +87,12 @@ impl PullIfImplemented for LateralPointsIR {
         self.pull_image_metadata()
     }
 }
-impl PullIfImplemented for CoronalPointsIR {
+impl PullIfImplemented for CoronalPoints {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
 }
-impl PullIfImplemented for SagittalPointsIR {
+impl PullIfImplemented for SagittalPoints {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
@@ -114,8 +114,8 @@ fn process_ndjson(
     let pull = pull_spacing;
     type LMDLine = LabelMeDataLine;
     type LatPtsLine = LateralPointsIRLine;
-    type CorPointsLine = CoronalPointsIRLine;
-    type SagPointsLine = SagittalPointsIRLine;
+    type CorPointsLine = CoronalPointsLine;
+    type SagPointsLine = SagittalPointsLine;
     for line in reader.lines() {
         let line = line?;
         match (from, to) {
@@ -167,16 +167,16 @@ fn process_json(
             conv_and_write::<LateralPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
-            conv_and_write::<LabelMeData, CoronalPointsIR>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<LabelMeData, CoronalPoints>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
-            conv_and_write::<CoronalPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<CoronalPoints, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisSagittal) => {
-            conv_and_write::<LabelMeData, SagittalPointsIR>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<LabelMeData, SagittalPoints>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::ScoliosisSagittal, ConvFormat::Labelme) => {
-            conv_and_write::<SagittalPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<SagittalPoints, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (from, to) => {
             if from == to {

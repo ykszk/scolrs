@@ -266,7 +266,7 @@ where
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
-    let coronal_set = T::try_from_ir_json(coronal_points_json)?;
+    let coronal_set = T::try_from_native_json(coronal_points_json)?;
     let lm_data = LabelMeData::from(coronal_set.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(lm_data, Path::new(json_path))?;
 
