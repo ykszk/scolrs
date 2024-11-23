@@ -7,16 +7,18 @@ use crate::neck::cli::MeasureArgs;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::warn;
-use scolrs::TryFromJson;
+use scolrs::{draw::MeasureError, TryFromJson};
 use scolrs::{
     head_neck::{LateralPoints, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent},
     Scalable,
 };
 use serde::{Deserialize, Serialize};
 
+type MeasurementVec = std::result::Result<Vec<f64>, MeasureError>;
+
 #[derive(Serialize, Deserialize)]
 pub struct Measurements {
-    pub measurements: IndexMap<String, Vec<f64>>,
+    pub measurements: IndexMap<String, MeasurementVec>,
     pub unit_of_length: String,
 }
 
@@ -28,23 +30,16 @@ pub struct MeasurementsLine {
 
 fn measure_all(
     measures: Vec<Box<dyn NeckMeasureComponent + '_>>,
-) -> Result<IndexMap<String, Vec<f64>>> {
-    let mut results: IndexMap<String, Vec<f64>> = Default::default();
-    for measure in measures {
-        let result = measure.measure();
-        match result {
-            Ok(result) => {
-                results.insert(measure.id().to_string(), result);
-            }
-            Err(e) => match e {
-                scolrs::draw::MeasureError::InvalidNumberOfPoints(err) => {
-                    warn!("Skip point count error for {}: {:?}", measure.id(), err);
-                }
-                e => return Err(e.into()),
-            },
-        }
-    }
-    Ok(results)
+) -> Result<IndexMap<String, MeasurementVec>> {
+    let measures: Vec<_> = measures
+        .into_iter()
+        .map(|m| {
+            let result = m.measure();
+            (m.id().to_string(), result)
+        })
+        .collect();
+    let map = IndexMap::from_iter(measures);
+    Ok(map)
 }
 
 fn process_data(
@@ -179,13 +174,16 @@ mod tests {
         let mut non_scaled = lateral_points.clone();
         non_scaled.image_metadata.spacing_xy = (1.0, 1.0);
         let measures = NeckLateralMeasure::all();
-        let measurements = process_data(lateral_points, &measures)?.measurements;
-        let measurements_non_scaled = process_data(non_scaled, &measures)?.measurements;
+        let mut measurements = process_data(lateral_points, &measures)?.measurements;
+        let mut measurements_non_scaled = process_data(non_scaled, &measures)?.measurements;
 
         for distance_measure in ["Adi", "Sacs", "ModifiedRenawatIndex"] {
-            let distance_measurements = measurements.get(distance_measure).unwrap();
-            let distance_measurements_non_scaled =
-                measurements_non_scaled.get(distance_measure).unwrap();
+            let distance_measurements =
+                measurements.swap_remove(distance_measure).unwrap().unwrap();
+            let distance_measurements_non_scaled = measurements_non_scaled
+                .swap_remove(distance_measure)
+                .unwrap()
+                .unwrap();
 
             for (scaled, non_scaled) in distance_measurements
                 .iter()

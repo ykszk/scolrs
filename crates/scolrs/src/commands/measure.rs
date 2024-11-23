@@ -16,14 +16,14 @@ use scolrs::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-type Measurements = std::result::Result<f64, MeasureError>;
+type Measurement = std::result::Result<f64, MeasureError>;
 
 #[derive(Serialize, Deserialize)]
 pub struct MeasureResult<V>
 where
     V: std::hash::Hash + Eq + std::cmp::Ord,
 {
-    pub measurements: IndexMap<V, Measurements>,
+    pub measurements: IndexMap<V, Measurement>,
     pub unit_of_length: String,
 }
 
@@ -149,7 +149,7 @@ fn measure_sagittal(
     let measures = subcommand
         .measures
         .unwrap_or_else(SagittalMeasure::all_measures);
-    let mut measurements: IndexMap<SagittalMeasure, Measurements> = Default::default();
+    let mut measurements: IndexMap<SagittalMeasure, Measurement> = Default::default();
     for measure in measures {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &sagittal_points).into();
         measurements.insert(measure, spinal_measure.measure());
@@ -178,7 +178,7 @@ fn measure_coronal(
         let curve_desc = coronal_points.identify_curves();
         (curve_desc.curves, curve_desc.apices)
     };
-    let mut measurements: IndexMap<CoronalMeasure, Measurements> = Default::default();
+    let mut measurements: IndexMap<CoronalMeasure, Measurement> = Default::default();
     let data = (&coronal_points, &curve_set, &apex_set);
     for measure in measures {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
