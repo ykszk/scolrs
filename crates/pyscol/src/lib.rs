@@ -13,7 +13,7 @@ use scolrs::{
         Painter,
     },
     CoronalMeasure, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
-    PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, TryFromJson, UpdatePoints,
+    PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, UpdatePoints,
 };
 use svg::node::element;
 
@@ -255,18 +255,17 @@ fn draw_generic<T, S>(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
 ) -> Result<String, PyScolError>
 where
-    T: TryFromJson + Clone + UpdatePoints,
+    T: Clone + UpdatePoints,
+    for<'de> T: serde::Deserialize<'de>,
     LabelMeData: From<T>,
     S: MeasureAndDraw + FromStr,
     <S as std::str::FromStr>::Err: std::fmt::Display,
-    PyScolError: std::convert::From<<T as scolrs::TryFromJson>::Error>,
-
     for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
-    let coronal_set = T::try_from_native_json(coronal_points_json)?;
+    let coronal_set: T = serde_json::from_str(coronal_points_json)?;
     let lm_data = LabelMeData::from(coronal_set.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(lm_data, Path::new(json_path))?;
 

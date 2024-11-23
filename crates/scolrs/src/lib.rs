@@ -3,7 +3,7 @@ use draw::MeasureError;
 use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam};
 use log::{debug, error, warn};
-use named_derive::{ContentFilename, HasImageMetadata, TryFromJsonStr};
+use named_derive::{ContentFilename, HasImageMetadata};
 use ndarray::{
     concatenate, s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2,
     ArrayView3, Axis, Data,
@@ -399,9 +399,7 @@ pub struct CoronalPoints {
 }
 
 /// Intermediary representation for [CoronalPoints]
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
-)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
 struct CoronalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub clavicle: Vec<Point2d>,
@@ -467,46 +465,6 @@ impl TryFrom<LabelMeDataLine> for CoronalPointsLine {
 
     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
         CoronalPointsLine::try_convert_from(data)
-    }
-}
-
-pub trait TryFromJson {
-    type Error;
-
-    fn try_from_native_json(json: &str) -> Result<Self, Self::Error>
-    where
-        Self: Sized;
-    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error>
-    where
-        Self: Sized;
-}
-
-impl TryFromJson for CoronalPoints {
-    type Error = ScolError;
-
-    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
-        let cp: CoronalPoints = serde_json::from_str(json)?;
-        Ok(cp)
-    }
-
-    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
-        let data: LabelMeData = serde_json::from_str(json)?;
-        let cp = CoronalPoints::try_from(data)?;
-        Ok(cp)
-    }
-}
-
-impl TryFromJson for SagittalPoints {
-    type Error = ScolError;
-
-    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
-        let sp: SagittalPoints = serde_json::from_str(json)?;
-        Ok(sp)
-    }
-    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
-        let data: LabelMeData = serde_json::from_str(json)?;
-        let sp = SagittalPoints::try_from(data)?;
-        Ok(sp)
     }
 }
 
@@ -855,9 +813,7 @@ impl Scalable for SagittalPoints {
 }
 
 /// Intermediate representation of [`SagittalPoints`] for serde
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
-)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
 struct SagittalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub femoral_head: Vec<Point2d>,
@@ -1057,7 +1013,7 @@ impl TryFrom<&LabelMeData> for CurveDesc {
 }
 
 /// [`CurveDesc`] in [`ContentFilename`] struct
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename, TryFromJsonStr)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename)]
 pub struct ScolDescLine {
     pub content: CurveDesc,
     pub filename: String,
@@ -1146,20 +1102,6 @@ pub struct CoronalPointsAndCurveLine {
     pub filename: String,
 }
 
-// impl TryFrom<&str> for CoronalPointsAndCurveLine {
-//     type Error = ScolError;
-
-//     /// Load from json in native format
-//     fn try_from(value: &str) -> Result<Self, Self::Error> {
-//         let line: CoronalPointsAndCurveIRLine = serde_json::from_str(value)?;
-//         let content = CoronalPointsAndCurve::try_from(&line.content)?;
-//         Ok(CoronalPointsAndCurveLine {
-//             content,
-//             filename: line.filename,
-//         })
-//     }
-// }
-
 impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveLine {
     type Error = ScolError;
 
@@ -1212,20 +1154,6 @@ impl TryFrom<LabelMeData> for CoronalPointsAndCurve {
     type Error = ScolError;
 
     fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
-        CoronalPointsAndCurve::try_from(&data)
-    }
-}
-
-impl TryFromJson for CoronalPointsAndCurve {
-    type Error = ScolError;
-
-    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
-        let cp = serde_json::from_str(json)?;
-        Ok(cp)
-    }
-
-    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
-        let data: LabelMeData = serde_json::from_str(json)?;
         CoronalPointsAndCurve::try_from(&data)
     }
 }

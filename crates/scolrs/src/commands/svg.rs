@@ -15,7 +15,7 @@ use scolrs::{
     draw::{draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     ContentFilename, CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
     HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure,
-    SagittalPoints, SagittalPointsLine, Scalable, TryFromJson, UpdatePoints,
+    SagittalPoints, SagittalPointsLine, Scalable, UpdatePoints,
 };
 use serde::Deserialize;
 use svg::node::element;
@@ -95,6 +95,7 @@ where
         point_with_image.resize(&resize_param);
     }
     let svg_size = if let Some(_svg_size_param) = svg_common.svg_size_param {
+        // TODO: implement
         // data.data
         //     .scale(svg_size_param.scale(data.image.width(), data.image.height()));
         // svg_size_param.size(data.image.width(), data.image.height())
@@ -122,13 +123,15 @@ where
 
 fn load_from_native_json_file<T>(path: &Path) -> Result<PointDataWithImage<T>>
 where
-    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone,
+    T: UpdatePoints + HasImageMetadata + Clone,
+    for<'de> T: Deserialize<'de>,
 
-    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
+    // <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
     LabelMeData: From<T>,
 {
     let json = std::fs::read_to_string(path)?;
-    let cp = T::try_from_native_json(&json).with_context(|| format!("Load {:?}", path))?;
+    // let cp = T::try_from_native_json(&json).with_context(|| format!("Load {:?}", path))?;
+    let cp: T = serde_json::from_str(&json)?;
     let data = LabelMeData::from(cp.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;
     Ok(PointDataWithImage::new(cp, data_w_image))
@@ -136,10 +139,9 @@ where
 
 fn load_from_labelme_json_file<T>(path: &Path, pull_spacing: bool) -> Result<PointDataWithImage<T>>
 where
-    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone + 'static,
+    T: UpdatePoints + HasImageMetadata + Clone + 'static,
+    for<'de> T: Deserialize<'de>,
 
-    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error,
-    <T as scolrs::TryFromJson>::Error: 'static,
     for<'a> T: TryFrom<&'a LabelMeData>,
     for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
         std::marker::Sync + std::marker::Send + std::error::Error + 'static,
@@ -162,9 +164,9 @@ fn load_native_or_lableme_json_file<T>(
     pull_spacing: bool,
 ) -> Result<PointDataWithImage<T>>
 where
-    T: TryFromJson + UpdatePoints + HasImageMetadata + Clone + 'static,
+    T: UpdatePoints + HasImageMetadata + Clone + 'static,
+    for<'de> T: Deserialize<'de>,
 
-    <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
     LabelMeData: From<T>,
     for<'a> T: TryFrom<&'a LabelMeData>,
     for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
@@ -281,10 +283,9 @@ fn load_from_native_json_line<S>(
 where
     S: ContentFilename,
     for<'de> S: Deserialize<'de>,
-    <S as ContentFilename>::ContentType: TryFromJson + UpdatePoints + HasImageMetadata + Clone,
+    <S as ContentFilename>::ContentType: UpdatePoints + HasImageMetadata + Clone,
     LabelMeData: From<<S as ContentFilename>::ContentType>,
 {
-    // let content_filename = S::try_from(json)?;
     let content_filename: S = serde_json::from_str(json)?;
     let (content, filename) = content_filename.content_filename();
     let data = LabelMeData::from(content.clone());

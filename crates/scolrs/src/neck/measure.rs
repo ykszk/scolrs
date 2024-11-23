@@ -7,7 +7,7 @@ use crate::neck::cli::MeasureArgs;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use log::warn;
-use scolrs::{draw::MeasureError, TryFromJson};
+use scolrs::draw::MeasureError;
 use scolrs::{
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
     Scalable,
@@ -64,7 +64,7 @@ fn process_data(
 }
 
 fn process_json(args: MeasureArgs) -> Result<()> {
-    let data = LateralPoints::try_from_native_json(
+    let data: LateralPoints = serde_json::from_str(
         std::fs::read_to_string(&args.input)
             .with_context(|| format!("Loading {:?}", args.input))?
             .as_str(),
@@ -168,8 +168,8 @@ mod tests {
         let data_dir = PathBuf::from("../../tests/data/");
 
         let input = data_dir.join("neck_case1/lateral_lateral_points.json");
-        let mut lateral_points =
-            LateralPoints::try_from_native_json(std::fs::read_to_string(&input)?.as_str())?;
+        let mut lateral_points: LateralPoints =
+            serde_json::from_str(std::fs::read_to_string(&input)?.as_str())?;
         lateral_points.image_metadata.spacing_xy = (0.5, 0.5);
         let mut non_scaled = lateral_points.clone();
         non_scaled.image_metadata.spacing_xy = (1.0, 1.0);

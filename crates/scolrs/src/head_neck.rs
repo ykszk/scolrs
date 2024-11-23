@@ -10,11 +10,11 @@ use crate::{
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
-    ScolError, TryFromJson, ValidateLength, CORNER_LABELS,
+    ScolError, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
-use named_derive::{Named, TryFromJsonStr};
+use named_derive::Named;
 
 use labelme_rs::LabelMeData;
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView1, ArrayView2, Axis};
@@ -149,21 +149,6 @@ impl Scalable for LateralPoints {
     }
 }
 
-impl TryFromJson for LateralPoints {
-    type Error = ScolError;
-
-    fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
-        let lp: LateralPoints = serde_json::from_str(json)?;
-        Ok(lp)
-    }
-
-    fn try_from_labelme_json(json: &str) -> Result<Self, Self::Error> {
-        let data: LabelMeData = serde_json::from_str(json)?;
-        let lp = LateralPoints::try_from(data)?;
-        Ok(lp)
-    }
-}
-
 impl TryFrom<LabelMeData> for LateralPoints {
     type Error = ScolError;
 
@@ -235,9 +220,7 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
 }
 
 /// Intermediate representation for lateral neck points for serialization and deserialization
-#[derive(
-    Serialize, Deserialize, Default, Clone, Debug, PartialEq, TryFromJsonStr, HasImageMetadata,
-)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
 pub struct LateralPointsIR {
     pub corners: Vec<Vec<Point2d>>,
     pub lamina: Vec<Point2d>,
@@ -256,9 +239,7 @@ pub struct LateralPointsIR {
     pub image_metadata: ImageMetadata,
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, named_derive::ContentFilename, TryFromJsonStr,
-)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, named_derive::ContentFilename)]
 pub struct LateralPointsLine {
     pub content: LateralPoints,
     pub filename: String,
