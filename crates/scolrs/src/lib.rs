@@ -1160,14 +1160,7 @@ impl TryFrom<LabelMeData> for CoronalPointsAndCurve {
 
 impl From<CoronalPointsAndCurve> for LabelMeData {
     fn from(cp: CoronalPointsAndCurve) -> Self {
-        let mut data = LabelMeData::from(cp.coronal_points);
-        data.shapes.push(labelme_rs::Shape {
-            label: "Curves".to_string(),
-            points: vec![],
-            shape_type: "curve".to_string(),
-            ..Default::default()
-        });
-        data
+        LabelMeData::from(cp.coronal_points)
     }
 }
 
