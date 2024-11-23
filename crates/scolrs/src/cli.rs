@@ -195,9 +195,6 @@ pub struct MeasureArgs {
     /// Output json/ndjson filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
-    /// Use specified curves instaed of calculating from the points
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub curve_set: Option<PathBuf>,
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,

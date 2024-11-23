@@ -3,7 +3,7 @@ use crate::{
     HasImageMetadata, L2Norm, SagittalMeasure, SagittalPoints, Scalable, ValidateLength,
     CORNER_LABELS,
 };
-use crate::{ApexSet, Curve, CurveSet, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
+use crate::{ApexSet, Curve, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::image::DynamicImage;
 use log::{debug, warn};
 use named_derive::Named;
@@ -2071,19 +2071,13 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)> for Box<dyn D
     }
 }
 
-impl<'a, 'b>
-    From<(
-        &'b CoronalMeasure,
-        &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
-    )> for Box<dyn MeasureComponent + 'a>
+impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)>
+    for Box<dyn MeasureComponent + 'a>
 {
-    fn from(
-        value: (
-            &'b CoronalMeasure,
-            &'a (&'a CoronalPoints, &'a CurveSet, &'a ApexSet),
-        ),
-    ) -> Self {
-        let (measure, (coronal_points, curve_set, _apex_set)) = value;
+    fn from(value: (&'b CoronalMeasure, &'a CoronalPointsAndCurve)) -> Self {
+        let (measure, coronal_points_and_curve) = value;
+        let coronal_points = &coronal_points_and_curve.coronal_points;
+        let curve_set = &coronal_points_and_curve.curves.curves;
         match measure {
             CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
             CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
