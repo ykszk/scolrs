@@ -1086,12 +1086,6 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn DrawComponent +
     }
 }
 
-/// Test struct for Named derive
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_LINE])]
-#[label("Label")]
-pub struct TestNamed<'a>(pub &'a str);
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1103,9 +1097,16 @@ pub(crate) mod tests {
     use crate::draw::{CLASS_LINE, CLASS_MEASURE};
     use crate::{CoronalPointsLine, SagittalPointsLine};
 
+    /// Test struct for Named derive
+    #[derive(Named)]
+    #[draw_type([CLASS_MEASURE, CLASS_LINE])]
+    #[label("Label")]
+    struct TestNamed<'a>(&'a str);
+
     #[test]
     fn test_derive_name() {
-        let test_named = super::TestNamed("Test");
+        let test_named = TestNamed("Test");
+        assert_eq!(test_named.0, "Test");
         assert_eq!(test_named.id(), "TestNamed");
         assert_eq!(test_named.label(), "Label");
         assert_eq!(test_named.draw_type(), &[CLASS_MEASURE, CLASS_LINE]);

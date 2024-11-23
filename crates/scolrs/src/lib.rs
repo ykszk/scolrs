@@ -460,8 +460,7 @@ pub struct CoronalPointsLine {
 }
 
 impl TryFrom<LabelMeDataLine> for CoronalPointsLine {
-    // type Error = <CoronalPointsLine as TryConvertContentFilename<CoronalPointsLine>>::Error;
-    type Error = ScolError;
+    type Error = <CoronalPointsLine as TryConvertContentFilename<LabelMeDataLine>>::Error;
 
     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
         CoronalPointsLine::try_convert_from(data)
@@ -892,8 +891,7 @@ pub struct SagittalPointsLine {
 }
 
 impl TryFrom<LabelMeDataLine> for SagittalPointsLine {
-    // type Error = <CoronalPointsLine as TryConvertContentFilename<CoronalPointsLine>>::Error;
-    type Error = ScolError;
+    type Error = <SagittalPointsLine as TryConvertContentFilename<LabelMeDataLine>>::Error;
 
     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
         SagittalPointsLine::try_convert_from(data)
@@ -1103,7 +1101,7 @@ pub struct CoronalPointsAndCurveLine {
 }
 
 impl TryFrom<LabelMeDataLine> for CoronalPointsAndCurveLine {
-    type Error = ScolError;
+    type Error = <CoronalPointsAndCurveLine as TryConvertContentFilename<LabelMeDataLine>>::Error;
 
     fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
         let converted = TryConvertContentFilename::try_convert_from(data)?;
