@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 use svg::node::element;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VertebralCornerPoints(pub Array3<f64>);
 
 impl TryFrom<&LabelMeData> for VertebralCornerPoints {
@@ -82,7 +82,7 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     }
 }
 
-#[derive(Debug, Clone, HasImageMetadata)]
+#[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
     pub lamina: Array2<f64>,
@@ -100,6 +100,25 @@ pub struct LateralPoints {
     pub manubrium: Array2<f64>,
 
     pub image_metadata: ImageMetadata,
+}
+
+impl Serialize for LateralPoints {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        LateralPointsIR::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for LateralPoints {
+    fn deserialize<D>(deserializer: D) -> Result<LateralPoints, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let lateral_points_ir = LateralPointsIR::deserialize(deserializer)?;
+        LateralPoints::try_from(&lateral_points_ir).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Scalable for LateralPoints {
@@ -134,8 +153,7 @@ impl TryFromJson for LateralPoints {
     type Error = ScolError;
 
     fn try_from_native_json(json: &str) -> Result<Self, Self::Error> {
-        let lateral_points_ir: LateralPointsIR = serde_json::from_str(json)?;
-        let lp = LateralPoints::try_from(&lateral_points_ir)?;
+        let lp: LateralPoints = serde_json::from_str(json)?;
         Ok(lp)
     }
 
@@ -193,15 +211,6 @@ impl TryFrom<&LabelMeData> for LateralPoints {
     }
 }
 
-impl TryFrom<&LateralPoints> for LabelMeData {
-    type Error = ndarray::ShapeError;
-
-    fn try_from(lateral_points: &LateralPoints) -> Result<Self, Self::Error> {
-        let lateral_points_ir = LateralPointsIR::from(lateral_points);
-        lateral_points_ir.try_into()
-    }
-}
-
 impl TryFrom<&LateralPointsIR> for LateralPoints {
     type Error = ndarray::ShapeError;
 
@@ -248,17 +257,10 @@ pub struct LateralPointsIR {
 }
 
 #[derive(
-    Serialize,
-    Deserialize,
-    Default,
-    Clone,
-    Debug,
-    PartialEq,
-    named_derive::ContentFilename,
-    TryFromJsonStr,
+    Serialize, Deserialize, Clone, Debug, PartialEq, named_derive::ContentFilename, TryFromJsonStr,
 )]
-pub struct LateralPointsIRLine {
-    pub content: LateralPointsIR,
+pub struct LateralPointsLine {
+    pub content: LateralPoints,
     pub filename: String,
 }
 
@@ -361,25 +363,15 @@ impl From<&LateralPoints> for LateralPointsIR {
     }
 }
 
-impl TryFrom<LabelMeData> for LateralPointsIR {
-    type Error = ScolError;
-
-    fn try_from(data: LabelMeData) -> Result<Self, Self::Error> {
-        let lateral_points = LateralPoints::try_from(data)?;
-        let lateral_points_ir = LateralPointsIR::from(&lateral_points);
-        Ok(lateral_points_ir)
-    }
-}
-
-impl TryFrom<LateralPointsIR> for LabelMeData {
+impl TryFrom<LateralPoints> for LabelMeData {
     type Error = ndarray::ShapeError;
 
-    fn try_from(lateral_points_ir: LateralPointsIR) -> Result<Self, Self::Error> {
-        let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
+    fn try_from(lateral_points: LateralPoints) -> Result<Self, Self::Error> {
+        // let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
         let mut data = LabelMeData {
-            imagePath: lateral_points_ir.image_metadata.path,
-            imageHeight: lateral_points_ir.image_metadata.height,
-            imageWidth: lateral_points_ir.image_metadata.width,
+            imagePath: lateral_points.image_metadata.path,
+            imageHeight: lateral_points.image_metadata.height,
+            imageWidth: lateral_points.image_metadata.width,
             ..Default::default()
         };
         // First poitns of TL and TR are discarded because they are dummy points
@@ -409,27 +401,44 @@ impl TryFrom<LateralPointsIR> for LabelMeData {
             ("TR", tr_points),
             ("BL", bl_points),
             ("BR", br_points),
-            ("Lamina", lateral_points_ir.lamina.clone()),
-            ("Brow", lateral_points_ir.brow.clone()),
-            ("Sella", lateral_points_ir.sella.clone()),
-            ("Orbit", lateral_points_ir.orbit.clone()),
+            ("Lamina", array2_to_vec_points(lateral_points.lamina)),
+            ("Brow", array2_to_vec_points(lateral_points.brow)),
+            ("Sella", array2_to_vec_points(lateral_points.sella)),
+            ("Orbit", array2_to_vec_points(lateral_points.orbit)),
             (
                 "ExternalAuditoryCanal",
-                lateral_points_ir.external_auditory_canal.clone(),
+                array2_to_vec_points(lateral_points.external_auditory_canal),
             ),
-            ("Occipital", lateral_points_ir.occipital.clone()),
-            ("AnteriorC1Arch", lateral_points_ir.anterior_c1_arch.clone()),
-            ("AnteriorDens", lateral_points_ir.anterior_dens.clone()),
-            ("PosteriorDens", lateral_points_ir.posterior_dens.clone()),
+            ("Occipital", array2_to_vec_points(lateral_points.occipital)),
+            (
+                "AnteriorC1Arch",
+                array2_to_vec_points(lateral_points.anterior_c1_arch),
+            ),
+            (
+                "AnteriorDens",
+                array2_to_vec_points(lateral_points.anterior_dens),
+            ),
+            (
+                "PosteriorDens",
+                array2_to_vec_points(lateral_points.posterior_dens),
+            ),
             (
                 "PosteriorHardPalate",
-                lateral_points_ir.posterior_hard_palate.clone(),
+                array2_to_vec_points(lateral_points.posterior_hard_palate),
             ),
-            ("Chin", lateral_points_ir.chin.clone()),
-            ("Manubrium", lateral_points_ir.manubrium.clone()),
+            ("Chin", array2_to_vec_points(lateral_points.chin)),
+            ("Manubrium", array2_to_vec_points(lateral_points.manubrium)),
         ]);
 
         Ok(data)
+    }
+}
+
+impl TryFrom<&LateralPoints> for LabelMeData {
+    type Error = ndarray::ShapeError;
+
+    fn try_from(lateral_points: &LateralPoints) -> Result<Self, Self::Error> {
+        LabelMeData::try_from(lateral_points.clone())
     }
 }
 
@@ -1140,9 +1149,9 @@ pub(crate) mod tests {
             let original_data_line =
                 LabelMeDataLine::new(original_data.clone(), filename.to_string());
             let lateral_points_line =
-                LateralPointsIRLine::try_convert_from(original_data_line.clone())?;
+                LateralPointsLine::try_convert_from(original_data_line.clone())?;
             let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
-            let lateral_point_line2 = LateralPointsIRLine::try_convert_from(data_line2.clone())?;
+            let lateral_point_line2 = LateralPointsLine::try_convert_from(data_line2.clone())?;
             assert_eq!(lateral_points_line, lateral_point_line2);
             let data_line3 = LabelMeDataLine::try_convert_from(lateral_point_line2.clone())?;
             assert_eq!(data_line2, data_line3);

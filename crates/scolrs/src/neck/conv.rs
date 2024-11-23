@@ -4,7 +4,7 @@ use std::io::{self, BufRead, BufReader};
 use crate::neck::cli::ConvArgs;
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
-use scolrs::head_neck::{LateralPointsIR, LateralPointsIRLine, TryConvertContentFilename};
+use scolrs::head_neck::{LateralPoints, LateralPointsLine, TryConvertContentFilename};
 use scolrs::{
     CoronalPoints, CoronalPointsLine, DicomError, PullImageMetadata, SagittalPoints,
     SagittalPointsLine,
@@ -61,7 +61,7 @@ trait PullIfImplemented {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError>;
 }
 
-impl PullIfImplemented for LateralPointsIRLine {
+impl PullIfImplemented for LateralPointsLine {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.content.pull_image_metadata()
     }
@@ -82,7 +82,7 @@ impl PullIfImplemented for LabelMeDataLine {
     }
 }
 
-impl PullIfImplemented for LateralPointsIR {
+impl PullIfImplemented for LateralPoints {
     fn pull_if_implemented(&mut self) -> Result<(), DicomError> {
         self.pull_image_metadata()
     }
@@ -113,7 +113,7 @@ fn process_ndjson(
     // shorthands to keep match hands one-line
     let pull = pull_spacing;
     type LMDLine = LabelMeDataLine;
-    type LatPtsLine = LateralPointsIRLine;
+    type LatPtsLine = LateralPointsLine;
     type CorPointsLine = CoronalPointsLine;
     type SagPointsLine = SagittalPointsLine;
     for line in reader.lines() {
@@ -161,10 +161,10 @@ fn process_json(
 
     match (from, to) {
         (ConvFormat::Labelme, ConvFormat::LateralPoints) => {
-            conv_and_write::<LabelMeData, LateralPointsIR>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<LabelMeData, LateralPoints>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::LateralPoints, ConvFormat::Labelme) => {
-            conv_and_write::<LateralPointsIR, LabelMeData>(&mut writer, json_str, pull_spacing)?;
+            conv_and_write::<LateralPoints, LabelMeData>(&mut writer, json_str, pull_spacing)?;
         }
         (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
             conv_and_write::<LabelMeData, CoronalPoints>(&mut writer, json_str, pull_spacing)?;

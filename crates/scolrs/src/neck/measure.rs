@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use log::warn;
 use scolrs::{draw::MeasureError, TryFromJson};
 use scolrs::{
-    head_neck::{LateralPoints, LateralPointsIRLine, NeckLateralMeasure, NeckMeasureComponent},
+    head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
     Scalable,
 };
 use serde::{Deserialize, Serialize};
@@ -96,8 +96,8 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        let data_line: LateralPointsIRLine = serde_json::from_str(&line)?;
-        let data = LateralPoints::try_from(&data_line.content)?;
+        let data_line: LateralPointsLine = serde_json::from_str(&line)?;
+        let data = data_line.content;
         let results = process_data(data, &measures);
         match results {
             Ok(results) => {

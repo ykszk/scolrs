@@ -123,10 +123,9 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
         };
         let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
         lines.into_par_iter().try_for_each(|line| -> Result<()> {
-            let lateral_points_ir_line: scolrs::head_neck::LateralPointsIRLine =
+            let lateral_points_ir_line: scolrs::head_neck::LateralPointsLine =
                 serde_json::from_str(&line)?;
-            let lateral_points =
-                scolrs::head_neck::LateralPoints::try_from(&lateral_points_ir_line.content)?;
+            let lateral_points = lateral_points_ir_line.content;
             let result = process_data(
                 lateral_points,
                 &args,
