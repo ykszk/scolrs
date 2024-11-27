@@ -583,7 +583,7 @@ impl ColorPalette {
     }
 }
 
-#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug, Clone, Serialize, Deserialize)]
 pub enum InvalidNumberOfPoints {
     /// Too few points, expected and actual
     #[error("Too few points, expected: {0}, actual: {1}")]
@@ -596,7 +596,7 @@ pub enum InvalidNumberOfPoints {
     IncorrectNumberOfPoints(usize, usize),
 }
 
-#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug, Clone, Serialize, Deserialize)]
 pub enum MeasureError {
     // Invalid number of points
     #[error("Invalid number of points")]
