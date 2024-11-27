@@ -18,158 +18,24 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 type Measurement = std::result::Result<f64, MeasureError>;
 
-pub struct MeasureResult<T>
+#[derive(Serialize, Deserialize)]
+pub struct MeasureResult<V>
 where
-    T: std::hash::Hash + Eq,
+    V: std::hash::Hash + Eq + std::cmp::Ord,
 {
-    pub measurements: IndexMap<T, Measurement>,
+    pub measurements: IndexMap<V, Measurement>,
     pub unit_of_length: String,
 }
 
-/// Adjacently tagged enum for serde
-///
-/// [Enum representations · Serde](https://serde.rs/enum-representations.html#adjacently-tagged)
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", content = "content")]
-enum AdjacentlyTaggedMeasure {
-    Ok(f64),
-    Err(MeasureError),
-}
-
-impl From<&Measurement> for AdjacentlyTaggedMeasure {
-    fn from(measurement: &Measurement) -> Self {
-        match measurement {
-            Ok(value) => AdjacentlyTaggedMeasure::Ok(*value),
-            Err(err) => AdjacentlyTaggedMeasure::Err(err.clone()),
-        }
-    }
-}
-
-impl From<Measurement> for AdjacentlyTaggedMeasure {
-    fn from(measurement: Measurement) -> Self {
-        match measurement {
-            Ok(value) => AdjacentlyTaggedMeasure::Ok(value),
-            Err(err) => AdjacentlyTaggedMeasure::Err(err),
-        }
-    }
-}
-
-impl From<AdjacentlyTaggedMeasure> for Measurement {
-    fn from(internally_tagged: AdjacentlyTaggedMeasure) -> Self {
-        match internally_tagged {
-            AdjacentlyTaggedMeasure::Ok(value) => Ok(value),
-            AdjacentlyTaggedMeasure::Err(err) => Err(err),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct InternallyTaggedMeasureResult<T>
+pub struct MeasureLine<V>
 where
-    T: std::hash::Hash + Eq,
-{
-    pub measurements: IndexMap<T, AdjacentlyTaggedMeasure>,
-    pub unit_of_length: String,
-}
-
-impl<T> From<&MeasureResult<T>> for InternallyTaggedMeasureResult<T>
-where
-    T: std::hash::Hash + Eq + Copy + Serialize + DeserializeOwned,
-{
-    fn from(measure_result: &MeasureResult<T>) -> Self {
-        let measurements: IndexMap<T, AdjacentlyTaggedMeasure> = IndexMap::from_iter(
-            measure_result
-                .measurements
-                .iter()
-                .map(|(key, value)| (*key, value.into())),
-        );
-        InternallyTaggedMeasureResult {
-            measurements,
-            unit_of_length: measure_result.unit_of_length.clone(),
-        }
-    }
-}
-
-impl<T> Serialize for MeasureResult<T>
-where
-    T: std::hash::Hash + Eq + Copy + Serialize + DeserializeOwned,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        InternallyTaggedMeasureResult::from(self).serialize(serializer)
-    }
-}
-
-impl<'de, T> Deserialize<'de> for MeasureResult<T>
-where
-    T: std::hash::Hash + Eq + Copy + Serialize + DeserializeOwned,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let internally_tagged: InternallyTaggedMeasureResult<T> =
-            InternallyTaggedMeasureResult::deserialize(deserializer)?;
-        let measurements: IndexMap<T, Measurement> = internally_tagged
-            .measurements
-            .into_iter()
-            .map(|(key, value)| (key, value.into()))
-            .collect();
-        Ok(MeasureResult {
-            measurements,
-            unit_of_length: internally_tagged.unit_of_length,
-        })
-    }
-}
-
-// fn serialize_measure_map<S, T>(
-//     measurements: &IndexMap<T, Measurement>,
-//     serializer: S,
-// ) -> Result<S::Ok, S::Error>
-// where
-//     S: serde::Serializer,
-//     T: std::hash::Hash + Eq + Serialize + Copy,
-// {
-//     let internally_tagged: IndexMap<T, InternallyTaggedMeasure> = IndexMap::from_iter(
-//         measurements
-//             .into_iter()
-//             .map(|(key, value)| (key.clone(), value.into())),
-//     );
-//     internally_tagged.serialize(serializer)
-// }
-
-// fn deserialize_measure_map<'de, D, T>(deserializer: D) -> Result<IndexMap<T, Measurement>, D::Error>
-// where
-//     D: serde::Deserializer<'de>,
-//     T: std::hash::Hash + Eq + Deserialize<'de> + Copy,
-// {
-//     let internally_tagged: IndexMap<T, InternallyTaggedMeasure> =
-//         IndexMap::deserialize(deserializer)?;
-//     let measurements: IndexMap<T, Measurement> = IndexMap::from_iter(
-//         internally_tagged
-//             .into_iter()
-//             .map(|(key, value)| match value {
-//                 InternallyTaggedMeasure::Ok(value) => (key, Ok(value)),
-//                 InternallyTaggedMeasure::Err(err) => (key, Err(err)),
-//             }),
-//     );
-//     Ok(measurements)
-// }
-
-#[derive(Serialize, Deserialize)]
-pub struct MeasureLine<T>
-where
-    T: std::hash::Hash + Eq + Copy, // + Serialize + DeserializeOwned,
-    MeasureResult<T>: Serialize + DeserializeOwned,
+    V: std::hash::Hash + Eq + std::cmp::Ord,
 {
     pub filename: String,
-    pub content: MeasureResult<T>,
+    pub content: MeasureResult<V>,
 }
 
-// type SagittalMeasureResult = InternallyTaggedMeasureResult<SagittalMeasure>;
-// type CoronalMeasureResult = InternallyTaggedMeasureResult<CoronalMeasure>;
 type SagittalMeasureLine = MeasureLine<SagittalMeasure>;
 type CoronalMeasureLine = MeasureLine<CoronalMeasure>;
 
