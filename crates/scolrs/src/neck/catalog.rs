@@ -28,7 +28,6 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
             .unwrap();
     }
 
-    let glob_pattern = args.input.join("*.svg");
     let mut writer = BufWriter::new(File::create(&args.output)?);
     writer.ws("<html>\n")?;
     writer.ws("<head>")?;
@@ -80,9 +79,21 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         }
     };
 
-    let mut paths: Vec<_> =
-        glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
-    paths.sort();
+    let mut paths = Vec::new();
+    for input in args.input {
+        if input.is_dir() {
+            let glob_pattern = input.join("*.svg");
+            let mut svgs: Vec<_> =
+                glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
+            svgs.sort();
+            paths.append(&mut svgs);
+        } else if input.is_file() {
+            paths.push(input);
+        } else {
+            bail!("Invalid input file: {:?}", input)
+        }
+    }
+
     let divs: Result<Vec<_>> = paths
         .into_par_iter()
         .map(|path| -> Result<String> {

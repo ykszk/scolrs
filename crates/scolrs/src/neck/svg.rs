@@ -198,7 +198,7 @@ mod tests {
 
         let data_dir = PathBuf::from("../../tests/data/");
         svg_args.input = data_dir.join("neck_case1/lateral_lateral_points.json");
-        svg_args.output = output_path("neck_case1_lateral.svg")?;
+        svg_args.output = output_path("neck_case1/neck_case1_lateral.svg")?;
         cmd(svg_args.clone())?;
 
         if std::env::var("TEST_OUTPUT_DIR").is_err() {
@@ -226,12 +226,12 @@ mod tests {
 
         // extension
         svg_args.input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");
-        svg_args.output = output_path("neck_case2_extension_lateral.svg")?;
+        svg_args.output = output_path("neck_case2/extension_lateral.svg")?;
         cmd(svg_args.clone())?;
 
         // flexion
         svg_args.input = data_dir.join("neck_case2/flexion_lateral_lateral_points.json");
-        svg_args.output = output_path("neck_case2_flexion_lateral.svg")?;
+        svg_args.output = output_path("neck_case2/flexion_lateral.svg")?;
         cmd(svg_args.clone())?;
 
         if std::env::var("TEST_OUTPUT_DIR").is_err() {
@@ -250,11 +250,24 @@ mod tests {
         html_args.input = output_path("neck_case2_flexion_lateral.svg")?;
         crate::neck::html::cmd(html_args)?;
 
-        // test catalog command
+        // test catalog command with directory input
         let catalog_args = crate::neck::cli::CatalogArgs {
-            input: output_path("")?,
+            input: vec![output_path("neck_case2")?],
             output: output_path("neck_case2_catalog.html")?,
             title: Some("Neck Case 2".to_string()),
+            selector: vec!["g.Component".to_string()],
+            jobs: None,
+        };
+        crate::neck::catalog::cmd(catalog_args)?;
+
+        // test catalog command with multiple directories
+        let catalog_args = crate::neck::cli::CatalogArgs {
+            input: vec![
+                output_path("neck_case1/neck_case1_lateral.svg")?,
+                output_path("neck_case2/flexion_lateral.svg")?,
+            ],
+            output: output_path("neck_cases_catalog.html")?,
+            title: Some("Neck Cases".to_string()),
             selector: vec!["g.Component".to_string()],
             jobs: None,
         };
