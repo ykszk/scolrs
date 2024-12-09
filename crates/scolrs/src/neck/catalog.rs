@@ -97,9 +97,20 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     let divs: Result<Vec<_>> = paths
         .into_par_iter()
         .map(|path| -> Result<String> {
+            let svg = if path.extension().unwrap_or_default() == "html" {
+                let html = std::fs::read_to_string(&path)
+                    .with_context(|| format!("Reading {:?}", path))?;
+                let document = Html::parse_document(&html);
+
+                document
+                    .select(&Selector::parse("svg").unwrap())
+                    .next()
+                    .context("No `svg` element found")?
+                    .html()
+            } else {
+                std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?
+            };
             let filename = path.file_stem().unwrap().to_string_lossy();
-            let svg =
-                std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?;
             let document = Html::parse_document(&svg);
             let mut elements: Vec<_> = Vec::new();
             for selector in selectors.iter() {

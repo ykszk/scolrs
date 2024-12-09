@@ -240,14 +240,14 @@ mod tests {
 
         // test html command
         let mut html_args = crate::neck::cli::HtmlArgs {
-            input: output_path("neck_case2_extension_lateral.svg")?,
+            input: output_path("neck_case2/extension_lateral.svg")?,
             output: None,
             selector: vec!["g.Component".to_string()],
             title: None,
         };
         crate::neck::html::cmd(html_args.clone())?;
 
-        html_args.input = output_path("neck_case2_flexion_lateral.svg")?;
+        html_args.input = output_path("neck_case2/flexion_lateral.svg")?;
         crate::neck::html::cmd(html_args)?;
 
         // test catalog command with directory input

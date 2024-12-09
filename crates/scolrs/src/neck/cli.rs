@@ -83,8 +83,8 @@ pub struct MeasureArgs {
 
 #[derive(Parser, Debug)]
 pub struct CatalogArgs {
-    /// Input svg file path or svg containing directory
-    #[arg(value_hint = ValueHint::AnyPath)]
+    /// Input svg (or html) file path or svg containing directory
+    #[arg(value_hint = ValueHint::AnyPath, required = true)]
     pub input: Vec<PathBuf>,
     /// Output html file
     #[arg(value_hint = ValueHint::FilePath)]
