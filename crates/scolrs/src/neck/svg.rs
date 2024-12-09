@@ -273,6 +273,19 @@ mod tests {
         };
         crate::neck::catalog::cmd(catalog_args)?;
 
+        // test catalog command with html input
+        let catalog_args = crate::neck::cli::CatalogArgs {
+            input: vec![
+                output_path("neck_case2/flexion_lateral.html")?,
+                output_path("neck_case2/extension_lateral.html")?,
+            ],
+            output: output_path("neck_catalog_from_html.html")?,
+            title: Some("Neck Case 2 from HTML".to_string()),
+            selector: vec!["g.Component".to_string()],
+            jobs: None,
+        };
+        crate::neck::catalog::cmd(catalog_args)?;
+
         Ok(())
     }
 }
