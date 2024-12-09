@@ -161,6 +161,10 @@ pub fn content_filename_derive(input: TokenStream) -> TokenStream {
                 (self.#content_field, self.#filename_field)
             }
 
+            fn filename(&self) -> &str {
+                &self.#filename_field
+            }
+
             fn new(content: Self::ContentType, filename: String) -> Self {
                 Self {
                     #content_field: content,

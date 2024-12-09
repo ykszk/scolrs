@@ -283,6 +283,10 @@ impl ContentFilename for labelme_rs::LabelMeDataLine {
         (self.content, self.filename)
     }
 
+    fn filename(&self) -> &str {
+        &self.filename
+    }
+
     fn new(content: Self::ContentType, filename: String) -> Self {
         Self { content, filename }
     }

@@ -4,6 +4,7 @@ use std::io::{self, BufRead, BufReader};
 use crate::neck::cli::ConvArgs;
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
+use log::debug;
 use scolrs::head_neck::{LateralPoints, LateralPointsLine, TryConvertContentFilename};
 use scolrs::{
     CoronalPoints, CoronalPointsLine, DicomError, PullImageMetadata, SagittalPoints,
@@ -25,6 +26,7 @@ where
     for<'de> From: serde::Deserialize<'de>,
 {
     let from: From = serde_json::from_str(from_str.as_str())?;
+    debug!("convert: {:?}", from.filename());
     let mut to: To = TryConvertContentFilename::try_convert_from(from)?;
     if pull_spacing {
         to.pull_if_implemented()?;

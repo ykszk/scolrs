@@ -32,6 +32,7 @@ pub type Point2d = (f64, f64);
 pub trait ContentFilename {
     type ContentType;
     fn content_filename(self) -> (Self::ContentType, String);
+    fn filename(&self) -> &str;
     fn new(content: Self::ContentType, filename: String) -> Self;
 }
 
