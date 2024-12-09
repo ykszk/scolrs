@@ -443,8 +443,8 @@ pub trait NeckMeasureComponent: Named {
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
 #[label("SACs")]
 pub struct Sacs<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for Sacs<'a> {}
-impl<'a> DrawComponent for Sacs<'a> {
+impl NeckSagittalComponent for Sacs<'_> {}
+impl DrawComponent for Sacs<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -520,7 +520,7 @@ impl<'a> DrawComponent for Sacs<'a> {
     }
 }
 
-impl<'a> NeckMeasureComponent for Sacs<'a> {
+impl NeckMeasureComponent for Sacs<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         self.0.posterior_dens.validate_length(1)?;
         self.0.lamina.validate_length(8)?;
@@ -565,7 +565,7 @@ impl<'a> NeckMeasureComponent for Sacs<'a> {
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
 #[label("ADI")]
 pub struct Adi<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for Adi<'a> {}
+impl NeckSagittalComponent for Adi<'_> {}
 impl Adi<'_> {
     fn prep(&self) -> Result<(), MeasureError> {
         self.0.anterior_dens.validate_length(1)?;
@@ -573,7 +573,7 @@ impl Adi<'_> {
         Ok(())
     }
 }
-impl<'a> DrawComponent for Adi<'a> {
+impl DrawComponent for Adi<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -601,7 +601,7 @@ impl<'a> DrawComponent for Adi<'a> {
         Ok(group)
     }
 }
-impl<'a> NeckMeasureComponent for Adi<'a> {
+impl NeckMeasureComponent for Adi<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         self.prep()?;
         let diff = &self.0.anterior_dens.index_axis(Axis(0), 0)
@@ -615,7 +615,7 @@ impl<'a> NeckMeasureComponent for Adi<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct OC2<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for OC2<'a> {}
+impl NeckSagittalComponent for OC2<'_> {}
 impl OC2<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         self.0.occipital.validate_length(1)?;
@@ -630,7 +630,7 @@ impl OC2<'_> {
         Ok((mcgregor_points, c2_lower_endplate))
     }
 }
-impl<'a> DrawComponent for OC2<'a> {
+impl DrawComponent for OC2<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -662,7 +662,7 @@ impl<'a> DrawComponent for OC2<'a> {
         Ok(group)
     }
 }
-impl<'a> NeckMeasureComponent for OC2<'a> {
+impl NeckMeasureComponent for OC2<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
         let angle =
@@ -675,8 +675,8 @@ impl<'a> NeckMeasureComponent for OC2<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct WedgeAngle<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for WedgeAngle<'a> {}
-impl<'a> DrawComponent for WedgeAngle<'a> {
+impl NeckSagittalComponent for WedgeAngle<'_> {}
+impl DrawComponent for WedgeAngle<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -717,7 +717,7 @@ impl<'a> DrawComponent for WedgeAngle<'a> {
         Ok(group)
     }
 }
-impl<'a> NeckMeasureComponent for WedgeAngle<'a> {
+impl NeckMeasureComponent for WedgeAngle<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let mut angles = Vec::new();
         for i in 0..6 {
@@ -736,8 +736,8 @@ impl<'a> NeckMeasureComponent for WedgeAngle<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct ModifiedRenawatIndex<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for ModifiedRenawatIndex<'a> {}
-impl<'a> ModifiedRenawatIndex<'a> {
+impl NeckSagittalComponent for ModifiedRenawatIndex<'_> {}
+impl ModifiedRenawatIndex<'_> {
     /// Array2 of [intersection, c2_lower_middle]
     fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
         self.0.anterior_c1_arch.validate_length(1)?;
@@ -767,7 +767,7 @@ impl<'a> ModifiedRenawatIndex<'a> {
         }
     }
 }
-impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
+impl DrawComponent for ModifiedRenawatIndex<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -802,7 +802,7 @@ impl<'a> DrawComponent for ModifiedRenawatIndex<'a> {
         Ok(group)
     }
 }
-impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
+impl NeckMeasureComponent for ModifiedRenawatIndex<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let intersection = self.prep()?;
         if let Some(intersection) = intersection {
@@ -818,8 +818,8 @@ impl<'a> NeckMeasureComponent for ModifiedRenawatIndex<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct ThoracicInletAngle<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for ThoracicInletAngle<'a> {}
-impl<'a> ThoracicInletAngle<'a> {
+impl NeckSagittalComponent for ThoracicInletAngle<'_> {}
+impl ThoracicInletAngle<'_> {
     fn prep(&self) -> Result<Array2<f64>, MeasureError> {
         self.0.manubrium.validate_length(1)?;
         self.0.corners.0.validate_length(7)?;
@@ -828,7 +828,7 @@ impl<'a> ThoracicInletAngle<'a> {
         Ok(t1_top_plate.to_owned())
     }
 }
-impl<'a> DrawComponent for ThoracicInletAngle<'a> {
+impl DrawComponent for ThoracicInletAngle<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -848,7 +848,7 @@ impl<'a> DrawComponent for ThoracicInletAngle<'a> {
         Ok(group)
     }
 }
-impl<'a> NeckMeasureComponent for ThoracicInletAngle<'a> {
+impl NeckMeasureComponent for ThoracicInletAngle<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let t1_top_plate = self.prep()?;
         let angle = femoral_incidence_angle(
@@ -863,8 +863,8 @@ impl<'a> NeckMeasureComponent for ThoracicInletAngle<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct NeckTilt<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for NeckTilt<'a> {}
-impl<'a> NeckTilt<'a> {
+impl NeckSagittalComponent for NeckTilt<'_> {}
+impl NeckTilt<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>, f64), MeasureError> {
         self.0.manubrium.validate_length(1)?;
         self.0.corners.0.validate_length(7)?;
@@ -883,7 +883,7 @@ impl<'a> NeckTilt<'a> {
         Ok((manubrium_to_t1, v_line_from_manubrium, angle))
     }
 }
-impl<'a> DrawComponent for NeckTilt<'a> {
+impl DrawComponent for NeckTilt<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -934,8 +934,8 @@ impl HasCornerPoints for CervicalPoints<'_> {
         self.0.corners.0.slice(s![.., 3, ..])
     }
 }
-impl<'a> NeckSagittalComponent for CervicalPoints<'a> {}
-impl<'a> DrawComponent for CervicalPoints<'a> {
+impl NeckSagittalComponent for CervicalPoints<'_> {}
+impl DrawComponent for CervicalPoints<'_> {
     fn draw(
         &self,
         painter: &Painter,
@@ -974,8 +974,8 @@ impl<'a> DrawComponent for CervicalPoints<'a> {
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
 pub struct VertebralLabels<'a>(pub &'a LateralPoints);
-impl<'a> NeckSagittalComponent for VertebralLabels<'a> {}
-impl<'a> DrawComponent for VertebralLabels<'a> {
+impl NeckSagittalComponent for VertebralLabels<'_> {}
+impl DrawComponent for VertebralLabels<'_> {
     fn draw(
         &self,
         painter: &Painter,
