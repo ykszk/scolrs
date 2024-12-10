@@ -28,7 +28,9 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
             .unwrap();
     }
 
-    let mut writer = BufWriter::new(File::create(&args.output)?);
+    let mut writer = BufWriter::new(
+        File::create(&args.output).with_context(|| format!("Writing to {:?}", args.output))?,
+    );
     writer.ws("<html>\n")?;
     writer.ws("<head>")?;
     if let Some(title) = args.title {
