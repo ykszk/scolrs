@@ -221,7 +221,7 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
 
 /// Intermediate representation for lateral neck points for serialization and deserialization
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
-pub struct LateralPointsIR {
+struct LateralPointsIR {
     pub corners: Vec<Vec<Point2d>>,
     pub lamina: Vec<Point2d>,
     pub brow: Vec<Point2d>,
@@ -348,10 +348,8 @@ impl From<&LateralPoints> for LateralPointsIR {
     }
 }
 
-impl TryFrom<LateralPoints> for LabelMeData {
-    type Error = ndarray::ShapeError;
-
-    fn try_from(lateral_points: LateralPoints) -> Result<Self, Self::Error> {
+impl From<LateralPoints> for LabelMeData {
+    fn from(lateral_points: LateralPoints) -> Self {
         // let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
         let mut data = LabelMeData {
             imagePath: lateral_points.image_metadata.path,
@@ -415,15 +413,13 @@ impl TryFrom<LateralPoints> for LabelMeData {
             ("Manubrium", array2_to_vec_points(lateral_points.manubrium)),
         ]);
 
-        Ok(data)
+        data
     }
 }
 
-impl TryFrom<&LateralPoints> for LabelMeData {
-    type Error = ndarray::ShapeError;
-
-    fn try_from(lateral_points: &LateralPoints) -> Result<Self, Self::Error> {
-        LabelMeData::try_from(lateral_points.clone())
+impl From<&LateralPoints> for LabelMeData {
+    fn from(lateral_points: &LateralPoints) -> Self {
+        LabelMeData::from(lateral_points.clone())
     }
 }
 

@@ -13,6 +13,7 @@ use log::debug;
 use rayon::prelude::*;
 use scolrs::{
     draw::{draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
+    head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
     ContentFilename, CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
     HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure,
     SagittalPoints, SagittalPointsLine, Scalable, UpdatePoints,
@@ -80,6 +81,29 @@ impl AssociatedMeasureAndDraw for SagittalPoints {
     }
 }
 
+impl AssociatedMeasureAndDraw for LateralPoints {
+    type Measure = NeckLateralDraw;
+
+    fn draw(
+        image: DynamicImage,
+        sagittal_points: Self,
+        draws: &[Self::Measure],
+        hide: &[Self::Measure],
+        draw_param: DrawParam,
+        svg_size: (usize, usize),
+        palettes: ColorPalettes,
+    ) -> Result<element::SVG, DrawError> {
+        scolrs::draw::draw_on_image(
+            image,
+            sagittal_points,
+            (draws, hide),
+            draw_param,
+            svg_size,
+            palettes,
+        )
+    }
+}
+
 fn process_one<T>(
     svg_common: ReadSvgArgCommon,
     mut point_with_image: PointDataWithImage<T>,
@@ -89,7 +113,7 @@ fn process_one<T>(
 ) -> Result<()>
 where
     T: UpdatePoints + AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
-    <T as AssociatedMeasureAndDraw>::Measure: MeasureAndDraw + Clone + Copy + PartialEq,
+    <T as AssociatedMeasureAndDraw>::Measure: Clone + Copy + PartialEq,
 {
     if let Some(resize_param) = svg_common.resize_param {
         point_with_image.resize(&resize_param);
@@ -207,6 +231,18 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(SagittalMeasure::all_draws);
             let hide = svg_sub_sagittall_args.hide;
+            process_one(svg_common, data, &draws, &hide, &args.output)?;
+        }
+        SvgSubCommands::Neck(svg_sub_neck_args) => {
+            let data: PointDataWithImage<LateralPoints> = load_native_or_lableme_json_file(
+                &args.input,
+                svg_common.labelme,
+                svg_common.pull_spacing,
+            )?;
+            let draws = svg_sub_neck_args
+                .measures
+                .unwrap_or_else(NeckLateralDraw::all);
+            let hide = svg_sub_neck_args.hide;
             process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
     };
@@ -338,6 +374,24 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .measures
                     .unwrap_or_else(SagittalMeasure::all_draws);
                 let hide = svg_sub_sagittall_args.hide;
+
+                let output = args.output.join(
+                    Path::new(filename.as_str())
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                        + ".svg",
+                );
+                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+            }
+            SvgSubCommands::Neck(svg_sub_neck_args) => {
+                let (data, filename) =
+                    load_from_native_json_line::<LateralPointsLine>(&line, &args.input)?;
+                let draws = svg_sub_neck_args
+                    .measures
+                    .unwrap_or_else(NeckLateralDraw::all);
+                let hide = svg_sub_neck_args.hide;
 
                 let output = args.output.join(
                     Path::new(filename.as_str())

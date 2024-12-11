@@ -1,6 +1,6 @@
 use clap::ValueEnum;
 use draw::MeasureError;
-use head_neck::TryConvertContentFilename;
+use head_neck::{LateralPoints, TryConvertContentFilename};
 use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam};
 use log::{debug, error, warn};
 use named_derive::{ContentFilename, HasImageMetadata};
@@ -1050,31 +1050,34 @@ pub struct CoronalPointsAndCurveIR {
 }
 
 pub trait UpdatePoints {
-    fn update_points(&mut self, data: &LabelMeData);
+    fn update_points(&self, data: &LabelMeData) -> Self;
 }
 
 impl UpdatePoints for CoronalPointsAndCurve {
-    fn update_points(&mut self, data: &LabelMeData) {
-        // preserve image metadata
-        let image_metadata = self.coronal_points.image_metadata.clone();
+    fn update_points(&self, data: &LabelMeData) -> Self {
+        let mut cp = self.clone();
 
-        self.coronal_points = CoronalPoints::try_from(data.clone()).unwrap();
-        self.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
+        cp.coronal_points = CoronalPoints::try_from(data.clone()).unwrap();
+        cp.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
 
-        self.coronal_points.image_metadata = image_metadata;
+        cp.coronal_points.image_metadata = self.coronal_points.image_metadata.clone();
+        cp
     }
 }
 
 impl UpdatePoints for SagittalPoints {
-    fn update_points(&mut self, data: &LabelMeData) {
-        // preserve image metadata
-        let image_metadata = self.image_metadata.clone();
+    fn update_points(&self, data: &LabelMeData) -> Self {
+        let mut sp = SagittalPoints::try_from(data.clone()).unwrap();
+        sp.image_metadata = self.image_metadata.clone();
+        sp
+    }
+}
 
-        let sp = SagittalPoints::try_from(data.clone()).unwrap();
-        self.spine = sp.spine;
-        self.femoral_head = sp.femoral_head;
-
-        self.image_metadata = image_metadata;
+impl UpdatePoints for LateralPoints {
+    fn update_points(&self, data: &LabelMeData) -> Self {
+        let mut lp = LateralPoints::try_from(data.clone()).unwrap();
+        lp.image_metadata = self.image_metadata.clone();
+        lp
     }
 }
 
@@ -1090,7 +1093,7 @@ impl<T: UpdatePoints> PointDataWithImage<T> {
     }
     pub fn resize(&mut self, param: &ResizeParam) {
         self.data_image.resize(param);
-        self.data.update_points(&self.data_image.data);
+        self.data = self.data.update_points(&self.data_image.data);
     }
 }
 

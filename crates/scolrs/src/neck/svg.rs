@@ -23,11 +23,9 @@ fn process_data(
     neck_sagittal_draw: &[NeckLateralDraw],
 ) -> Result<SVG> {
     // use LabelMeDataWImage for resizing
-    let mut data = LabelMeDataWImage::try_from_data_and_path(
-        LabelMeData::try_from(&lateral_points)?,
-        &args.input,
-    )
-    .with_context(|| format!("Failed to read {}", lateral_points.image_metadata.path))?;
+    let mut data =
+        LabelMeDataWImage::try_from_data_and_path(LabelMeData::from(&lateral_points), &args.input)
+            .with_context(|| format!("Failed to read {}", lateral_points.image_metadata.path))?;
     if let Some(resize) = args.resize.as_ref() {
         let resize_param = labelme_rs::ResizeParam::try_from(resize.as_str())?;
         data.resize(&resize_param);
@@ -99,9 +97,8 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
     let neck_sagittal_draw = args.measures.clone().unwrap_or_else(NeckLateralDraw::all);
 
     if args.input.extension().unwrap_or_default() == "json" {
-        let lateral_points_ir: scolrs::head_neck::LateralPointsIR =
+        let lateral_points: scolrs::head_neck::LateralPoints =
             serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
-        let lateral_points = LateralPoints::try_from(&lateral_points_ir)?;
         let document = process_data(
             lateral_points,
             &args,
