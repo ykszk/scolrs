@@ -3,7 +3,7 @@ use std::{
     io::{BufWriter, Write},
 };
 
-use crate::neck::cli::CatalogArgs;
+use crate::cli::CatalogArgs;
 use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
 use rayon::prelude::*;

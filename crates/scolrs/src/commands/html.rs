@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::neck::cli::HtmlArgs;
+use crate::cli::HtmlArgs;
 use anyhow::{Context, Result};
 use scolrs::draw::wrap_in_html;
 

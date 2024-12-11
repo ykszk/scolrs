@@ -5,7 +5,7 @@ use env_logger::Env;
 
 mod neck;
 use neck::cli::{Cli, Command};
-use neck::{catalog, conv, list, measure, svg};
+use neck::{conv, list, measure};
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut clap::Command) {
     generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
@@ -21,10 +21,7 @@ fn main() -> Result<()> {
             print_completions(args.shell, &mut cmd);
             Ok(())
         }
-        Command::Svg(args) => svg::cmd(args),
         Command::Measure(args) => measure::cmd(args),
-        Command::Catalog(args) => catalog::cmd(args),
-        Command::Html(args) => neck::html::cmd(args),
         Command::List(args) => list::cmd(args),
         Command::Conv(args) => conv::cmd(args),
     }

@@ -419,7 +419,7 @@ mod tests {
 
     fn output_path(name: &str) -> Result<PathBuf> {
         if let Ok(dir) = std::env::var("TEST_OUTPUT_DIR") {
-            let path = PathBuf::from(dir).join("scol").join(name);
+            let path = PathBuf::from(dir).join(name);
             std::fs::create_dir_all(path.parent().unwrap())?;
             return Ok(path);
         }
@@ -512,5 +512,105 @@ mod tests {
     #[test]
     fn svg_cmd_scol_case4() -> Result<()> {
         _test_case("case4", false)
+    }
+
+    // neck
+    #[test]
+    fn test_svg_cmd_neck_case1() -> Result<()> {
+        let mut svg_args = gen_svg_args();
+        svg_args.svg_args.subcommand = SvgSubCommands::Neck(Default::default());
+
+        let data_dir = PathBuf::from("../../tests/data/");
+        svg_args.input = data_dir.join("neck_case1/lateral_lateral_points.json");
+        svg_args.output = output_path("neck_case1/neck_case1_lateral.svg")?;
+        cmd(svg_args.clone())?;
+
+        if std::env::var("TEST_OUTPUT_DIR").is_err() {
+            return Ok(());
+        }
+
+        // test html command
+        let html_args = crate::cli::HtmlArgs {
+            input: svg_args.output,
+            output: None,
+            selector: vec!["g.Component".to_string()],
+            title: None,
+        };
+        crate::commands::html::cmd(html_args)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_svg_cmd_neck_case2() -> Result<()> {
+        let mut svg_args = gen_svg_args();
+        svg_args.svg_args.resize = Some("768x768".to_string());
+        svg_args.svg_args.subcommand = SvgSubCommands::Neck(Default::default());
+
+        let data_dir = PathBuf::from("../../tests/data/");
+
+        // extension
+        svg_args.input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");
+        svg_args.output = output_path("neck_case2/extension_lateral.svg")?;
+        cmd(svg_args.clone())?;
+
+        // flexion
+        svg_args.input = data_dir.join("neck_case2/flexion_lateral_lateral_points.json");
+        svg_args.output = output_path("neck_case2/flexion_lateral.svg")?;
+        cmd(svg_args.clone())?;
+
+        if std::env::var("TEST_OUTPUT_DIR").is_err() {
+            return Ok(());
+        }
+
+        // test html command
+        let mut html_args = crate::cli::HtmlArgs {
+            input: output_path("neck_case2/extension_lateral.svg")?,
+            output: None,
+            selector: vec!["g.Component".to_string()],
+            title: None,
+        };
+        crate::commands::html::cmd(html_args.clone())?;
+
+        html_args.input = output_path("neck_case2/flexion_lateral.svg")?;
+        crate::commands::html::cmd(html_args)?;
+
+        // test catalog command with directory input
+        let catalog_args = crate::cli::CatalogArgs {
+            input: vec![output_path("neck_case2")?],
+            output: output_path("neck_case2_catalog.html")?,
+            title: Some("Neck Case 2".to_string()),
+            selector: vec!["g.Component".to_string()],
+            jobs: None,
+        };
+        crate::commands::catalog::cmd(catalog_args)?;
+
+        // test catalog command with multiple directories
+        let catalog_args = crate::cli::CatalogArgs {
+            input: vec![
+                output_path("neck_case1/neck_case1_lateral.svg")?,
+                output_path("neck_case2/flexion_lateral.svg")?,
+            ],
+            output: output_path("neck_cases_catalog.html")?,
+            title: Some("Neck Cases".to_string()),
+            selector: vec!["g.Component".to_string()],
+            jobs: None,
+        };
+        crate::commands::catalog::cmd(catalog_args)?;
+
+        // test catalog command with html input
+        let catalog_args = crate::cli::CatalogArgs {
+            input: vec![
+                output_path("neck_case2/flexion_lateral.html")?,
+                output_path("neck_case2/extension_lateral.html")?,
+            ],
+            output: output_path("neck_catalog_from_html.html")?,
+            title: Some("Neck Case 2 from HTML".to_string()),
+            selector: vec!["g.Component".to_string()],
+            jobs: None,
+        };
+        crate::commands::catalog::cmd(catalog_args)?;
+
+        Ok(())
     }
 }

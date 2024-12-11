@@ -28,5 +28,7 @@ fn main() -> Result<()> {
         Command::Curve(args) => curve::cmd(args),
         Command::Lenke(args) => lenke::cmd(args),
         Command::List(args) => list::cmd(args),
+        Command::Catalog(args) => commands::catalog::cmd(args),
+        Command::Html(args) => commands::html::cmd(args),
     }
 }

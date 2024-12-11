@@ -26,6 +26,10 @@ pub enum Command {
     Lenke(LenkeArgs),
     /// List available measurements
     List(ListArgs),
+    /// Compile SVGs into a catalog HTML
+    Catalog(CatalogArgs),
+    /// Convert SVGs to HTML
+    Html(HtmlArgs),
 }
 
 #[derive(Parser)]
@@ -247,4 +251,39 @@ pub struct ListArgs {
     /// List all drawable components instead of measurements
     #[clap(long)]
     pub drawable: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct CatalogArgs {
+    /// Input svg (or html) file path or svg containing directory
+    #[arg(value_hint = ValueHint::AnyPath, required = true)]
+    pub input: Vec<PathBuf>,
+    /// Output html file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// `title` tag in html
+    #[clap(short, long)]
+    pub title: Option<String>,
+    /// Selector(s) for the svg elements
+    #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
+    pub selector: Vec<String>,
+    /// Maximum number of jobs to run in parallel
+    #[clap(short, long)]
+    pub jobs: Option<usize>,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct HtmlArgs {
+    /// Input svg file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Output html file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
+    /// Selector(s) for the svg elements
+    #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
+    pub selector: Vec<String>,
+    /// Title of the html
+    #[clap(short, long)]
+    pub title: Option<String>,
 }
