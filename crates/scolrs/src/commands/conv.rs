@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
-use crate::neck::cli::ConvArgs;
+use crate::cli::{ConvArgs, ConvFormat};
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use log::debug;
@@ -10,8 +10,6 @@ use scolrs::{
     CoronalPoints, CoronalPointsLine, DicomError, PullImageMetadata, SagittalPoints,
     SagittalPointsLine,
 };
-
-use super::cli::ConvFormat;
 
 fn conv_and_write_line<From, To>(
     writer: &mut Box<dyn io::Write>,

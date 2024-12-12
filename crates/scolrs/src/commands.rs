@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod conv;
 pub mod curve;
 pub mod html;
 pub mod lenke;

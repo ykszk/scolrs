@@ -10,10 +10,6 @@ description.workspace = true
 name = "scolrs"
 path = "src/main.rs"
 
-[[bin]]
-name = "neckrs"
-path = "src/neck_main.rs"
-
 [lib]
 name = "scolrs"
 path = "src/lib.rs"

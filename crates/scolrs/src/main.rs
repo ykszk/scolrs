@@ -30,5 +30,6 @@ fn main() -> Result<()> {
         Command::List(args) => list::cmd(args),
         Command::Catalog(args) => commands::catalog::cmd(args),
         Command::Html(args) => commands::html::cmd(args),
+        Command::Conv(args) => commands::conv::cmd(args),
     }
 }
