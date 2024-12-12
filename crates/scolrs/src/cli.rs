@@ -1,6 +1,9 @@
 use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
-use scolrs::{head_neck::NeckLateralDraw, CoronalMeasure, SagittalMeasure};
+use scolrs::{
+    head_neck::{NeckLateralDraw, NeckLateralMeasure},
+    CoronalMeasure, SagittalMeasure,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -181,6 +184,8 @@ pub enum MeasureSubCommands {
     Coronal(MeasureSubCoronalArgs),
     /// Sagittal view
     Sagittal(MeasureSubSagittallArgs),
+    /// Neck lateral view
+    Neck(MeasureSubNeckArgs),
 }
 
 impl Default for MeasureSubCommands {
@@ -191,16 +196,23 @@ impl Default for MeasureSubCommands {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MeasureSubCoronalArgs {
-    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    /// Measurements. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<CoronalMeasure>>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MeasureSubSagittallArgs {
-    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    /// Measurements. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<SagittalMeasure>>,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct MeasureSubNeckArgs {
+    /// Measurements. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<NeckLateralMeasure>>,
 }
 
 #[derive(Parser, Debug, Default)]

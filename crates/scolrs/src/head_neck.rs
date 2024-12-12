@@ -16,7 +16,7 @@ use clap::{self, ValueEnum};
 use lyon_geom::point;
 use named_derive::Named;
 
-use labelme_rs::LabelMeData;
+use labelme_rs::{LabelMeData, LabelMeDataLine};
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
@@ -243,6 +243,14 @@ struct LateralPointsIR {
 pub struct LateralPointsLine {
     pub content: LateralPoints,
     pub filename: String,
+}
+
+impl TryFrom<LabelMeDataLine> for LateralPointsLine {
+    type Error = <LateralPointsLine as TryConvertContentFilename<LabelMeDataLine>>::Error;
+
+    fn try_from(data: LabelMeDataLine) -> Result<Self, Self::Error> {
+        LateralPointsLine::try_convert_from(data)
+    }
 }
 
 /// Trait facilitating conversion between different content filename types

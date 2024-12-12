@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
-use scolrs::head_neck::NeckLateralMeasure;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -14,8 +13,6 @@ pub struct Cli {
 pub enum Command {
     /// Generate shell completions
     Complete(CompleteArgs),
-    /// Measure neck parameters
-    Measure(MeasureArgs),
     /// List available measurements
     List(ListArgs),
     /// Convert data format
@@ -26,19 +23,6 @@ pub enum Command {
 pub struct CompleteArgs {
     /// Shell to generate completions for
     pub shell: Shell,
-}
-
-#[derive(Parser, Debug, Default)]
-pub struct MeasureArgs {
-    /// Input json/ndjson file
-    #[arg(value_hint = ValueHint::FilePath)]
-    pub input: PathBuf,
-    /// Output json/ndjson file
-    #[arg(value_hint = ValueHint::FilePath)]
-    pub output: Option<PathBuf>,
-    /// Measurements to draw. By default, all measurements are drawn.
-    #[clap(short, long, value_delimiter = ',', value_hint = ValueHint::Other)]
-    pub measures: Option<Vec<NeckLateralMeasure>>,
 }
 
 #[derive(Parser, Debug)]
