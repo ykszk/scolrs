@@ -114,7 +114,14 @@ def default_coronal_hide() -> list[str]:
 
 
 def default_sagittal_hide() -> list[str]:
-    return []
+    return [
+        'SagittalBalance',
+        'PelvicTilt',
+        'SacralSlope',
+        'L5IncidenceAngle',
+        'PelvicRadiusAngle',
+        'LumbosacralAngle',
+    ]
 
 
 def draw_coronal(
