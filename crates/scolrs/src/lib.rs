@@ -2129,6 +2129,7 @@ pub enum SagittalMeasure {
     MidLowerThoracicKyphosis,
     ThoracolumbarSagittalAlignment,
     LumbarLordosis,
+    T1Slope,
     SagittalBalance,
     PelvicIncidence,
     PelvicTilt,

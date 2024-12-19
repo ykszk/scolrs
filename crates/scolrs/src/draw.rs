@@ -1035,7 +1035,8 @@ impl DrawComponent for Csvl<'_> {
         let label = self.id();
         let line_color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("stroke", line_color);
-        let sup_plate = spine.sacral_sup_plate();
+        let sup_plate: ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>> =
+            spine.sacral_sup_plate();
         let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.1.tll {
@@ -1050,6 +1051,62 @@ impl DrawComponent for Csvl<'_> {
     }
 }
 
+/// Shared function for drawing T1 tilt angle in coronal view and T1 slope in sagittal view
+fn draw_t1_angle<T>(
+    painter: &Painter,
+    line_colors: &mut ColorPalette,
+    spine: &Spine,
+    component: &T,
+    default_group: element::Group,
+) -> Result<element::Group, DrawError>
+where
+    T: DrawComponent,
+{
+    // let spine = &component.0.spine;
+    let label = component.id();
+    let mut g = default_group
+        .set("stroke", line_colors.get_or_new(label))
+        .set("fill", "none");
+    let tl_sup_lines = spine.tl_sup_lines();
+    let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
+    let mid = t1sup.mean_axis(Axis(0)).unwrap();
+    let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
+    let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
+    if l2r.l2norm() == 0.0 {
+        return Err(DrawError::MeasureError(MeasureError::ZeroLengthLine));
+    }
+    let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
+    g = g.add(painter.line(sup_line.view()));
+    if l2r[0] == 0.0 {
+        // T1 is vertical, which is highly unlikely
+        debug!("T1 is vertical");
+        g = g.add(painter.line(t1sup.view()));
+        g = g.add(painter.text("90°", mid, Some(label), None));
+    } else {
+        let mut arc_start = mid.to_owned();
+        let arc_radius = mult_arc * l2r.l2norm();
+        arc_start[[0]] += arc_radius;
+
+        if l2r[1] != 0.0 {
+            // draw tilted T1 line
+            let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
+            hor_line[[0, 0]] -= mult_left * l2r.l2norm();
+            hor_line[[1, 0]] += mult_right * l2r.l2norm();
+            g = painter
+                .angle_between(
+                    g,
+                    sup_line.view(),
+                    hor_line.view(),
+                    mid.view(),
+                    arc_radius,
+                    Some(label),
+                )
+                .0;
+        }
+    };
+    Ok(g)
+}
+
 /// T1 Tilt Angle (p.55)
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_ANGLE])]
@@ -1062,51 +1119,13 @@ impl DrawComponent for T1TiltAngle<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        let spine = &coronal_points.spine;
-        let label = self.id();
-        let mut g = self
-            .default_group()
-            .set("stroke", line_colors.get_or_new(label))
-            .set("fill", "none");
-        let tl_sup_lines = spine.tl_sup_lines();
-        let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        let mid = t1sup.mean_axis(Axis(0)).unwrap();
-        let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
-        let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
-        if l2r.l2norm() == 0.0 {
-            return Err(DrawError::MeasureError(MeasureError::ZeroLengthLine));
-        }
-        let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
-        g = g.add(painter.line(sup_line.view()));
-        if l2r[0] == 0.0 {
-            // T1 is vertical, which is highly unlikely
-            debug!("T1 is vertical");
-            g = g.add(painter.line(t1sup.view()));
-            g = g.add(painter.text("90°", mid, Some(label), None));
-        } else {
-            let mut arc_start = mid.to_owned();
-            let arc_radius = mult_arc * l2r.l2norm();
-            arc_start[[0]] += arc_radius;
-
-            if l2r[1] != 0.0 {
-                // draw tilted T1 line
-                let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
-                hor_line[[0, 0]] -= mult_left * l2r.l2norm();
-                hor_line[[1, 0]] += mult_right * l2r.l2norm();
-                g = painter
-                    .angle_between(
-                        g,
-                        sup_line.view(),
-                        hor_line.view(),
-                        mid.view(),
-                        arc_radius,
-                        Some(label),
-                    )
-                    .0;
-            }
-        };
-        Ok(g)
+        draw_t1_angle(
+            painter,
+            line_colors,
+            &self.0.spine,
+            self,
+            self.default_group(),
+        )
     }
 }
 impl MeasureComponent for T1TiltAngle<'_> {
@@ -1631,6 +1650,35 @@ impl MeasureComponent for LumbarLordosis<'_> {
     }
 }
 
+/// T1 slope angle
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct T1Slope<'a>(&'a SagittalPoints);
+impl SagittalComponent for T1Slope<'_> {}
+impl DrawComponent for T1Slope<'_> {
+    fn draw(
+        &self,
+        painter: &Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        draw_t1_angle(
+            painter,
+            line_colors,
+            &self.0.spine,
+            self,
+            self.default_group(),
+        )
+    }
+}
+impl MeasureComponent for T1Slope<'_> {
+    fn measure(&self) -> Result<f64, MeasureError> {
+        let tl_sup_lines = self.0.spine.tl_sup_lines();
+        let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
+        tilt_angle(t1sup)
+    }
+}
+
 /// Sagittal balance (p.67)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
@@ -2001,6 +2049,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawCom
                 Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
             }
             SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
+            SagittalMeasure::T1Slope => Box::new(T1Slope(sagittal_points)),
             SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
             SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
             SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
@@ -2031,6 +2080,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn Measure
             SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
             SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
             SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
+            SagittalMeasure::T1Slope => Box::new(T1Slope(sagittal_points)),
             SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
             SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
