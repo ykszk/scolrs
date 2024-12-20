@@ -600,7 +600,7 @@ pub enum InvalidNumberOfPoints {
 pub enum MeasureError {
     // Invalid number of points
     #[error("Invalid number of points")]
-    InvalidNumberOfPoints(#[from] InvalidNumberOfPoints),
+    InvalidNumberOfPoints(String, InvalidNumberOfPoints),
 
     // Zero length line
     #[error("Zero length line")]
@@ -1035,8 +1035,7 @@ impl DrawComponent for Csvl<'_> {
         let label = self.id();
         let line_color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("stroke", line_color);
-        let sup_plate: ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>> =
-            spine.sacral_sup_plate();
+        let sup_plate = spine.sacral_sup_plate();
         let sacral_line = painter.line(sup_plate.view());
         g = g.add(sacral_line);
         if let Some(tll) = self.1.tll {
@@ -1132,7 +1131,7 @@ impl MeasureComponent for T1TiltAngle<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        tilt_angle(t1sup)
+        tilt_angle("Vertebra", t1sup)
     }
 }
 
@@ -1164,6 +1163,7 @@ impl DrawComponent for CoronalBalance<'_> {
         let g = self.default_group().set("fill", color).set("stroke", color);
         let g = draw_difference_in_x(
             g,
+            "C7andSacrum",
             label,
             points.view(),
             painter,
@@ -1193,7 +1193,10 @@ impl DrawComponent for ClavicleAngle<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
-        coronal_points.clavicle.0.validate_length(2)?;
+        coronal_points
+            .clavicle
+            .0
+            .validate_label_length("Clavicle", 2)?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1204,31 +1207,36 @@ impl DrawComponent for ClavicleAngle<'_> {
 }
 impl MeasureComponent for ClavicleAngle<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle(self.0.clavicle.0.view())
+        tilt_angle("Clavicle", self.0.clavicle.0.view())
     }
 }
 
-fn difference_in_index(points: ArrayView2<f64>, index: usize) -> Result<f64, MeasureError> {
-    points.validate_length(2)?;
+fn difference_in_index(
+    label: &str,
+    points: ArrayView2<f64>,
+    index: usize,
+) -> Result<f64, MeasureError> {
+    points.validate_label_length(label, 2)?;
     Ok(points.index_axis(Axis(0), 0)[index] - points.index_axis(Axis(0), 1)[index])
 }
 
-fn difference_in_x(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
-    difference_in_index(points, 0)
+fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
+    difference_in_index(label, points, 0)
 }
 
-fn difference_in_y(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
-    difference_in_index(points, 1)
+fn difference_in_y(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
+    difference_in_index(label, points, 1)
 }
 
 fn draw_difference_in_x(
     group: element::Group,
-    label: &str,
+    point_label: &str,
+    draw_label: &str,
     points: ArrayView2<f64>,
     painter: &Painter,
     unit: &str,
 ) -> Result<element::Group, DrawError> {
-    let dx = difference_in_x(points)?;
+    let dx = difference_in_x(point_label, points)?;
     let mut g = group;
     for c in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(c));
@@ -1255,7 +1263,7 @@ fn draw_difference_in_x(
     let text = painter.text(
         &format!("{:.1}", dx),
         h_line.index_axis(Axis(0), 1),
-        Some(label),
+        Some(draw_label),
         Some(unit),
     );
 
@@ -1264,13 +1272,14 @@ fn draw_difference_in_x(
 }
 
 fn draw_difference_in_y(
-    label: &str,
     group: element::Group,
+    point_label: &str,
+    draw_label: &str,
     points: ArrayView2<f64>,
     painter: &Painter,
     unit: &str,
 ) -> Result<element::Group, DrawError> {
-    let dy = difference_in_y(points)?;
+    let dy = difference_in_y(point_label, points)?;
     let mut g = group;
     for c in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(c));
@@ -1282,7 +1291,7 @@ fn draw_difference_in_y(
     g = g.add(painter.line(vline.view()));
     let text_pos = vline.mean_axis(Axis(0)).unwrap();
     let text = format!("{:.1}", dy);
-    let text = painter.text(&text, text_pos, Some(label), Some(unit));
+    let text = painter.text(&text, text_pos, Some(draw_label), Some(unit));
 
     g = g.add(text);
     Ok(g)
@@ -1304,8 +1313,9 @@ impl DrawComponent for ShoulderHeight<'_> {
         let g = self.default_group().set("fill", color).set("stroke", color);
 
         draw_difference_in_y(
-            self.id(),
             g,
+            "Shoulder",
+            self.id(),
             self.0.shoulder.0.view(),
             painter,
             self.0.image_metadata.unit.as_str(),
@@ -1315,15 +1325,18 @@ impl DrawComponent for ShoulderHeight<'_> {
 impl MeasureComponent for ShoulderHeight<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let coronal_points = self.0;
-        coronal_points.shoulder.0.validate_length(2)?;
+        coronal_points
+            .shoulder
+            .0
+            .validate_label_length("Shoulder", 2)?;
         let points = coronal_points.shoulder.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)
     }
 }
 
-fn tilt_angle(points: ArrayView2<f64>) -> Result<f64, MeasureError> {
-    points.validate_length(2)?;
+fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
+    points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];
     let angle = angle_between(hor_line.view(), points);
@@ -1370,7 +1383,7 @@ impl DrawComponent for PelvicObliquity<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
-        coronal_points.pelvis.0.validate_length(2)?;
+        coronal_points.pelvis.0.validate_label_length("Pelvis", 2)?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1381,7 +1394,7 @@ impl DrawComponent for PelvicObliquity<'_> {
 }
 impl MeasureComponent for PelvicObliquity<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle(self.0.pelvis.0.view())
+        tilt_angle("Pelvis", self.0.pelvis.0.view())
     }
 }
 
@@ -1398,7 +1411,10 @@ impl DrawComponent for SacralObliquity<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
-        coronal_points.femoral_head.0.validate_length(2)?;
+        coronal_points
+            .femoral_head
+            .0
+            .validate_label_length("FemoralHead", 2)?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -1434,7 +1450,7 @@ impl DrawComponent for SacralObliquity<'_> {
 }
 impl MeasureComponent for SacralObliquity<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle(self.0.femoral_head.0.view())
+        tilt_angle("FemoralHead", self.0.femoral_head.0.view())
     }
 }
 
@@ -1453,8 +1469,9 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
         let color = line_colors.get_or_new(self.id());
         let g = self.default_group().set("fill", color).set("stroke", color);
         draw_difference_in_y(
-            self.id(),
             g,
+            "FemoralHead",
+            self.id(),
             self.0.femoral_head.0.view(),
             painter,
             self.0.image_metadata.unit.as_str(),
@@ -1464,7 +1481,10 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let coronal_points = self.0;
-        coronal_points.femoral_head.0.validate_length(2)?;
+        coronal_points
+            .femoral_head
+            .0
+            .validate_label_length("FemoralHead", 2)?;
         let points = coronal_points.femoral_head.0.view();
         let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
         Ok(dy)
@@ -1675,7 +1695,7 @@ impl MeasureComponent for T1Slope<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        tilt_angle(t1sup)
+        tilt_angle("Vertebra", t1sup)
     }
 }
 
@@ -1705,6 +1725,7 @@ impl DrawComponent for SagittalBalance<'_> {
         let g = self.default_group().set("stroke", color).set("fill", color);
         let g = draw_difference_in_x(
             g,
+            "C7andSacrum",
             label,
             points.view(),
             painter,
@@ -1779,7 +1800,10 @@ impl DrawComponent for PelvicIncidence<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        self.0.femoral_head.0.validate_length_more_than(1)?;
+        self.0
+            .femoral_head
+            .0
+            .validate_label_length_more_than("FemoralHead", 1)?;
         let label = self.id();
         let sac_sup = self.0.spine.sacral_sup_plate();
         let color = line_colors.get_or_new(label);
@@ -1804,7 +1828,7 @@ impl PelvicTilt<'_> {
         sagittal_points
             .femoral_head
             .0
-            .validate_length_more_than(1)?;
+            .validate_label_length_more_than("FemoralHead", 1)?;
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
         let femoral_head = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
@@ -1921,7 +1945,10 @@ impl DrawComponent for L5IncidenceAngle<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        self.0.femoral_head.0.validate_length_more_than(1)?;
+        self.0
+            .femoral_head
+            .0
+            .validate_label_length_more_than("FemoralHead", 1)?;
         let label = self.id();
         let l5_sup = self
             .0
@@ -1976,7 +2003,7 @@ impl PelvicRadiusAngle<'_> {
         sagittal_points
             .femoral_head
             .0
-            .validate_length_more_than(1)?;
+            .validate_label_length_more_than("FemoralHead", 1)?;
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let post_sac = sac_sup.index_axis(Axis(0), 1);
@@ -2021,7 +2048,9 @@ pub fn femoral_incidence_angle(
     plate: ArrayView2<f64>,
     femoral_head: &crate::AtMost2<Array2<f64>>,
 ) -> Result<f64, MeasureError> {
-    femoral_head.0.validate_length_more_than(1)?;
+    femoral_head
+        .0
+        .validate_label_length_more_than("FemoralHead", 1)?;
     let mid_femoral_heads = femoral_head.0.mean_axis(Axis(0)).unwrap();
     let sac_sup_mid = plate.mean_axis(Axis(0)).unwrap();
     let line_sac2fem = stack![Axis(0), sac_sup_mid, mid_femoral_heads];

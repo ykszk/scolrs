@@ -455,8 +455,8 @@ impl DrawComponent for Sacs<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        self.0.posterior_dens.validate_length(1)?;
-        self.0.lamina.validate_length(8)?;
+        self.0.posterior_dens.validate_label_length("Dens", 1)?;
+        self.0.lamina.validate_label_length("Lamina", 8)?;
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         // C1SAC
@@ -526,8 +526,8 @@ impl DrawComponent for Sacs<'_> {
 
 impl NeckMeasureComponent for Sacs<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
-        self.0.posterior_dens.validate_length(1)?;
-        self.0.lamina.validate_length(8)?;
+        self.0.posterior_dens.validate_label_length("Dens", 1)?;
+        self.0.lamina.validate_label_length("Lamina", 8)?;
         let mut lengths: Vec<f64> = Vec::new();
         // C1SAC
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
@@ -572,8 +572,10 @@ pub struct Adi<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for Adi<'_> {}
 impl Adi<'_> {
     fn prep(&self) -> Result<(), MeasureError> {
-        self.0.anterior_dens.validate_length(1)?;
-        self.0.anterior_c1_arch.validate_length(1)?;
+        self.0.anterior_dens.validate_label_length("Dens", 1)?;
+        self.0
+            .anterior_c1_arch
+            .validate_label_length("AnteriorC1Arch", 1)?;
         Ok(())
     }
 }
@@ -622,8 +624,10 @@ pub struct OC2<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for OC2<'_> {}
 impl OC2<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
-        self.0.occipital.validate_length(1)?;
-        self.0.posterior_hard_palate.validate_length(1)?;
+        self.0.occipital.validate_label_length("Occipital", 1)?;
+        self.0
+            .posterior_hard_palate
+            .validate_label_length("PosteriorHardPlate", 1)?;
         let mcgregor_points = stack![
             Axis(0),
             self.0.posterior_hard_palate.index_axis(Axis(0), 0).view(),
@@ -744,9 +748,11 @@ impl NeckSagittalComponent for ModifiedRenawatIndex<'_> {}
 impl ModifiedRenawatIndex<'_> {
     /// Array2 of [intersection, c2_lower_middle]
     fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
-        self.0.anterior_c1_arch.validate_length(1)?;
+        self.0
+            .anterior_c1_arch
+            .validate_label_length("AnteriorC1Arch", 1)?;
         // posterior_c2_arch?
-        self.0.posterior_dens.validate_length(1)?;
+        self.0.posterior_dens.validate_label_length("Dens", 1)?;
         let c1_line = points2line(stack![
             Axis(0),
             self.0.anterior_c1_arch.index_axis(Axis(0), 0).view(),
@@ -825,8 +831,8 @@ pub struct ThoracicInletAngle<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for ThoracicInletAngle<'_> {}
 impl ThoracicInletAngle<'_> {
     fn prep(&self) -> Result<Array2<f64>, MeasureError> {
-        self.0.manubrium.validate_length(1)?;
-        self.0.corners.0.validate_length(7)?;
+        self.0.manubrium.validate_label_length("Manubrium", 1)?;
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
         let t1_top_plate = t1.slice(s![..2, ..]);
         Ok(t1_top_plate.to_owned())
@@ -870,8 +876,8 @@ pub struct NeckTilt<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for NeckTilt<'_> {}
 impl NeckTilt<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>, f64), MeasureError> {
-        self.0.manubrium.validate_length(1)?;
-        self.0.corners.0.validate_length(7)?;
+        self.0.manubrium.validate_label_length("Manubrium", 1)?;
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
         let t1_top_plate = t1.slice(s![..2, ..]);
         let t1_top_middle = t1_top_plate.mean_axis(Axis(0)).unwrap();

@@ -226,8 +226,14 @@ fn extract_points(data: &LabelMeData, label: &str) -> Result<Array2<f64>, ScolEr
 pub struct AtMost2<T>(pub T);
 
 trait ValidateLength {
-    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError>;
-    fn validate_length_more_than(&self, min_len: usize) -> Result<(), MeasureError>;
+    fn validate_length(&self, expected_len: usize) -> Result<(), draw::InvalidNumberOfPoints>;
+    fn validate_length_more_than(&self, min_len: usize) -> Result<(), draw::InvalidNumberOfPoints>;
+    fn validate_label_length(&self, label: &str, expected_len: usize) -> Result<(), MeasureError>;
+    fn validate_label_length_more_than(
+        &self,
+        label: &str,
+        min_len: usize,
+    ) -> Result<(), MeasureError>;
 }
 
 impl<S, I> ValidateLength for ndarray::ArrayBase<S, I>
@@ -235,21 +241,37 @@ where
     S: ndarray::Data<Elem = f64>,
     I: ndarray::Dimension,
 {
-    fn validate_length(&self, expected_len: usize) -> Result<(), MeasureError> {
+    fn validate_length(&self, expected_len: usize) -> Result<(), draw::InvalidNumberOfPoints> {
         if self.len_of(Axis(0)) != expected_len {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                draw::InvalidNumberOfPoints::IncorrectNumberOfPoints(expected_len, self.len()),
+            return Err(draw::InvalidNumberOfPoints::IncorrectNumberOfPoints(
+                expected_len,
+                self.len_of(Axis(0)),
             ));
         }
         Ok(())
     }
-    fn validate_length_more_than(&self, min_len: usize) -> Result<(), MeasureError> {
+    fn validate_length_more_than(&self, min_len: usize) -> Result<(), draw::InvalidNumberOfPoints> {
         if self.len_of(Axis(0)) < min_len {
-            return Err(MeasureError::InvalidNumberOfPoints(
-                draw::InvalidNumberOfPoints::TooFewPoints(min_len, self.len()),
+            return Err(draw::InvalidNumberOfPoints::TooFewPoints(
+                min_len,
+                self.len_of(Axis(0)),
             ));
         }
         Ok(())
+    }
+
+    fn validate_label_length(&self, label: &str, expected_len: usize) -> Result<(), MeasureError> {
+        self.validate_length(expected_len)
+            .map_err(|e| MeasureError::InvalidNumberOfPoints(label.to_string(), e))
+    }
+
+    fn validate_label_length_more_than(
+        &self,
+        label: &str,
+        min_len: usize,
+    ) -> Result<(), MeasureError> {
+        self.validate_length_more_than(min_len)
+            .map_err(|e| MeasureError::InvalidNumberOfPoints(label.to_string(), e))
     }
 }
 
