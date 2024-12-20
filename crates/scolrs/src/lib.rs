@@ -1485,7 +1485,9 @@ impl<S: Data<Elem = f64>> From<Corners<S>> for Centroids {
             dap[[1]] = da[[0]];
             let denom = dap.dot(&db);
             if denom == 0.0 {
-                unreachable!("Parallel mid-lines of a vertebrae thus no centroid");
+                warn!("Parallel mid-lines of a vertebrae thus no centroid. Using center of gravity instead.");
+                let c = (&t + &b + l + &r) / 4.0;
+                r.assign(&c);
             } else {
                 let num = dap.dot(&dp);
                 let c = num / denom * db + b1;
