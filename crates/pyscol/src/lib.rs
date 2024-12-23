@@ -5,7 +5,10 @@ use labelme_rs::{
     image::{self, DynamicImage, GrayImage},
     LabelMeData, LabelMeDataWImage, ResizeParam,
 };
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::{
+    ndarray::Array2, IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn,
+    PyUntypedArrayMethods,
+};
 use pyo3::prelude::*;
 use scolrs::{
     draw::{
@@ -195,7 +198,7 @@ fn draw_on_image<'a, T, S>(
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
-    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
+    point_sets: Option<Vec<(String, Array2<f64>)>>,
 ) -> Result<String, PyScolError>
 where
     for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
@@ -228,8 +231,8 @@ where
         document = document.add(g);
     }
     if let Some(point_sets) = point_sets {
-        for (label, py_point_set) in point_sets {
-            let point_set = py_point_set.as_array().to_owned();
+        for (label, point_set) in point_sets {
+            // let point_set = py_point_set.as_array().to_owned();
             let g = scolrs::draw::DrawPointSet::new(label.clone(), label, None, point_set).draw(
                 &painter,
                 &mut label_colors,
@@ -285,9 +288,29 @@ where
 
     let mut point_with_image = PointDataWithImage::<T>::new(coronal_set, data_w_image);
 
+    let mut point_sets = point_sets.map(|point_sets| {
+        point_sets
+            .into_iter()
+            .map(|(label, py_point_set)| {
+                let point_set = py_point_set.as_array().to_owned();
+                (label, point_set)
+            })
+            .collect::<Vec<_>>()
+    });
+
     if let Some(resize) = resize {
         let resize = ResizeParam::try_from(resize.as_str())
             .map_err(|e| PyScolError::Uncategorized(format!("Error in resize: {}", e)))?;
+        if let Some(point_sets) = point_sets.as_deref_mut() {
+            let scale = resize.scale(
+                point_with_image.data_image.image.width(),
+                point_with_image.data_image.image.height(),
+            );
+            for (_, point_set) in point_sets.iter_mut() {
+                point_set.mapv_inplace(|x| x * scale);
+            }
+        }
+
         point_with_image.resize(&resize);
     }
 

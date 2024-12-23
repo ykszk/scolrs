@@ -1072,6 +1072,7 @@ pub struct CoronalPointsAndCurveIR {
 }
 
 pub trait UpdatePoints {
+    /// Update points with new data while maintaining other data
     fn update_points(&self, data: &LabelMeData) -> Self;
 }
 
