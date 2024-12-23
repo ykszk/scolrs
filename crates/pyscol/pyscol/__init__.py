@@ -134,6 +134,7 @@ def draw_coronal(
     line_colors: dict[str, str],
     resize: Optional[str],
     overlay: Optional[np.ndarray],
+    label_and_point_set: Optional[list[tuple[str, np.ndarray]]],
 ) -> str:
     json_path = str(json_path)
     if hide is None:
@@ -148,6 +149,7 @@ def draw_coronal(
         line_colors,
         resize,
         overlay,
+        label_and_point_set,
     )
 
 
@@ -161,6 +163,7 @@ def draw_sagittal(
     line_colors: dict[str, str],
     resize: Optional[str],
     overlay: Optional[np.ndarray],
+    label_and_point_set: Optional[list[tuple[str, np.ndarray]]],
 ) -> str:
     json_path = str(json_path)
     if hide is None:
@@ -175,6 +178,7 @@ def draw_sagittal(
         line_colors,
         resize,
         overlay,
+        label_and_point_set,
     )
 
 

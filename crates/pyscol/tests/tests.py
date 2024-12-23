@@ -77,6 +77,7 @@ class TestDrawCoronal(unittest.TestCase):
             line_colors = {}
             resize = "1024x1024"
             overlay = None
+            label_and_point_set = []
             args = (
                 coronal_points_json,
                 str(json_path),
@@ -87,6 +88,7 @@ class TestDrawCoronal(unittest.TestCase):
                 line_colors,
                 resize,
                 overlay,
+                label_and_point_set,
             )
             if stem == "frontal":
                 svg = pyscol.draw_coronal(*args)

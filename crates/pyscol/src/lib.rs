@@ -195,6 +195,7 @@ fn draw_on_image<'a, T, S>(
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError>
 where
     for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
@@ -226,6 +227,18 @@ where
         let g = g.set("visibility", "hidden");
         document = document.add(g);
     }
+    if let Some(point_sets) = point_sets {
+        for (label, py_point_set) in point_sets {
+            let point_set = py_point_set.as_array().to_owned();
+            let g = scolrs::draw::DrawPointSet::new(label.clone(), label, None, point_set).draw(
+                &painter,
+                &mut label_colors,
+                &mut line_colors,
+            )?;
+            let g = g.set("visibility", "hidden");
+            document = document.add(g);
+        }
+    }
     let palettes = ColorPalettes {
         line_colors,
         label_colors,
@@ -253,6 +266,7 @@ fn draw_generic<T, S>(
     line_colors: HashMap<String, String>,
     resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError>
 where
     T: Clone + UpdatePoints,
@@ -298,6 +312,7 @@ where
         label_colors,
         line_colors,
         overlay,
+        point_sets,
     )
 }
 
@@ -313,6 +328,7 @@ pub fn py_draw_coronal(
     line_colors: HashMap<String, String>,
     resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
     draw_generic::<CoronalPointsAndCurve, CoronalMeasure>(
         coronal_points_json,
@@ -324,6 +340,7 @@ pub fn py_draw_coronal(
         line_colors,
         resize,
         overlay,
+        point_sets,
     )
 }
 
@@ -339,6 +356,7 @@ pub fn py_draw_sagittal(
     line_colors: HashMap<String, String>,
     resize: Option<String>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
     draw_generic::<SagittalPoints, SagittalMeasure>(
         coronal_points_json,
@@ -350,6 +368,7 @@ pub fn py_draw_sagittal(
         line_colors,
         resize,
         overlay,
+        point_sets,
     )
 }
 

@@ -745,6 +745,66 @@ impl DrawComponent for ImageOverlay {
     }
 }
 
+/// Draw a set of points
+pub struct DrawPointSet {
+    id: String,
+    label: String,
+    description: Option<String>,
+    points: Array2<f64>,
+}
+
+impl DrawPointSet {
+    pub fn new(
+        id: String,
+        label: String,
+        description: Option<String>,
+        points: Array2<f64>,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            description,
+            points,
+        }
+    }
+}
+
+impl Named for DrawPointSet {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn label(&self) -> &str {
+        &self.label
+    }
+    fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+    fn draw_type(&self) -> &[&str] {
+        &["PointSet"]
+    }
+}
+impl CommonComponent for DrawPointSet {}
+impl DrawComponent for DrawPointSet {
+    fn draw(
+        &self,
+        painter: &Painter,
+        label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = label_colors.get_or_new(&self.label);
+        let stroke_color = line_colors.get_or_new(&self.label);
+        let mut group: element::Group = self
+            .default_group()
+            .set("stroke", stroke_color)
+            .set("fill", color);
+        for point in self.points.axis_iter(Axis(0)) {
+            let p = painter.point(point);
+            group = group.add(p);
+        }
+        Ok(group)
+    }
+}
+
 /// Label text for each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
