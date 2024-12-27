@@ -76,6 +76,7 @@ class TestDrawCoronal(unittest.TestCase):
             label_colors = {}
             line_colors = {}
             resize = "1024x1024"
+            svg_size = None
             overlay = None
             label_and_point_set = []
             args = (
@@ -87,6 +88,7 @@ class TestDrawCoronal(unittest.TestCase):
                 label_colors,
                 line_colors,
                 resize,
+                svg_size,
                 overlay,
                 label_and_point_set,
             )

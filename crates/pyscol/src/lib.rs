@@ -194,6 +194,7 @@ fn draw_on_image<'a, T, S>(
     draws: Vec<S>,
     hide: Vec<S>,
     draw_param_json: &str,
+    resize: Option<String>,
     svg_size: (usize, usize),
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
@@ -214,7 +215,12 @@ where
     let mut line_colors = ColorPalette::new(line_colors);
     let mut label_colors = ColorPalette::new(label_colors);
 
-    let mut document = painter.doc_w_background(&image)?;
+    let resize_param = resize
+        .map(|resize| ResizeParam::try_from(resize.as_str()))
+        .transpose()
+        .map_err(|e| PyScolError::Uncategorized(format!("Error in resize parameter: {}", e)))?;
+
+    let mut document = painter.doc_w_background(&image, resize_param)?;
 
     document = document.add(style);
 
@@ -267,7 +273,7 @@ fn draw_generic<T, S>(
     draw_param_json: &str,
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
-    resize: Option<String>,
+    resize_param: Option<String>,
     svg_size: Option<(usize, usize)>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
@@ -287,9 +293,9 @@ where
     let lm_data = LabelMeData::from(coronal_set.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(lm_data, Path::new(json_path))?;
 
-    let mut point_with_image = PointDataWithImage::<T>::new(coronal_set, data_w_image);
+    let point_with_image = PointDataWithImage::<T>::new(coronal_set, data_w_image);
 
-    let mut point_sets = point_sets.map(|point_sets| {
+    let point_sets = point_sets.map(|point_sets| {
         point_sets
             .into_iter()
             .map(|(label, py_point_set)| {
@@ -298,22 +304,6 @@ where
             })
             .collect::<Vec<_>>()
     });
-
-    if let Some(resize) = resize {
-        let resize = ResizeParam::try_from(resize.as_str())
-            .map_err(|e| PyScolError::Uncategorized(format!("Error in resize: {}", e)))?;
-        if let Some(point_sets) = point_sets.as_deref_mut() {
-            let scale = resize.scale(
-                point_with_image.data_image.image.width(),
-                point_with_image.data_image.image.height(),
-            );
-            for (_, point_set) in point_sets.iter_mut() {
-                point_set.mapv_inplace(|x| x * scale);
-            }
-        }
-
-        point_with_image.resize(&resize);
-    }
 
     let svg_size = if let Some(size) = svg_size {
         size
@@ -336,6 +326,7 @@ where
         draws,
         hide,
         draw_param_json,
+        resize_param,
         svg_size,
         label_colors,
         line_colors,
