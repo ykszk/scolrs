@@ -181,7 +181,10 @@ where
             || metadata.path.ends_with(".dicom")
             || metadata.path.ends_with(".DICOM")
         {
-            if let Some(spacing) = get_pixel_spacing(&dicom_object::open_file(&metadata.path)?)? {
+            let dicom_file = dicom_object::OpenFileOptions::new()
+                .read_until(dicom_dictionary_std::tags::PIXEL_DATA)
+                .open_file(&metadata.path)?;
+            if let Some(spacing) = get_pixel_spacing(&dicom_file)? {
                 metadata.spacing_xy = spacing;
                 metadata.unit = "mm".to_string();
             } else {
