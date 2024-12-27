@@ -29,6 +29,7 @@ trait AssociatedMeasureAndDraw {
         draws: &[Self::Measure],
         hide: &[Self::Measure],
         draw_param: DrawParam,
+        resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
         palettes: ColorPalettes,
     ) -> Result<element::SVG, DrawError>;
@@ -43,6 +44,7 @@ impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
         draws: &[Self::Measure],
         hide: &[Self::Measure],
         draw_param: DrawParam,
+        resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
         palettes: ColorPalettes,
     ) -> Result<element::SVG, DrawError> {
@@ -51,6 +53,7 @@ impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
             sagittal_points,
             (draws, hide),
             draw_param,
+            resize_param,
             svg_size,
             palettes,
         )
@@ -66,6 +69,7 @@ impl AssociatedMeasureAndDraw for SagittalPoints {
         draws: &[Self::Measure],
         hide: &[Self::Measure],
         draw_param: DrawParam,
+        resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
         palettes: ColorPalettes,
     ) -> Result<element::SVG, DrawError> {
@@ -75,6 +79,7 @@ impl AssociatedMeasureAndDraw for SagittalPoints {
             draws,
             hide,
             draw_param,
+            resize_param,
             svg_size,
             palettes,
         )
@@ -90,6 +95,7 @@ impl AssociatedMeasureAndDraw for LateralPoints {
         draws: &[Self::Measure],
         hide: &[Self::Measure],
         draw_param: DrawParam,
+        resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
         palettes: ColorPalettes,
     ) -> Result<element::SVG, DrawError> {
@@ -98,6 +104,7 @@ impl AssociatedMeasureAndDraw for LateralPoints {
             sagittal_points,
             (draws, hide),
             draw_param,
+            resize_param,
             svg_size,
             palettes,
         )
@@ -106,7 +113,7 @@ impl AssociatedMeasureAndDraw for LateralPoints {
 
 fn process_one<T>(
     svg_common: ReadSvgArgCommon,
-    mut point_with_image: PointDataWithImage<T>,
+    point_with_image: PointDataWithImage<T>,
     draws: &[T::Measure],
     hide: &[T::Measure],
     output: &std::path::Path,
@@ -115,9 +122,9 @@ where
     T: UpdatePoints + AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
     <T as AssociatedMeasureAndDraw>::Measure: Clone + Copy + PartialEq,
 {
-    if let Some(resize_param) = svg_common.resize_param {
-        point_with_image.resize(&resize_param);
-    }
+    // if let Some(resize_param) = svg_common.resize_param {
+    //     point_with_image.resize(&resize_param);
+    // }
     let svg_size = if let Some(svg_size_param) = svg_common.svg_size_param {
         match svg_size_param {
             ResizeParam::Percentage(_) => panic!("Percentage is not supported for svg size"),
@@ -146,6 +153,7 @@ where
         draws,
         hide,
         svg_common.draw_param,
+        svg_common.resize_param,
         svg_size,
         svg_common.palettes,
     )?;

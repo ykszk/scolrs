@@ -5,6 +5,7 @@ use crate::{
 };
 use crate::{ApexSet, Curve, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::image::DynamicImage;
+use labelme_rs::ResizeParam;
 use log::{debug, warn};
 use named_derive::Named;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
@@ -519,22 +520,33 @@ impl Painter {
     pub fn doc_w_background(
         &self,
         image: &labelme_rs::image::DynamicImage,
+        resize_param: Option<ResizeParam>,
     ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
-        let mut document = svg::Document::new()
-            .set("width", self.size.0)
-            .set("height", self.size.1)
-            .set("viewBox", (0, 0, image.width(), image.height()))
-            .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
-        let b64 = format!(
-            "data:image/jpeg;base64,{}",
-            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
-        );
+        let b64 = if let Some(resize_param) = resize_param {
+            let resized_image = resize_param.resize(image);
+            format!(
+                "data:image/jpeg;base64,{}",
+                labelme_rs::img2base64(&resized_image, labelme_rs::image::ImageFormat::Jpeg)?
+            )
+        } else {
+            format!(
+                "data:image/jpeg;base64,{}",
+                labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
+            )
+        };
+
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
             .set("width", image.width())
             .set("height", image.height())
             .set("xlink:href", b64);
+
+        let mut document = svg::Document::new()
+            .set("width", self.size.0)
+            .set("height", self.size.1)
+            .set("viewBox", (0, 0, image.width(), image.height()))
+            .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         document = document.add(bg);
         Ok(document)
     }
@@ -2296,6 +2308,7 @@ pub fn draw_on_image<'a, T, S>(
     data: T,
     draw_hide: (&[S], &[S]),
     draw_param: DrawParam,
+    resize_param: Option<ResizeParam>,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
 ) -> Result<element::SVG, DrawError>
@@ -2308,7 +2321,7 @@ where
     let (draw, hide) = draw_hide;
     let style = element::Style::new(draw_param.style());
     let painter = Painter::new(draw_param, svg_size);
-    let mut document = painter.doc_w_background(&image)?;
+    let mut document = painter.doc_w_background(&image, resize_param)?;
     document = document.add(style);
 
     let groups = draw_components(data, draw, hide, &painter, palettes)?;
@@ -2325,6 +2338,7 @@ pub fn draw_sagittal(
     draws: &[SagittalMeasure],
     hide: &[SagittalMeasure],
     draw_param: DrawParam,
+    resize_param: Option<ResizeParam>,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
 ) -> Result<element::SVG, DrawError> {
@@ -2333,6 +2347,7 @@ pub fn draw_sagittal(
         sagittal_points,
         (draws, hide),
         draw_param,
+        resize_param,
         svg_size,
         palettes,
     )
@@ -2343,6 +2358,7 @@ pub fn draw_coronal(
     coronal_set: CoronalPointsAndCurve,
     draws_hide: (&[CoronalMeasure], &[CoronalMeasure]),
     draw_param: DrawParam,
+    resize_param: Option<ResizeParam>,
     svg_size: (usize, usize),
     palettes: ColorPalettes,
 ) -> Result<element::SVG, DrawError> {
@@ -2351,6 +2367,7 @@ pub fn draw_coronal(
         coronal_set,
         draws_hide,
         draw_param,
+        resize_param,
         svg_size,
         palettes,
     )
