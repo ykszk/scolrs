@@ -268,6 +268,7 @@ fn draw_generic<T, S>(
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     resize: Option<String>,
+    svg_size: Option<(usize, usize)>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError>
@@ -314,10 +315,14 @@ where
         point_with_image.resize(&resize);
     }
 
-    let svg_size = (
-        point_with_image.data_image.image.width() as usize,
-        point_with_image.data_image.image.height() as usize,
-    );
+    let svg_size = if let Some(size) = svg_size {
+        size
+    } else {
+        (
+            point_with_image.data_image.image.width() as usize,
+            point_with_image.data_image.image.height() as usize,
+        )
+    };
 
     let draws = if draws.is_empty() {
         S::all_draws()
@@ -350,6 +355,7 @@ pub fn py_draw_coronal(
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     resize: Option<String>,
+    svg_size: Option<(usize, usize)>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
@@ -362,6 +368,7 @@ pub fn py_draw_coronal(
         label_colors,
         line_colors,
         resize,
+        svg_size,
         overlay,
         point_sets,
     )
@@ -378,6 +385,7 @@ pub fn py_draw_sagittal(
     label_colors: HashMap<String, String>,
     line_colors: HashMap<String, String>,
     resize: Option<String>,
+    svg_size: Option<(usize, usize)>,
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
@@ -390,6 +398,7 @@ pub fn py_draw_sagittal(
         label_colors,
         line_colors,
         resize,
+        svg_size,
         overlay,
         point_sets,
     )

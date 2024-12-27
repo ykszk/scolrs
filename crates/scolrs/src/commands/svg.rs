@@ -118,12 +118,23 @@ where
     if let Some(resize_param) = svg_common.resize_param {
         point_with_image.resize(&resize_param);
     }
-    let svg_size = if let Some(_svg_size_param) = svg_common.svg_size_param {
-        // TODO: implement
-        // data.data
-        //     .scale(svg_size_param.scale(data.image.width(), data.image.height()));
-        // svg_size_param.size(data.image.width(), data.image.height())
-        unimplemented!("svg_size_param")
+    let svg_size = if let Some(svg_size_param) = svg_common.svg_size_param {
+        match svg_size_param {
+            ResizeParam::Percentage(_) => panic!("Percentage is not supported for svg size"),
+            ResizeParam::Size(w, h) => {
+                if w > h {
+                    let image_aspect_ratio = point_with_image.data_image.image.width() as f64
+                        / point_with_image.data_image.image.height() as f64;
+                    let adjusted_height = (w as f64 / image_aspect_ratio) as u32;
+                    (w, adjusted_height)
+                } else {
+                    let image_aspect_ratio = point_with_image.data_image.image.height() as f64
+                        / point_with_image.data_image.image.width() as f64;
+                    let adjusted_width = (h as f64 / image_aspect_ratio) as u32;
+                    (adjusted_width, h)
+                }
+            }
+        }
     } else {
         point_with_image.data_image.image.dimensions()
     };

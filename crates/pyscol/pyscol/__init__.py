@@ -133,6 +133,7 @@ def draw_coronal(
     label_colors: dict[str, str],
     line_colors: dict[str, str],
     resize: Optional[str],
+    svg_size: Optional[tuple[int, int]],
     overlay: Optional[np.ndarray],
     label_and_point_set: Optional[list[tuple[str, np.ndarray]]],
 ) -> str:
@@ -148,6 +149,7 @@ def draw_coronal(
         label_colors,
         line_colors,
         resize,
+        svg_size,
         overlay,
         label_and_point_set,
     )
@@ -162,6 +164,7 @@ def draw_sagittal(
     label_colors: dict[str, str],
     line_colors: dict[str, str],
     resize: Optional[str],
+    svg_size: Optional[tuple[int, int]],
     overlay: Optional[np.ndarray],
     label_and_point_set: Optional[list[tuple[str, np.ndarray]]],
 ) -> str:
@@ -177,6 +180,7 @@ def draw_sagittal(
         label_colors,
         line_colors,
         resize,
+        svg_size,
         overlay,
         label_and_point_set,
     )

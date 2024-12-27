@@ -520,11 +520,10 @@ impl Painter {
         &self,
         image: &labelme_rs::image::DynamicImage,
     ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
-        let (w, h) = self.size;
         let mut document = svg::Document::new()
-            .set("width", w)
-            .set("height", h)
-            .set("viewBox", (0, 0, w, h))
+            .set("width", self.size.0)
+            .set("height", self.size.1)
+            .set("viewBox", (0, 0, image.width(), image.height()))
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         let b64 = format!(
             "data:image/jpeg;base64,{}",
@@ -533,8 +532,8 @@ impl Painter {
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", w)
-            .set("height", h)
+            .set("width", image.width())
+            .set("height", image.height())
             .set("xlink:href", b64);
         document = document.add(bg);
         Ok(document)
