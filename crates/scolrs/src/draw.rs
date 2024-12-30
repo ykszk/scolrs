@@ -701,6 +701,7 @@ pub struct ImageOverlay {
     label: String,
     description: Option<String>,
     image: DynamicImage,
+    image_size: (usize, usize),
 }
 
 impl ImageOverlay {
@@ -709,12 +710,14 @@ impl ImageOverlay {
         label: String,
         description: Option<String>,
         image: DynamicImage,
+        image_size: (usize, usize),
     ) -> Self {
         Self {
             id,
             label,
             description,
             image,
+            image_size,
         }
     }
 }
@@ -749,8 +752,8 @@ impl DrawComponent for ImageOverlay {
         let layer = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", self.image.width())
-            .set("height", self.image.height())
+            .set("width", self.image_size.0)
+            .set("height", self.image_size.1)
             .set("xlink:href", b64);
         Ok(group.add(layer))
     }

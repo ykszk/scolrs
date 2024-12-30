@@ -226,11 +226,17 @@ where
 
     if let Some(overlay) = overlay {
         let overlay_image = ndarray_to_dynamic_image(overlay)?;
+        let image_size = if let Some(resize_param) = resize_param {
+            resize_param.size(image.width(), image.height())
+        } else {
+            (image.width(), image.height())
+        };
         let g = scolrs::draw::ImageOverlay::new(
             "heatmap".to_string(),
             "heatmap".to_string(),
             None,
             overlay_image,
+            image_size,
         )
         .draw(&painter, &mut label_colors, &mut line_colors)?;
         let g = g.set("visibility", "hidden");
@@ -238,7 +244,6 @@ where
     }
     if let Some(point_sets) = point_sets {
         for (label, point_set) in point_sets {
-            // let point_set = py_point_set.as_array().to_owned();
             let g = scolrs::draw::DrawPointSet::new(label.clone(), label, None, point_set).draw(
                 &painter,
                 &mut label_colors,
