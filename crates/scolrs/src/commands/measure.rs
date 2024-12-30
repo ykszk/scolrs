@@ -214,9 +214,7 @@ fn measure_sagittal(
     sagittal_points: SagittalPoints,
     subcommand: MeasureSubSagittallArgs,
 ) -> Result<MeasureResult<SagittalMeasure, f64>> {
-    let measures = subcommand
-        .measures
-        .unwrap_or_else(SagittalMeasure::all_measures);
+    let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
     measure_x(sagittal_points, measures)
 }
 
@@ -224,9 +222,7 @@ fn measure_coronal(
     data: CoronalPointsAndCurve,
     subcommand: MeasureSubCoronalArgs,
 ) -> Result<MeasureResult<CoronalMeasure, f64>, anyhow::Error> {
-    let measures = subcommand
-        .measures
-        .unwrap_or_else(CoronalMeasure::all_measures);
+    let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
     measure_x(data, measures)
 }
 

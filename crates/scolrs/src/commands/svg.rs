@@ -14,20 +14,19 @@ use rayon::prelude::*;
 use scolrs::{
     draw::{draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
-    ContentFilename, CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
-    HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalMeasure,
+    ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
+    HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalDraw,
     SagittalPoints, SagittalPointsLine, Scalable, UpdatePoints,
 };
 use serde::Deserialize;
 use svg::node::element;
 
 trait AssociatedMeasureAndDraw {
-    type Measure;
+    type Draw;
     fn draw(
         image: DynamicImage,
         sagittal_points: Self,
-        draws: &[Self::Measure],
-        hide: &[Self::Measure],
+        draws_hide: (&[Self::Draw], &[Self::Draw]),
         draw_param: DrawParam,
         resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
@@ -36,13 +35,12 @@ trait AssociatedMeasureAndDraw {
 }
 
 impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
-    type Measure = CoronalMeasure;
+    type Draw = CoronalDraw;
 
     fn draw(
         image: DynamicImage,
         sagittal_points: Self,
-        draws: &[Self::Measure],
-        hide: &[Self::Measure],
+        draws_hide: (&[Self::Draw], &[Self::Draw]),
         draw_param: DrawParam,
         resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
@@ -51,7 +49,7 @@ impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
         draw_coronal(
             image,
             sagittal_points,
-            (draws, hide),
+            draws_hide,
             draw_param,
             resize_param,
             svg_size,
@@ -61,13 +59,12 @@ impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
 }
 
 impl AssociatedMeasureAndDraw for SagittalPoints {
-    type Measure = SagittalMeasure;
+    type Draw = SagittalDraw;
 
     fn draw(
         image: DynamicImage,
         sagittal_points: Self,
-        draws: &[Self::Measure],
-        hide: &[Self::Measure],
+        draws_hide: (&[Self::Draw], &[Self::Draw]),
         draw_param: DrawParam,
         resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
@@ -76,8 +73,7 @@ impl AssociatedMeasureAndDraw for SagittalPoints {
         draw_sagittal(
             image,
             sagittal_points,
-            draws,
-            hide,
+            draws_hide,
             draw_param,
             resize_param,
             svg_size,
@@ -87,13 +83,12 @@ impl AssociatedMeasureAndDraw for SagittalPoints {
 }
 
 impl AssociatedMeasureAndDraw for LateralPoints {
-    type Measure = NeckLateralDraw;
+    type Draw = NeckLateralDraw;
 
     fn draw(
         image: DynamicImage,
         sagittal_points: Self,
-        draws: &[Self::Measure],
-        hide: &[Self::Measure],
+        draws_hide: (&[Self::Draw], &[Self::Draw]),
         draw_param: DrawParam,
         resize_param: Option<ResizeParam>,
         svg_size: (usize, usize),
@@ -102,7 +97,7 @@ impl AssociatedMeasureAndDraw for LateralPoints {
         scolrs::draw::draw_on_image(
             image,
             sagittal_points,
-            (draws, hide),
+            draws_hide,
             draw_param,
             resize_param,
             svg_size,
@@ -114,13 +109,13 @@ impl AssociatedMeasureAndDraw for LateralPoints {
 fn process_one<T>(
     svg_common: ReadSvgArgCommon,
     point_with_image: PointDataWithImage<T>,
-    draws: &[T::Measure],
-    hide: &[T::Measure],
+    draws: &[T::Draw],
+    hide: &[T::Draw],
     output: &std::path::Path,
 ) -> Result<()>
 where
     T: UpdatePoints + AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
-    <T as AssociatedMeasureAndDraw>::Measure: Clone + Copy + PartialEq,
+    <T as AssociatedMeasureAndDraw>::Draw: Clone + Copy + PartialEq,
 {
     // if let Some(resize_param) = svg_common.resize_param {
     //     point_with_image.resize(&resize_param);
@@ -150,8 +145,7 @@ where
     let document = T::draw(
         point_with_image.data_image.image,
         point_with_image.data,
-        draws,
-        hide,
+        (draws, hide),
         svg_common.draw_param,
         svg_common.resize_param,
         svg_size,
@@ -233,7 +227,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             )?;
             let draws = svg_sub_coronal_args
                 .measures
-                .unwrap_or_else(CoronalMeasure::all_draws);
+                .unwrap_or_else(CoronalDraw::all);
             let mut hide = svg_sub_coronal_args.hide;
             for group in svg_sub_coronal_args.hide_group {
                 hide.append(&mut (&group).into());
@@ -248,7 +242,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             )?;
             let draws = svg_sub_sagittall_args
                 .measures
-                .unwrap_or_else(SagittalMeasure::all_draws);
+                .unwrap_or_else(SagittalDraw::all);
             let hide = svg_sub_sagittall_args.hide;
             process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
@@ -370,7 +364,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     load_from_native_json_line::<CoronalPointsAndCurveLine>(&line, &args.input)?;
                 let draws = svg_sub_coronal_args
                     .measures
-                    .unwrap_or_else(CoronalMeasure::all_draws);
+                    .unwrap_or_else(CoronalDraw::all);
                 let mut hide = svg_sub_coronal_args.hide;
                 for group in svg_sub_coronal_args.hide_group {
                     hide.append(&mut (&group).into());
@@ -391,7 +385,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     load_from_native_json_line::<SagittalPointsLine>(&line, &args.input)?;
                 let draws = svg_sub_sagittall_args
                     .measures
-                    .unwrap_or_else(SagittalMeasure::all_draws);
+                    .unwrap_or_else(SagittalDraw::all);
                 let hide = svg_sub_sagittall_args.hide;
 
                 let output = args.output.join(

@@ -2080,14 +2080,44 @@ impl Display for StructuralReason {
 )]
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
-pub enum CoronalMeasure {
+pub enum CoronalDraw {
     VertebralLabels,
     VertebralPoints,
     Centroids,
     SpinalLine,
     CurveApex,
     CSVL,
-    // Measures
+    CobbPT,
+    CobbMT,
+    CobbTLL,
+    T1TiltAngle,
+    CoronalBalance,
+    ClavicleAngle,
+    ShoulderHeight,
+    PelvicObliquity,
+    SacralObliquity,
+    LegLengthDiscrepancy,
+}
+
+#[derive(
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+)]
+#[serde(rename_all = "PascalCase")]
+#[clap(rename_all = "PascalCase")]
+pub enum CoronalMeasure {
     CobbPT,
     CobbMT,
     CobbTLL,
@@ -2101,32 +2131,17 @@ pub enum CoronalMeasure {
 }
 
 pub trait MeasureAndDraw {
-    fn all_draws() -> Vec<Self>
-    where
-        Self: std::marker::Sized;
-    fn is_measure(&self) -> bool;
-    fn all_measures() -> Vec<Self>
+    fn all() -> Vec<Self>
     where
         Self: std::marker::Sized;
 }
 
-impl MeasureAndDraw for CoronalMeasure {
-    fn all_draws() -> Vec<Self> {
-        CoronalMeasure::VARIANTS.to_vec()
-    }
-    fn is_measure(&self) -> bool {
-        use CoronalMeasure::*;
-        !matches!(
-            self,
-            VertebralLabels | VertebralPoints | Centroids | SpinalLine | CurveApex | CSVL
-        )
-    }
-    fn all_measures() -> Vec<Self> {
-        CoronalMeasure::VARIANTS
-            .iter()
-            .filter(|&m| m.is_measure())
-            .copied()
-            .collect()
+impl<T> MeasureAndDraw for T
+where
+    T: ValueEnum + VariantArray,
+{
+    fn all() -> Vec<Self> {
+        T::VARIANTS.to_vec()
     }
 }
 
@@ -2148,10 +2163,9 @@ impl MeasureAndDraw for CoronalMeasure {
 )]
 #[clap(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
-pub enum SagittalMeasure {
+pub enum SagittalDraw {
     VertebralLabels,
     VertebralPoints,
-    // Measures
     ThoracicKyphosis,
     ProximalThoracicKyphosis,
     MidLowerThoracicKyphosis,
@@ -2167,21 +2181,38 @@ pub enum SagittalMeasure {
     LumbosacralAngle,
 }
 
-impl MeasureAndDraw for SagittalMeasure {
-    fn all_draws() -> Vec<Self> {
-        SagittalMeasure::VARIANTS.to_vec()
-    }
-    fn is_measure(&self) -> bool {
-        use SagittalMeasure::*;
-        !matches!(self, VertebralLabels | VertebralPoints)
-    }
-    fn all_measures() -> Vec<Self> {
-        SagittalMeasure::VARIANTS
-            .iter()
-            .filter(|&m| m.is_measure())
-            .copied()
-            .collect()
-    }
+#[derive(
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+)]
+#[clap(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
+pub enum SagittalMeasure {
+    ThoracicKyphosis,
+    ProximalThoracicKyphosis,
+    MidLowerThoracicKyphosis,
+    ThoracolumbarSagittalAlignment,
+    LumbarLordosis,
+    T1Slope,
+    SagittalBalance,
+    PelvicIncidence,
+    PelvicTilt,
+    SacralSlope,
+    L5IncidenceAngle,
+    PelvicRadiusAngle,
+    LumbosacralAngle,
 }
 
 #[cfg(test)]

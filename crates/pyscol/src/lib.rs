@@ -320,7 +320,7 @@ where
     };
 
     let draws = if draws.is_empty() {
-        S::all_draws()
+        S::all()
     } else {
         draws.deserialize_all()?
     };

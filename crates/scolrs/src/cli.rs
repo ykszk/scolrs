@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use scolrs::{
     head_neck::{NeckLateralDraw, NeckLateralMeasure},
-    CoronalMeasure, SagittalMeasure,
+    CoronalDraw, CoronalMeasure, SagittalDraw, SagittalMeasure,
 };
 use std::path::PathBuf;
 
@@ -69,17 +69,17 @@ impl Default for SvgSubCommands {
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
-pub enum CoronalMeasureGroup {
+pub enum CoronalDrawGroup {
     CobbExtra,
     NonCobb,
 }
 
-impl From<&CoronalMeasureGroup> for Vec<CoronalMeasure> {
-    fn from(group: &CoronalMeasureGroup) -> Self {
-        use CoronalMeasure::*;
+impl From<&CoronalDrawGroup> for Vec<CoronalDraw> {
+    fn from(group: &CoronalDrawGroup) -> Self {
+        use CoronalDraw::*;
         match group {
-            CoronalMeasureGroup::CobbExtra => vec![Centroids, SpinalLine, CurveApex],
-            CoronalMeasureGroup::NonCobb => vec![
+            CoronalDrawGroup::CobbExtra => vec![Centroids, SpinalLine, CurveApex],
+            CoronalDrawGroup::NonCobb => vec![
                 CSVL,
                 T1TiltAngle,
                 CoronalBalance,
@@ -97,23 +97,23 @@ impl From<&CoronalMeasureGroup> for Vec<CoronalMeasure> {
 pub struct SvgSubCoronalArgs {
     /// Measurements to draw. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
-    pub measures: Option<Vec<CoronalMeasure>>,
+    pub measures: Option<Vec<CoronalDraw>>,
     /// Hide measurements. Comma separated list
     #[clap(long, value_delimiter = ',')]
-    pub hide: Vec<CoronalMeasure>,
+    pub hide: Vec<CoronalDraw>,
     /// Hide group of measurements. Comma separated list
     #[clap(long, value_delimiter = ',')]
-    pub hide_group: Vec<CoronalMeasureGroup>,
+    pub hide_group: Vec<CoronalDrawGroup>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct SvgSubSagittallArgs {
     /// Measurements to draw. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
-    pub measures: Option<Vec<SagittalMeasure>>,
+    pub measures: Option<Vec<SagittalDraw>>,
     /// Hide measurements. Comma separated list
     #[clap(long, value_delimiter = ',')]
-    pub hide: Vec<SagittalMeasure>,
+    pub hide: Vec<SagittalDraw>,
 }
 
 #[derive(Args, Debug, Clone, Default)]

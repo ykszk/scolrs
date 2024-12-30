@@ -1,7 +1,7 @@
 use crate::{
-    angle_from_lines, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, HasCornerPoints,
-    HasImageMetadata, L2Norm, SagittalMeasure, SagittalPoints, Scalable, ValidateLength,
-    CORNER_LABELS,
+    angle_from_lines, CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve,
+    HasCornerPoints, HasImageMetadata, L2Norm, SagittalDraw, SagittalMeasure, SagittalPoints,
+    Scalable, ValidateLength, CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
 use labelme_rs::image::DynamicImage;
@@ -2138,31 +2138,31 @@ pub fn femoral_incidence_angle(
     Ok(angle_deg)
 }
 
-impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
-    fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
+impl<'a, 'b> From<(&'b SagittalDraw, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
+    fn from((measure, sagittal_points): (&'b SagittalDraw, &'a SagittalPoints)) -> Self {
         match measure {
-            SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
-            SagittalMeasure::ProximalThoracicKyphosis => {
+            SagittalDraw::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
+            SagittalDraw::ProximalThoracicKyphosis => {
                 Box::new(ProximalThoracicKyphosis(sagittal_points))
             }
-            SagittalMeasure::MidLowerThoracicKyphosis => {
+            SagittalDraw::MidLowerThoracicKyphosis => {
                 Box::new(MidLowerThoracicKyphosis(sagittal_points))
             }
-            SagittalMeasure::ThoracolumbarSagittalAlignment => {
+            SagittalDraw::ThoracolumbarSagittalAlignment => {
                 Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
             }
-            SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
-            SagittalMeasure::T1Slope => Box::new(T1Slope(sagittal_points)),
-            SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
-            SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
-            SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
-            SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
-            SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
-            SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
-            SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+            SagittalDraw::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
+            SagittalDraw::T1Slope => Box::new(T1Slope(sagittal_points)),
+            SagittalDraw::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
+            SagittalDraw::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
+            SagittalDraw::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
+            SagittalDraw::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
+            SagittalDraw::SacralSlope => Box::new(SacralSlope(sagittal_points)),
+            SagittalDraw::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
+            SagittalDraw::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
 
-            SagittalMeasure::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
-            SagittalMeasure::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
+            SagittalDraw::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
+            SagittalDraw::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
         }
     }
 }
@@ -2189,37 +2189,35 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn Measure
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
-
-            _ => panic!("Invalid conversion: {:?}", measure),
         }
     }
 }
 
-impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)> for Box<dyn DrawComponent + 'a> {
-    fn from(value: (&'b CoronalMeasure, &'a CoronalPointsAndCurve)) -> Self {
+impl<'a, 'b> From<(&'b CoronalDraw, &'a CoronalPointsAndCurve)> for Box<dyn DrawComponent + 'a> {
+    fn from(value: (&'b CoronalDraw, &'a CoronalPointsAndCurve)) -> Self {
         let (measure, coronal_set) = value;
         let coronal_points = &coronal_set.coronal_points;
         let curve_set = &coronal_set.curves.curves;
         let apex_set = &coronal_set.curves.apices;
         match measure {
-            CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
-            CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
-            CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
+            CoronalDraw::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
+            CoronalDraw::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
+            CoronalDraw::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
 
-            CoronalMeasure::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
-            CoronalMeasure::CSVL => Box::new(Csvl(coronal_points, apex_set)),
-            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
-            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
-            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
-            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
-            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
-            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
-            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+            CoronalDraw::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
+            CoronalDraw::CSVL => Box::new(Csvl(coronal_points, apex_set)),
+            CoronalDraw::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
+            CoronalDraw::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
+            CoronalDraw::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
+            CoronalDraw::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
+            CoronalDraw::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
+            CoronalDraw::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
+            CoronalDraw::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
 
-            CoronalMeasure::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
-            CoronalMeasure::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
-            CoronalMeasure::Centroids => Box::new(Centroids(&coronal_points.spine)),
-            CoronalMeasure::SpinalLine => Box::new(SpinalLine(&coronal_points.spine)),
+            CoronalDraw::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
+            CoronalDraw::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
+            CoronalDraw::Centroids => Box::new(Centroids(&coronal_points.spine)),
+            CoronalDraw::SpinalLine => Box::new(SpinalLine(&coronal_points.spine)),
         }
     }
 }
@@ -2243,8 +2241,6 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)>
             CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
-
-            _ => panic!("Invalid conversion: {:?}", measure),
         }
     }
 }
@@ -2338,8 +2334,7 @@ where
 pub fn draw_sagittal(
     image: DynamicImage,
     sagittal_points: SagittalPoints,
-    draws: &[SagittalMeasure],
-    hide: &[SagittalMeasure],
+    draws_hide: (&[SagittalDraw], &[SagittalDraw]),
     draw_param: DrawParam,
     resize_param: Option<ResizeParam>,
     svg_size: (usize, usize),
@@ -2348,7 +2343,7 @@ pub fn draw_sagittal(
     draw_on_image(
         image,
         sagittal_points,
-        (draws, hide),
+        draws_hide,
         draw_param,
         resize_param,
         svg_size,
@@ -2359,7 +2354,7 @@ pub fn draw_sagittal(
 pub fn draw_coronal(
     image: DynamicImage,
     coronal_set: CoronalPointsAndCurve,
-    draws_hide: (&[CoronalMeasure], &[CoronalMeasure]),
+    draws_hide: (&[CoronalDraw], &[CoronalDraw]),
     draw_param: DrawParam,
     resize_param: Option<ResizeParam>,
     svg_size: (usize, usize),
