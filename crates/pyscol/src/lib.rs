@@ -15,8 +15,8 @@ use scolrs::{
         draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, MeasureError,
         Painter,
     },
-    CoronalMeasure, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
-    PointDataWithImage, SagittalMeasure, SagittalPoints, Scalable, UpdatePoints,
+    CoronalDraw, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
+    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable, UpdatePoints,
 };
 use svg::node::element;
 
@@ -220,7 +220,7 @@ where
         .transpose()
         .map_err(|e| PyScolError::Uncategorized(format!("Error in resize parameter: {}", e)))?;
 
-    let mut document = painter.doc_w_background(&image, resize_param)?;
+    let mut document = painter.doc_w_background(&image)?;
 
     document = document.add(style);
 
@@ -236,7 +236,7 @@ where
             "heatmap".to_string(),
             None,
             overlay_image,
-            image_size,
+            (image_size.0 as usize, image_size.1 as usize),
         )
         .draw(&painter, &mut label_colors, &mut line_colors)?;
         let g = g.set("visibility", "hidden");
@@ -355,7 +355,7 @@ pub fn py_draw_coronal(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
-    draw_generic::<CoronalPointsAndCurve, CoronalMeasure>(
+    draw_generic::<CoronalPointsAndCurve, CoronalDraw>(
         coronal_points_json,
         json_path,
         draws,
@@ -385,7 +385,7 @@ pub fn py_draw_sagittal(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
-    draw_generic::<SagittalPoints, SagittalMeasure>(
+    draw_generic::<SagittalPoints, SagittalDraw>(
         coronal_points_json,
         json_path,
         draws,
