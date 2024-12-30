@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, path::Path, str::FromStr};
+use std::{borrow::Cow, collections::HashMap, error::Error, path::Path, str::FromStr};
 
 use devscol::{trimming_box_with_resample, BoundingBox, PredicateSource};
 use labelme_rs::{
@@ -6,8 +6,8 @@ use labelme_rs::{
     LabelMeData, LabelMeDataWImage, ResizeParam,
 };
 use numpy::{
-    ndarray::Array2, IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn,
-    PyUntypedArrayMethods,
+    ndarray::{Array2, Axis},
+    IntoPyArray, PyArray2, PyReadonlyArray2, PyReadonlyArrayDyn, PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
 use scolrs::{
@@ -219,6 +219,10 @@ where
         .map(|resize| ResizeParam::try_from(resize.as_str()))
         .transpose()
         .map_err(|e| PyScolError::Uncategorized(format!("Error in resize parameter: {}", e)))?;
+    let image: Cow<DynamicImage> = match resize_param {
+        Some(resize_param) => Cow::Owned(resize_param.resize(&image)),
+        None => Cow::Borrowed(&image),
+    };
 
     let mut document = painter.doc_w_background(&image)?;
 
@@ -226,23 +230,30 @@ where
 
     if let Some(overlay) = overlay {
         let overlay_image = ndarray_to_dynamic_image(overlay)?;
-        let image_size = if let Some(resize_param) = resize_param {
-            resize_param.size(image.width(), image.height())
-        } else {
-            (image.width(), image.height())
-        };
         let g = scolrs::draw::ImageOverlay::new(
             "heatmap".to_string(),
             "heatmap".to_string(),
             None,
             overlay_image,
-            (image_size.0 as usize, image_size.1 as usize),
+            (svg_size.0 as usize, svg_size.1 as usize),
         )
         .draw(&painter, &mut label_colors, &mut line_colors)?;
         let g = g.set("visibility", "hidden");
         document = document.add(g);
     }
-    if let Some(point_sets) = point_sets {
+    if let Some(mut point_sets) = point_sets {
+        // Scale the coordinates from the original image size to the svg size
+        let svg_to_image_ratio_x = svg_size.0 as f64 / data.image_metadata().width as f64;
+        let svg_to_image_ratio_y = svg_size.1 as f64 / data.image_metadata().height as f64;
+        point_sets.iter_mut().for_each(|(_, point_set)| {
+            point_set
+                .index_axis_mut(Axis(1), 0)
+                .mapv_inplace(|x| x * svg_to_image_ratio_x);
+            point_set
+                .index_axis_mut(Axis(1), 1)
+                .mapv_inplace(|y| y * svg_to_image_ratio_y);
+        });
+
         for (label, point_set) in point_sets {
             let g = scolrs::draw::DrawPointSet::new(label.clone(), label, None, point_set).draw(
                 &painter,
