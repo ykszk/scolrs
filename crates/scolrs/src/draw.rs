@@ -204,6 +204,7 @@ where
 pub struct CobbAux {
     pub plate_scale: f64,
     pub perpendicular_scale: f64,
+    pub flip_sign: bool,
 }
 
 impl Default for CobbAux {
@@ -211,6 +212,7 @@ impl Default for CobbAux {
         Self {
             plate_scale: 3.0,
             perpendicular_scale: 1.4,
+            flip_sign: false,
         }
     }
 }
@@ -391,12 +393,13 @@ impl Painter {
     pub fn cobb_from_plates(
         &self,
         mut group: element::Group,
-        sup_plate: Array2<f64>,
-        inf_plate: Array2<f64>,
+        sup_plate_inf_plate: (Array2<f64>, Array2<f64>),
         aux_param: &CobbAux,
         base_length: f64,
         title: Option<&str>,
     ) -> element::Group {
+        let sup_plate = sup_plate_inf_plate.0;
+        let inf_plate = sup_plate_inf_plate.1;
         let sup_line = points2line(sup_plate.view());
         let inf_line = points2line(inf_plate.view());
 
@@ -435,6 +438,7 @@ impl Painter {
                     ]));
                     group = group.add(line);
                 }
+                let angle = if aux_param.flip_sign { -angle } else { angle };
                 let text = self.text(
                     format!("{:.1}°", angle).as_str(),
                     ndarray::arr1(&[intersection.x, intersection.y]),
@@ -468,6 +472,7 @@ impl Painter {
                     ]);
                     group = group.add(line);
                 }
+                let angle = if aux_param.flip_sign { -angle } else { angle };
                 let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
                 group = group.add(text);
             }
@@ -509,8 +514,7 @@ impl Painter {
         let inf_plate = spine.inf_plate(curve.inf);
         self.cobb_from_plates(
             group,
-            sup_plate.to_owned(),
-            inf_plate.to_owned(),
+            (sup_plate.to_owned(), inf_plate.to_owned()),
             aux_param,
             base_length,
             title,
@@ -1612,11 +1616,12 @@ macro_rules! impl_kyophosis {
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, DrawError> {
                 let label = self.id();
-                let aux_param = if $opposite {
+                let mut aux_param = if $opposite {
                     CobbAux::opposite_default()
                 } else {
                     CobbAux::default()
                 };
+                aux_param.flip_sign = true;
                 let curve = Curve {
                     sup: Self::SUP,
                     inf: Self::INF,
@@ -1638,7 +1643,7 @@ macro_rules! impl_kyophosis {
         }
         impl<'a> MeasureComponent for $name<'a> {
             fn measure(&self) -> Result<f64, MeasureError> {
-                let angle = self
+                let angle = -self
                     .0
                     .spine
                     .angle(&Curve {
@@ -1717,7 +1722,10 @@ impl DrawComponent for LumbarLordosis<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
-        let aux_param = CobbAux::default();
+        let aux_param = CobbAux {
+            flip_sign: true,
+            ..CobbAux::default()
+        };
         let label = self.id();
         let group = self
             .default_group()
@@ -1848,9 +1856,17 @@ impl DrawComponent for LumbosacralAngle<'_> {
         let group = self
             .default_group()
             .set("stroke", line_colors.get_or_new(label));
-        let aux_param = CobbAux::default();
-        let g =
-            painter.cobb_from_plates(group, sup, inf, &aux_param, mean_plate_length, Some(label));
+        let aux_param = CobbAux {
+            flip_sign: true,
+            ..CobbAux::default()
+        };
+        let g = painter.cobb_from_plates(
+            group,
+            (sup, inf),
+            &aux_param,
+            mean_plate_length,
+            Some(label),
+        );
         Ok(g)
     }
 }

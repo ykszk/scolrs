@@ -469,10 +469,10 @@ mod tests {
         let data_dir = PathBuf::from("../../tests/data/");
         if native {
             svg_args.input = data_dir.join(case).join("frontal_native.json");
-            svg_args.output = output_path(&format!("{}_frontal_native.svg", case))?;
+            svg_args.output = output_path(&format!("scoliosis/{}_frontal_native.svg", case))?;
         } else {
             svg_args.input = data_dir.join(case).join("frontal.json");
-            svg_args.output = output_path(&format!("{}_frontal.svg", case))?;
+            svg_args.output = output_path(&format!("scoliosis/{}_frontal.svg", case))?;
         }
         svg_args.svg_args.labelme = !native;
         svg_args.svg_args.subcommand = SvgSubCommands::Coronal(Default::default());
@@ -480,10 +480,10 @@ mod tests {
 
         if native {
             svg_args.input = data_dir.join(case).join("lateral_native.json");
-            svg_args.output = output_path(&format!("{}_lateral_native.svg", case))?;
+            svg_args.output = output_path(&format!("scoliosis/{}_lateral_native.svg", case))?;
         } else {
             svg_args.input = data_dir.join(case).join("lateral.json");
-            svg_args.output = output_path(&format!("{}_lateral.svg", case))?;
+            svg_args.output = output_path(&format!("scoliosis/{}_lateral.svg", case))?;
         }
         svg_args.svg_args.labelme = !native;
         svg_args.svg_args.subcommand = SvgSubCommands::Sagittal(Default::default());
@@ -501,12 +501,12 @@ mod tests {
         let mut svg_args = gen_svg_args();
         let data_dir = PathBuf::from("../../tests/data/");
         svg_args.input = data_dir.join("case1/left_lateral_bend.json");
-        svg_args.output = output_path("case1_left_lateral_bend.svg")?;
+        svg_args.output = output_path("scoliosis/case1_left_lateral_bend.svg")?;
         svg_args.svg_args.labelme = true;
         cmd(svg_args.clone())?;
 
         svg_args.input = data_dir.join("case1/right_lateral_bend.json");
-        svg_args.output = output_path("case1_right_lateral_bend.svg")?;
+        svg_args.output = output_path("scoliosis/case1_right_lateral_bend.svg")?;
         cmd(svg_args)?;
         Ok(())
     }

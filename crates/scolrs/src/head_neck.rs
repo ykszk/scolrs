@@ -657,10 +657,10 @@ impl DrawComponent for OC2<'_> {
             .unwrap();
         group = painter.cobb_from_plates(
             group,
-            mcgregor_points,
-            c2_lower_endplate.to_owned(),
+            (mcgregor_points, c2_lower_endplate.to_owned()),
             &CobbAux {
                 plate_scale: 5.0,
+                flip_sign: false,
                 ..Default::default()
             },
             c2_length,
@@ -712,10 +712,10 @@ impl DrawComponent for WedgeAngle<'_> {
             let wedge_lower = wedge_lower.slice(s![..2, ..]);
             group = painter.cobb_from_plates(
                 group,
-                wedge_upper.to_owned(),
-                wedge_lower.to_owned(),
+                (wedge_upper.to_owned(), wedge_lower.to_owned()),
                 &CobbAux {
                     plate_scale: 1.5,
+                    flip_sign: false,
                     ..Default::default()
                 },
                 mean_wedge_length,
