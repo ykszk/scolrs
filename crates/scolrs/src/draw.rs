@@ -11,6 +11,7 @@ use named_derive::Named;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
 use std::ops::{AddAssign, SubAssign};
@@ -524,32 +525,23 @@ impl Painter {
     pub fn doc_w_background(
         &self,
         image: &labelme_rs::image::DynamicImage,
-        resize_param: Option<ResizeParam>,
     ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
-        let b64 = if let Some(resize_param) = resize_param {
-            let resized_image = resize_param.resize(image);
-            format!(
-                "data:image/jpeg;base64,{}",
-                labelme_rs::img2base64(&resized_image, labelme_rs::image::ImageFormat::Jpeg)?
-            )
-        } else {
-            format!(
-                "data:image/jpeg;base64,{}",
-                labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
-            )
-        };
+        let b64 = format!(
+            "data:image/jpeg;base64,{}",
+            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
+        );
 
         let bg = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
-            .set("width", image.width())
-            .set("height", image.height())
+            .set("width", self.size.0)
+            .set("height", self.size.1)
             .set("xlink:href", b64);
 
         let mut document = svg::Document::new()
             .set("width", self.size.0)
             .set("height", self.size.1)
-            .set("viewBox", (0, 0, image.width(), image.height()))
+            .set("viewBox", (0, 0, self.size.0, self.size.1))
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         document = document.add(bg);
         Ok(document)
@@ -2309,8 +2301,17 @@ where
         }
     }
 
+    // revert the scaling to the original and rescale to the svg size
     let spacing = data.image_metadata().spacing_xy;
-    let groups = scale_coordinates((1.0 / spacing.0, 1.0 / spacing.1), groups);
+    let svg_to_image_ratio_x = painter.size.0 as f64 / data.image_metadata().width as f64;
+    let svg_to_image_ratio_y = painter.size.1 as f64 / data.image_metadata().height as f64;
+    let groups = scale_coordinates(
+        (
+            1.0 / spacing.0 * svg_to_image_ratio_x,
+            1.0 / spacing.1 * svg_to_image_ratio_y,
+        ),
+        groups,
+    );
 
     Ok(groups)
 }
@@ -2336,7 +2337,11 @@ where
     let (draw, hide) = draw_hide;
     let style = element::Style::new(draw_param.style());
     let painter = Painter::new(draw_param, svg_size);
-    let mut document = painter.doc_w_background(&image, resize_param)?;
+    let image: Cow<DynamicImage> = match resize_param {
+        Some(resize_param) => Cow::Owned(resize_param.resize(&image)),
+        None => Cow::Borrowed(&image),
+    };
+    let mut document = painter.doc_w_background(&image)?;
     document = document.add(style);
 
     let groups = draw_components(data, draw, hide, &painter, palettes)?;

@@ -449,12 +449,14 @@ mod tests {
         let config = Some(data_dir.join("config.toml"));
         let label_colors = Some(data_dir.join("colors.yaml"));
         let line_colors = Some(data_dir.join("line_colors.csv"));
-        let resize = Some("1024x1024".to_string());
+        let resize = Some("800x800".to_string());
+        let size = Some("1024x1024".to_string());
         let svg_args = SvgArgsCommon {
             config,
             label_colors,
             line_colors,
             resize,
+            size,
             ..Default::default()
         };
         SvgArgs {
