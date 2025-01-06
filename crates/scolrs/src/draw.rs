@@ -4,6 +4,7 @@ use crate::{
     Scalable, ValidateLength, CORNER_LABELS,
 };
 use crate::{ApexSet, Curve, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
+use base64::Engine;
 use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
@@ -741,10 +742,11 @@ impl DrawComponent for ImageOverlay {
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let group = self.default_group();
-        let b64 = format!(
-            "data:image/png;base64,{}",
-            labelme_rs::img2base64(&self.image, labelme_rs::image::ImageFormat::Png)?
-        );
+
+        let webp_encoder = webp::Encoder::from_image(&self.image).unwrap();
+        let webp_memory = webp_encoder.encode(90.0);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&*webp_memory);
+
         let layer = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
