@@ -1649,7 +1649,7 @@ macro_rules! impl_kyophosis {
     };
 }
 
-/// Proximal thoracic kyphosis (p.65)
+/// Proximal thoracic (T2-T5) kyphosis (p.65)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct ProximalThoracicKyphosis<'a>(&'a SagittalPoints);
@@ -1660,7 +1660,7 @@ impl ProximalThoracicKyphosis<'_> {
 impl SagittalComponent for ProximalThoracicKyphosis<'_> {}
 impl_kyophosis!(ProximalThoracicKyphosis, false);
 
-/// Thoracic kyphosis (p.65)
+/// Thoracic (T2-T12) kyphosis (p.65)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct ThoracicKyphosis<'a>(&'a SagittalPoints);
@@ -1671,7 +1671,18 @@ impl ThoracicKyphosis<'_> {
 impl SagittalComponent for ThoracicKyphosis<'_> {}
 impl_kyophosis!(ThoracicKyphosis, true);
 
-/// Mid/Lower thoracic kyphosis (p.65)
+/// Thoracic (T1-T12) kyphosis with T1 as the upper endplate.
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct T1ThoracicKyphosis<'a>(&'a SagittalPoints);
+impl T1ThoracicKyphosis<'_> {
+    const SUP: usize = VertebralIndex::T1 as usize;
+    const INF: usize = VertebralIndex::T12 as usize;
+}
+impl SagittalComponent for T1ThoracicKyphosis<'_> {}
+impl_kyophosis!(T1ThoracicKyphosis, true);
+
+/// Mid/Lower thoracic (T5-T12) kyphosis (p.65).
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 #[label("Mid/LowerThoracicKyphosis")]
@@ -1683,7 +1694,7 @@ impl MidLowerThoracicKyphosis<'_> {
 }
 impl_kyophosis!(MidLowerThoracicKyphosis, false);
 
-/// Thoracolumbar(T10/L2) sagittal alignment (p.66)
+/// Thoracolumbar (T10/L2) sagittal alignment (p.66)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct ThoracolumbarSagittalAlignment<'a>(&'a SagittalPoints);
@@ -1694,7 +1705,7 @@ impl ThoracolumbarSagittalAlignment<'_> {
 impl SagittalComponent for ThoracolumbarSagittalAlignment<'_> {}
 impl_kyophosis!(ThoracolumbarSagittalAlignment, false);
 
-/// Lumbar sagittal alignment (T12/S1) (p.66)
+/// Lumbar sagittal (T12/S1) alignment (p.66)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct LumbarLordosis<'a>(&'a SagittalPoints);
@@ -2150,6 +2161,7 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a SagittalPoints)> for Box<dyn DrawCompon
     fn from((measure, sagittal_points): (&'b SagittalDraw, &'a SagittalPoints)) -> Self {
         match measure {
             SagittalDraw::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
+            SagittalDraw::ThoracicKyphosisT1 => Box::new(T1ThoracicKyphosis(sagittal_points)),
             SagittalDraw::ProximalThoracicKyphosis => {
                 Box::new(ProximalThoracicKyphosis(sagittal_points))
             }
@@ -2179,6 +2191,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn Measure
     fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
         match measure {
             SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
+            SagittalMeasure::T1ThoracicKyphosis => Box::new(T1ThoracicKyphosis(sagittal_points)),
             SagittalMeasure::ProximalThoracicKyphosis => {
                 Box::new(ProximalThoracicKyphosis(sagittal_points))
             }

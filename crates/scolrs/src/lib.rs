@@ -2167,6 +2167,7 @@ pub enum SagittalDraw {
     VertebralLabels,
     VertebralPoints,
     ThoracicKyphosis,
+    ThoracicKyphosisT1,
     ProximalThoracicKyphosis,
     MidLowerThoracicKyphosis,
     ThoracolumbarSagittalAlignment,
@@ -2201,6 +2202,7 @@ pub enum SagittalDraw {
 #[strum(serialize_all = "PascalCase")]
 pub enum SagittalMeasure {
     ThoracicKyphosis,
+    T1ThoracicKyphosis,
     ProximalThoracicKyphosis,
     MidLowerThoracicKyphosis,
     ThoracolumbarSagittalAlignment,
