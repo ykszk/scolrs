@@ -746,13 +746,13 @@ impl DrawComponent for ImageOverlay {
         let webp_encoder = webp::Encoder::from_image(&self.image).unwrap();
         let webp_memory = webp_encoder.encode(90.0);
         let b64 = base64::engine::general_purpose::STANDARD.encode(&*webp_memory);
-
+        let base64_image_data = format!("data:image/webp;base64,{}", b64);
         let layer = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
             .set("width", self.image_size.0)
             .set("height", self.image_size.1)
-            .set("xlink:href", b64);
+            .set("xlink:href", base64_image_data);
         Ok(group.add(layer))
     }
 }
