@@ -649,6 +649,79 @@ fn offsetted_rotate_array3(
     rotated.into_shape((shape[0], shape[1], 2)).unwrap() + offset
 }
 
+/// Assess the curve set
+///
+/// For mt curve, add number of thoracic vertebrae and deduct number of lumbar vertebrae
+/// For tll curve, deduct number of thoracic vertebrae and add number of lumbar vertebrae
+/// For pt curve, add one point if the curve is above T12
+fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> i16 {
+    let mut points = 0.0;
+    if let Some((curve, angle)) = &curve_set.pt {
+        // for i in curve.sup..=curve.inf {
+        //     let vertebra = VertebralIndex::from(i as u8);
+        //     // add number of thoracic vertebrae
+        //     if vertebra <= VertebralIndex::T3 {
+        //         points += 1.0;
+        //     }
+        //     // deduct number of lumbar vertebrae
+        //     if vertebra > VertebralIndex::T5 {
+        //         points -= 1.0;
+        //     }
+        // }
+        let apex = apex_set.mt.unwrap();
+        points += ((VertebraDiscIndex::T3 as i8 - apex as i8) as f64 / 2.0).max(5.0);
+        // points += ((VertebraDiscIndex::T3 as i8 - apex as i8) as f64 / 2.0).max(2.0);
+        // points += (angle.abs() / 50.0).max(3.0);
+
+        if let Some((_curve, mt_angle)) = &curve_set.mt {
+            points += (mt_angle - angle).abs() / 40.0;
+        } else {
+            points += angle.abs() / 40.0;
+        }
+    };
+    if let Some((curve, angle)) = &curve_set.mt {
+        for i in curve.sup..=curve.inf {
+            let vertebra = VertebralIndex::from(i as u8);
+            // add number of thoracic vertebrae
+            if vertebra <= VertebralIndex::T12 {
+                points += 1.0;
+            }
+            // deduct number of non-thoracolumbar vertebrae
+            if vertebra >= VertebralIndex::L2 {
+                points -= 1.0;
+            }
+        }
+        let apex = apex_set.mt.unwrap();
+        // points += (10.0 - (VertebraDiscIndex::T8 as i8 - apex as i8).abs() as f64 / 2.0).max(0.0);
+        points += ((VertebraDiscIndex::DiscT11T12 as i8 - apex as i8) as f64 / 2.0).max(5.0);
+        if let Some((_curve, tll_angle)) = &curve_set.tll {
+            points += (tll_angle - angle).abs() / 10.0;
+        } else {
+            points += angle.abs() / 10.0;
+        }
+    };
+    if let Some((curve, angle)) = &curve_set.tll {
+        for i in curve.sup..=curve.inf {
+            let vertebra = VertebralIndex::from(i as u8);
+            // add number of thoracolumbar/lumbar vertebrae
+            if vertebra >= VertebralIndex::T10 {
+                points += 1.0;
+            }
+            // deduct number of non-thoracolumbar vertebrae
+            if vertebra <= VertebralIndex::T9 {
+                points -= 1.0;
+            }
+        }
+        let apex = apex_set.tll.unwrap();
+        // points += (10.0 - (VertebraDiscIndex::L2 as i8 - apex as i8).abs() as f64 / 2.0).max(0.0);
+        points += (apex as i8 - VertebraDiscIndex::DiscT11T12 as i8) as f64 / 2.0;
+        if curve_set.tll.is_none() {
+            points += angle.abs() / 10.0;
+        }
+    };
+    (points * 10.00) as i16
+}
+
 impl CoronalPoints {
     pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
         polynomial(xs, self.c_coefs.view())
@@ -759,6 +832,9 @@ impl CoronalPoints {
         }
     }
 
+    /// Find all curves going down from the given sup
+    ///
+    /// The returned curves are sorted from the highest to the lowest
     fn find_all_down(&self, mut sup: usize) -> Vec<(Curve, f64)> {
         let mut curves = Vec::new();
         while let Some(largest_curve) = self.find_largest_down(sup) {
@@ -768,6 +844,9 @@ impl CoronalPoints {
         curves
     }
 
+    /// Find all curves going up from the given inf
+    ///
+    /// The returned curves are sorted from the lowest to the highest
     fn find_all_up(&self, mut inf: usize) -> Vec<(Curve, f64)> {
         let mut curves = Vec::new();
         while let Some(largest_curve) = self.find_largest_up(inf) {
@@ -789,37 +868,73 @@ impl CoronalPoints {
         }
     }
 
+    /// Identify the curves of the spine
+    ///
+    /// The curves is optimized by the [assess_curve_set] function
     fn identify_curves_impl(&self) -> CurveDesc {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
         if let Some(largest_curve) = self.find_largest_curve() {
-            let major_apex = self.id_apex(&largest_curve.0);
-            major_curve = if major_apex <= VertebraDiscIndex::T5 {
-                // largest curve is PT
-                debug!("PT is the largest curve");
-                if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
-                    curves.tll = self.find_largest_down(mt.0.inf);
-                    curves.mt = Some(mt);
+            let ups = self.find_all_up(largest_curve.0.sup);
+            let downs = self.find_all_down(largest_curve.0.inf);
+            // create vec of last two elements of downs, and largest_curve and first two elements of ups
+            let mut curves_vec: Vec<Vec<_>> = Vec::with_capacity(5);
+            if ups.len() >= 2 {
+                curves_vec.push(vec![ups[1].clone(), ups[0].clone(), largest_curve.clone()]);
+            }
+            if !ups.is_empty() {
+                curves_vec.push(vec![ups[0].clone(), largest_curve.clone()]);
+                if !downs.is_empty() {
+                    curves_vec.push(vec![
+                        ups[0].clone(),
+                        largest_curve.clone(),
+                        downs[0].clone(),
+                    ]);
                 }
-                curves.pt = Some(largest_curve);
-                Some(MajorCurve::MT) // PT is never major
-            } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
-                // largest curve is MT
-                debug!("MT is the largest curve");
-                curves.pt = self.find_largest_up(largest_curve.0.sup);
-                curves.tll = self.find_largest_down(largest_curve.0.inf);
-                curves.mt = Some(largest_curve);
-                Some(MajorCurve::MT)
-            } else {
-                // largest curve is TLL
-                debug!("TLL is the largest curve");
-                if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
-                    curves.pt = self.find_largest_up(mt.0.sup);
-                    curves.mt = Some(mt);
+            }
+            if downs.len() >= 2 {
+                curves_vec.push(vec![
+                    largest_curve.clone(),
+                    downs[0].clone(),
+                    downs[1].clone(),
+                ]);
+            }
+            if !downs.is_empty() {
+                curves_vec.push(vec![largest_curve.clone(), downs[0].clone()]);
+            }
+            let mut curveset_candidates = Vec::new();
+            for curves in curves_vec {
+                if curves.len() == 3 {
+                    curveset_candidates.push(CurveSet {
+                        pt: Some(curves[0].clone()),
+                        mt: Some(curves[1].clone()),
+                        tll: Some(curves[2].clone()),
+                    });
+                } else {
+                    curveset_candidates.push(CurveSet {
+                        pt: None,
+                        mt: Some(curves[0].clone()),
+                        tll: Some(curves[1].clone()),
+                    });
+                    curveset_candidates.push(CurveSet {
+                        pt: Some(curves[0].clone()),
+                        mt: Some(curves[1].clone()),
+                        tll: None,
+                    });
                 }
-                curves.tll = Some(largest_curve);
-                Some(MajorCurve::TLL)
-            };
+            }
+            if !curveset_candidates.is_empty() {
+                let points = curveset_candidates
+                    .iter()
+                    .map(|cs| {
+                        let apex_set = cs.apices(self);
+                        (cs, assess_curve_set(cs, apex_set))
+                    })
+                    .collect::<Vec<_>>();
+                let (curve_set, _) = points.iter().max_by_key(|(_, points)| *points).unwrap();
+                curves = (*curve_set).clone();
+                major_curve = curves.major_curve();
+            }
         }
         let apices = curves.apices(self);
         CurveDesc::new(curves, apices, major_curve)
@@ -1032,21 +1147,28 @@ pub struct CurveSet {
 impl CurveSet {
     fn apices(&self, coronal_points: &CoronalPoints) -> ApexSet {
         ApexSet {
-            pt: if let Some((c, _)) = self.pt.as_ref() {
-                Some(coronal_points.id_apex(c))
-            } else {
-                None
-            },
-            mt: if let Some((c, _)) = self.mt.as_ref() {
-                Some(coronal_points.id_apex(c))
-            } else {
-                None
-            },
-            tll: if let Some((c, _)) = self.tll.as_ref() {
-                Some(coronal_points.id_apex(c))
-            } else {
-                None
-            },
+            pt: self.pt.as_ref().map(|(c, _)| coronal_points.id_apex(c)),
+            mt: self.mt.as_ref().map(|(c, _)| coronal_points.id_apex(c)),
+            tll: self.tll.as_ref().map(|(c, _)| coronal_points.id_apex(c)),
+        }
+    }
+
+    /// Determine the major curve
+    ///
+    /// The major curve is determined by the curve with the largest absolute angle
+    /// If PT is the largest, then the major curve is MT
+    fn major_curve(&self) -> Option<MajorCurve> {
+        if self.pt.is_none() && self.mt.is_none() && self.tll.is_none() {
+            return None;
+        }
+        // absolute angles
+        let pt = self.pt.as_ref().map(|(_, a)| a.abs()).unwrap_or(0.0);
+        let mt = self.mt.as_ref().map(|(_, a)| a.abs()).unwrap_or(0.0);
+        let tll = self.tll.as_ref().map(|(_, a)| a.abs()).unwrap_or(0.0);
+        if (pt >= mt && pt >= tll) || (mt >= pt && mt >= tll) {
+            Some(MajorCurve::MT)
+        } else {
+            Some(MajorCurve::TLL)
         }
     }
 }

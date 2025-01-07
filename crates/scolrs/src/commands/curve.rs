@@ -30,8 +30,9 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
     type Error = anyhow::Error;
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let coronal_points = CoronalPoints::try_from(data)?;
+        let mut coronal_points = CoronalPoints::try_from(data)?;
         let info = coronal_points.identify_curves();
+        coronal_points.spine.verticalize();
         let all_curves = coronal_points.find_all_curves();
         let all_curves: Vec<_> = all_curves
             .into_iter()
