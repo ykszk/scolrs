@@ -408,6 +408,28 @@ impl Spine {
             6,
         )
     }
+
+    /// Rotate the spine so that the spine is vertical
+    ///
+    /// The rotation is done by rotating the spine so that the line connecting the top and bottom
+    /// centroids of the spine is vertical.
+    pub fn verticalize(&mut self) {
+        let centroids = self.c_c7tl.clone();
+        let top = centroids.index_axis(Axis(0), 0);
+        let bottom = centroids.index_axis(Axis(0), centroids.len_of(Axis(0)) - 1);
+        let v = &bottom - &top;
+        if v[0].abs() < 1e-6 {
+            debug!("Spine is already vertical");
+            return;
+        }
+        let angle = v[0].atan2(v[1]);
+        let rot_mat = ndarray::arr2(&[[angle.cos(), -angle.sin()], [angle.sin(), angle.cos()]]);
+
+        self.c7tls.0 = offsetted_rotate_array3(self.c7tls.0.view(), top, rot_mat.view());
+        self.v_c7tl.0 = offsetted_rotate_array3(self.v_c7tl.0.view(), top, rot_mat.view());
+
+        self.c_c7tl = offsetted_rotate_array2(self.c_c7tl.view(), top, rot_mat.view());
+    }
 }
 
 /// Point sets extracted from a coronal radiograph
@@ -599,6 +621,34 @@ impl From<&CoronalPoints> for CoronalPointsIR {
 
 const MAX_NUM_VERTS_IN_CURVE: usize = 10;
 
+fn offsetted_rotate_array2(
+    points: ArrayView2<f64>,
+    offset: ArrayView1<f64>,
+    rot_mat: ArrayView2<f64>,
+) -> Array2<f64> {
+    let offsetted = &points - &offset;
+    let rotated = offsetted.dot(&rot_mat.t());
+    rotated + offset
+}
+
+fn offsetted_rotate_array3(
+    points: ArrayView3<f64>,
+    offset: ArrayView1<f64>,
+    rot_mat: ArrayView2<f64>,
+) -> Array3<f64> {
+    let offsetted = &points - &offset;
+    // reshape Array3 to Array2
+    let shape = points.shape();
+    let offsetted = offsetted
+        .as_standard_layout()
+        .into_owned()
+        .into_shape((shape[0] * shape[1], 2))
+        .unwrap();
+    let rotated = offsetted.dot(&rot_mat.t());
+
+    rotated.into_shape((shape[0], shape[1], 2)).unwrap() + offset
+}
+
 impl CoronalPoints {
     pub fn spinal_poly(&self, xs: ArrayView1<f64>) -> Array1<f64> {
         polynomial(xs, self.c_coefs.view())
@@ -739,7 +789,7 @@ impl CoronalPoints {
         }
     }
 
-    pub fn identify_curves(&self) -> CurveDesc {
+    fn identify_curves_impl(&self) -> CurveDesc {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
         if let Some(largest_curve) = self.find_largest_curve() {
@@ -773,6 +823,15 @@ impl CoronalPoints {
         }
         let apices = curves.apices(self);
         CurveDesc::new(curves, apices, major_curve)
+    }
+
+    pub fn identify_curves(&self) -> CurveDesc {
+        let mut cloned = self.clone();
+        cloned.spine.verticalize();
+        cloned.c_coefs = cloned.spine.fit_poly().unwrap();
+
+        cloned.spine.fit_poly().unwrap();
+        cloned.identify_curves_impl()
     }
 
     pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {

@@ -47,6 +47,17 @@ fn test_curve(
     let json_filename = data_directory().join(json_filename);
     let scol = load_lateral_points(&json_filename)?;
 
+    // test verticalize spine
+    let mut spine = scol.spine.clone();
+    spine.verticalize();
+
+    // check if top and bottom centroids are vertically aligned
+    let centroids = spine.c_c7tl.clone();
+    let top = centroids.index_axis(Axis(0), 0);
+    let bottom = centroids.index_axis(Axis(0), centroids.len_of(Axis(0)) - 1);
+
+    assert_ne!((top[0] - bottom[0]).abs(), 0.001);
+
     let curve_desc = scol.identify_curves();
     let (curve_set, apex_set, major_curve_result) =
         (curve_desc.curves, curve_desc.apices, curve_desc.major_curve);
