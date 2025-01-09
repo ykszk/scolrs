@@ -392,7 +392,7 @@ impl Painter {
         self.bbox.update((arc_end[0], arc_end[1]));
         let text = self.text(
             format!("{:.1}°", angle_deg).as_str(),
-            rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
+            rotate_around(arc_start.view(), cross.view(), -angle_rad / 2.0),
             title,
             None,
         );
