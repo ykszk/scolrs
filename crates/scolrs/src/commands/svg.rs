@@ -516,6 +516,7 @@ mod tests {
     #[test]
     fn svg_cmd_scol_case2() -> Result<()> {
         _test_case("case2", false)?;
+        _test_case("case2_cropped", false)?;
         _test_case("case2", true)
     }
 
