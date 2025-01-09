@@ -39,6 +39,7 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
 pub struct Painter {
     pub param: DrawParam,
     pub size: (usize, usize),
+    pub bbox: BoundingBox,
 }
 
 const X_ATTRS: [&str; 4] = ["x", "cx", "x1", "x2"];
@@ -247,11 +248,15 @@ where
 
 impl Painter {
     pub fn new(param: DrawParam, size: (usize, usize)) -> Self {
-        Self { param, size }
+        Self {
+            param,
+            size,
+            bbox: BoundingBox::default(),
+        }
     }
 
     pub fn text<S>(
-        &self,
+        &mut self,
         text: &str,
         coords: ArrayBase<S, Ix1>,
         title: Option<&str>,
@@ -269,6 +274,7 @@ impl Painter {
         if let Some(title) = title {
             t = t.add(self.title(title))
         }
+        self.bbox.update((coords[0], coords[1]));
         t
     }
 
@@ -276,20 +282,23 @@ impl Painter {
         element::Title::new(text)
     }
 
-    pub fn point<S>(&self, point: ArrayBase<S, Ix1>) -> element::Circle
+    pub fn point<S>(&mut self, point: ArrayBase<S, Ix1>) -> element::Circle
     where
         S: ndarray::Data<Elem = f64>,
     {
+        self.bbox.update((point[0], point[1]));
         element::Circle::new()
             .set("cx", point[0])
             .set("cy", point[1])
             .set("r", self.param.radius)
     }
 
-    pub fn line<S>(&self, start_end: ArrayBase<S, Ix2>) -> element::Line
+    pub fn line<S>(&mut self, start_end: ArrayBase<S, Ix2>) -> element::Line
     where
         S: ndarray::Data<Elem = f64>,
     {
+        self.bbox.update((start_end[[0, 0]], start_end[[0, 1]]));
+        self.bbox.update((start_end[[1, 0]], start_end[[1, 1]]));
         element::Line::new()
             .set("x1", start_end[[0, 0]])
             .set("y1", start_end[[0, 1]])
@@ -297,7 +306,10 @@ impl Painter {
             .set("y2", start_end[[1, 1]])
     }
 
-    pub fn horizontal_line(&self, y: f64) -> element::Line {
+    pub fn horizontal_line(&mut self, y: f64) -> element::Line {
+        // Not updating bbox because current implementation does not respect scaled coordinates
+        // self.bbox.update((0.0, y));
+        // self.bbox.update((self.size.0 as f64, y));
         element::Line::new()
             .set("x1", 0)
             .set("y1", y)
@@ -305,8 +317,10 @@ impl Painter {
             .set("y2", y)
     }
 
-    #[allow(dead_code)]
-    pub fn vertical_line(&self, x: f64) -> element::Line {
+    pub fn vertical_line(&mut self, x: f64) -> element::Line {
+        // Not updating bbox because current implementation does not respect scaled coordinates
+        // self.bbox.update((x, 0.0));
+        // self.bbox.update((x, self.size.1 as f64));
         element::Line::new()
             .set("x1", x)
             .set("y1", 0)
@@ -314,24 +328,30 @@ impl Painter {
             .set("y2", self.size.1)
     }
 
-    pub fn polyline<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polyline
+    pub fn polyline<S>(&mut self, points: ArrayBase<S, Ix2>) -> element::Polyline
     where
         S: ndarray::Data<Elem = f64>,
     {
+        for point in points.axis_iter(Axis(0)) {
+            self.bbox.update((point[0], point[1]));
+        }
         let s = points.join(" ");
         element::Polyline::new().set("points", s)
     }
 
-    pub fn polygon<S>(&self, points: ArrayBase<S, Ix2>) -> element::Polygon
+    pub fn polygon<S>(&mut self, points: ArrayBase<S, Ix2>) -> element::Polygon
     where
         S: ndarray::Data<Elem = f64>,
     {
+        for point in points.axis_iter(Axis(0)) {
+            self.bbox.update((point[0], point[1]));
+        }
         let s = points.join(" ");
         element::Polygon::new().set("points", s)
     }
 
     pub fn angle_between<S>(
-        &self,
+        &mut self,
         mut group: element::Group,
         line1: ArrayBase<S, Ix2>,
         line2: ArrayBase<S, Ix2>,
@@ -368,6 +388,8 @@ impl Painter {
             ));
         let arc = element::Path::new().set('d', data).set("fill", "none");
         group = group.add(arc);
+        self.bbox.update((arc_start[0], arc_start[1]));
+        self.bbox.update((arc_end[0], arc_end[1]));
         let text = self.text(
             format!("{:.1}°", angle_deg).as_str(),
             rotate_around(arc_start.view(), cross.view(), angle_rad / 2.0),
@@ -393,7 +415,7 @@ impl Painter {
     }
 
     pub fn cobb_from_plates(
-        &self,
+        &mut self,
         mut group: element::Group,
         sup_plate_inf_plate: (Array2<f64>, Array2<f64>),
         aux_param: &CobbAux,
@@ -504,7 +526,7 @@ impl Painter {
     }
 
     pub fn cobb(
-        &self,
+        &mut self,
         group: element::Group,
         spine: &Spine,
         curve: &Curve,
@@ -543,6 +565,47 @@ impl Painter {
             .set("width", self.size.0)
             .set("height", self.size.1)
             .set("viewBox", (0, 0, self.size.0, self.size.1))
+            .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
+        document = document.add(bg);
+        Ok(document)
+    }
+
+    pub fn doc_w_background_and_bbox(
+        &self,
+        image: &labelme_rs::image::DynamicImage,
+        bbox: BoundingBox,
+    ) -> Result<svg::Document, labelme_rs::LabelMeDataError> {
+        let b64 = format!(
+            "data:image/jpeg;base64,{}",
+            labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Jpeg)?
+        );
+
+        let bg = element::Image::new()
+            .set("x", 0i64)
+            .set("y", 0i64)
+            .set("width", self.size.0)
+            .set("height", self.size.1)
+            .set("xlink:href", b64);
+
+        let mut view_box = (0, 0, self.size.0 as i64, self.size.1 as i64);
+
+        if bbox.0 .0 < 0.0 {
+            view_box.0 = bbox.0 .0 as i64;
+        }
+        if bbox.0 .1 < 0.0 {
+            view_box.1 = bbox.0 .1 as i64;
+        }
+        if bbox.1 .0 > self.size.0 as f64 {
+            view_box.2 = bbox.1 .0 as i64;
+        }
+        if bbox.1 .1 > self.size.1 as f64 {
+            view_box.3 = bbox.1 .1 as i64;
+        }
+
+        let mut document = svg::Document::new()
+            .set("width", view_box.2 - view_box.0)
+            .set("height", view_box.3 - view_box.1)
+            .set("viewBox", view_box)
             .set("xmlns:xlink", "http://www.w3.org/1999/xlink");
         document = document.add(bg);
         Ok(document)
@@ -660,10 +723,44 @@ pub trait Named {
     }
 }
 
+/// Two dimensional bounding box with top-left and bottom-right corners
+#[derive(Debug, Clone, Copy)]
+pub struct BoundingBox((f64, f64), (f64, f64));
+
+impl Default for BoundingBox {
+    fn default() -> Self {
+        Self((f64::MAX, f64::MAX), (f64::MIN, f64::MIN))
+    }
+}
+
+impl BoundingBox {
+    pub fn update(&mut self, point: (f64, f64)) {
+        let (x, y) = point;
+        if x < self.0 .0 {
+            self.0 .0 = x;
+        }
+        if y < self.0 .1 {
+            self.0 .1 = y;
+        }
+        if x > self.1 .0 {
+            self.1 .0 = x;
+        }
+        if y > self.1 .1 {
+            self.1 .1 = y;
+        }
+    }
+    pub fn scale(&self, sx: f64, sy: f64) -> Self {
+        Self(
+            (self.0 .0 * sx, self.0 .1 * sy),
+            (self.1 .0 * sx, self.1 .1 * sy),
+        )
+    }
+}
+
 pub trait DrawComponent: Named {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError>;
@@ -737,7 +834,7 @@ impl CommonComponent for ImageOverlay {}
 impl DrawComponent for ImageOverlay {
     fn draw(
         &self,
-        _painter: &Painter,
+        _painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -799,7 +896,7 @@ impl CommonComponent for DrawPointSet {}
 impl DrawComponent for DrawPointSet {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -825,7 +922,7 @@ impl CommonComponent for VertebralLabels<'_> {}
 impl DrawComponent for VertebralLabels<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -863,7 +960,7 @@ impl CommonComponent for VertebralPoints<'_> {}
 impl DrawComponent for VertebralPoints<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -876,7 +973,7 @@ pub trait DrawCorners {
     fn draw_corners(
         &self,
         group: element::Group,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError>;
 }
@@ -889,7 +986,7 @@ where
     fn draw_corners(
         &self,
         group: element::Group,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let mut g_corners = group;
@@ -935,7 +1032,7 @@ impl CommonComponent for Centroids<'_> {}
 impl DrawComponent for Centroids<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -965,7 +1062,7 @@ macro_rules! impl_cobb_angle {
         impl<'a> DrawComponent for $name<'a> {
             fn draw(
                 &self,
-                painter: &Painter,
+                painter: &mut Painter,
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, DrawError> {
@@ -1031,7 +1128,7 @@ impl CoronalComponent for CurveApex<'_> {}
 impl DrawComponent for CurveApex<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1067,7 +1164,7 @@ impl CommonComponent for SpinalLine<'_> {}
 impl DrawComponent for SpinalLine<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1098,7 +1195,7 @@ impl CoronalComponent for Csvl<'_> {}
 impl DrawComponent for Csvl<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1124,7 +1221,7 @@ impl DrawComponent for Csvl<'_> {
 
 /// Shared function for drawing T1 tilt angle in coronal view and T1 slope in sagittal view
 fn draw_t1_angle<T>(
-    painter: &Painter,
+    painter: &mut Painter,
     line_colors: &mut ColorPalette,
     spine: &Spine,
     component: &T,
@@ -1186,7 +1283,7 @@ impl CoronalComponent for T1TiltAngle<'_> {}
 impl DrawComponent for T1TiltAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1224,7 +1321,7 @@ impl CoronalBalance<'_> {
 impl DrawComponent for CoronalBalance<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1260,7 +1357,7 @@ impl CoronalComponent for ClavicleAngle<'_> {}
 impl DrawComponent for ClavicleAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1305,7 +1402,7 @@ fn draw_difference_in_x(
     point_label: &str,
     draw_label: &str,
     points: ArrayView2<f64>,
-    painter: &Painter,
+    painter: &mut Painter,
     unit: &str,
 ) -> Result<element::Group, DrawError> {
     let dx = difference_in_x(point_label, points)?;
@@ -1348,7 +1445,7 @@ fn draw_difference_in_y(
     point_label: &str,
     draw_label: &str,
     points: ArrayView2<f64>,
-    painter: &Painter,
+    painter: &mut Painter,
     unit: &str,
 ) -> Result<element::Group, DrawError> {
     let dy = difference_in_y(point_label, points)?;
@@ -1377,7 +1474,7 @@ impl CoronalComponent for ShoulderHeight<'_> {}
 impl DrawComponent for ShoulderHeight<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1417,7 +1514,7 @@ fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError>
 
 fn draw_tilt_angle(
     group: element::Group,
-    painter: &Painter,
+    painter: &mut Painter,
     points: &ndarray::Array2<f64>,
     title: Option<&str>,
 ) -> element::Group {
@@ -1450,7 +1547,7 @@ impl CoronalComponent for PelvicObliquity<'_> {}
 impl DrawComponent for PelvicObliquity<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1478,7 +1575,7 @@ impl CoronalComponent for SacralObliquity<'_> {}
 impl DrawComponent for SacralObliquity<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1534,7 +1631,7 @@ impl CoronalComponent for LegLengthDiscrepancy<'_> {}
 impl DrawComponent for LegLengthDiscrepancy<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1568,7 +1665,7 @@ pub fn draw_incidence_angle(
     label: &str,
     femoral_heads: ArrayView2<f64>,
     plate: ArrayView2<f64>,
-    painter: &Painter,
+    painter: &mut Painter,
 ) -> element::Group {
     let mut g = group;
     let mid_femoral_heads = femoral_heads.mean_axis(Axis(0)).unwrap();
@@ -1605,7 +1702,7 @@ macro_rules! impl_kyophosis {
         impl<'a> DrawComponent for $name<'a> {
             fn draw(
                 &self,
-                painter: &Painter,
+                painter: &mut Painter,
                 _label_colors: &mut ColorPalette,
                 line_colors: &mut ColorPalette,
             ) -> Result<element::Group, DrawError> {
@@ -1722,7 +1819,7 @@ impl SagittalComponent for LumbarLordosis<'_> {}
 impl DrawComponent for LumbarLordosis<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1765,7 +1862,7 @@ impl SagittalComponent for T1Slope<'_> {}
 impl DrawComponent for T1Slope<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1802,7 +1899,7 @@ impl SagittalComponent for SagittalBalance<'_> {}
 impl DrawComponent for SagittalBalance<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1850,7 +1947,7 @@ impl SagittalComponent for LumbosacralAngle<'_> {}
 impl DrawComponent for LumbosacralAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1891,7 +1988,7 @@ impl SagittalComponent for PelvicIncidence<'_> {}
 impl DrawComponent for PelvicIncidence<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1937,7 +2034,7 @@ impl SagittalComponent for PelvicTilt<'_> {}
 impl DrawComponent for PelvicTilt<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -1991,7 +2088,7 @@ impl SacralSlope<'_> {
 impl DrawComponent for SacralSlope<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -2036,7 +2133,7 @@ impl SagittalComponent for L5IncidenceAngle<'_> {}
 impl DrawComponent for L5IncidenceAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -2075,7 +2172,7 @@ impl MeasureComponent for L5IncidenceAngle<'_> {
 fn draw_femoral_center(
     group: element::Group,
     femoral_head: ArrayView2<f64>,
-    painter: &Painter,
+    painter: &mut Painter,
 ) -> element::Group {
     let mut g = group;
     for p in femoral_head.axis_iter(Axis(0)) {
@@ -2110,7 +2207,7 @@ impl SagittalComponent for PelvicRadiusAngle<'_> {}
 impl DrawComponent for PelvicRadiusAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -2283,7 +2380,7 @@ pub fn draw_components<'a, T, S>(
     data: T,
     draws: &[S],
     hide: &[S],
-    painter: &Painter,
+    painter: &mut Painter,
     palettes: ColorPalettes,
 ) -> Result<Vec<Box<dyn Node>>, DrawError>
 where
@@ -2320,13 +2417,13 @@ where
     let spacing = data.image_metadata().spacing_xy;
     let svg_to_image_ratio_x = painter.size.0 as f64 / data.image_metadata().width as f64;
     let svg_to_image_ratio_y = painter.size.1 as f64 / data.image_metadata().height as f64;
-    let groups = scale_coordinates(
-        (
-            1.0 / spacing.0 * svg_to_image_ratio_x,
-            1.0 / spacing.1 * svg_to_image_ratio_y,
-        ),
-        groups,
+    let scale = (
+        1.0 / spacing.0 * svg_to_image_ratio_x,
+        1.0 / spacing.1 * svg_to_image_ratio_y,
     );
+    let groups = scale_coordinates(scale, groups);
+    // adjust bbox
+    painter.bbox = painter.bbox.scale(scale.0, scale.1);
 
     Ok(groups)
 }
@@ -2351,15 +2448,18 @@ where
 {
     let (draw, hide) = draw_hide;
     let style = element::Style::new(draw_param.style());
-    let painter = Painter::new(draw_param, svg_size);
+    let mut painter = Painter::new(draw_param, svg_size);
     let image: Cow<DynamicImage> = match resize_param {
         Some(resize_param) => Cow::Owned(resize_param.resize(&image)),
         None => Cow::Borrowed(&image),
     };
-    let mut document = painter.doc_w_background(&image)?;
-    document = document.add(style);
 
-    let groups = draw_components(data, draw, hide, &painter, palettes)?;
+    // draw first to update the internal bounding box
+    let groups = draw_components(data, draw, hide, &mut painter, palettes)?;
+
+    let bbox = painter.bbox;
+    let mut document = painter.doc_w_background_and_bbox(&image, bbox)?;
+    document = document.add(style);
 
     for g in groups {
         document = document.add(g);

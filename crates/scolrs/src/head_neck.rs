@@ -451,7 +451,7 @@ impl NeckSagittalComponent for Sacs<'_> {}
 impl DrawComponent for Sacs<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -582,7 +582,7 @@ impl Adi<'_> {
 impl DrawComponent for Adi<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -641,7 +641,7 @@ impl OC2<'_> {
 impl DrawComponent for OC2<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -687,7 +687,7 @@ impl NeckSagittalComponent for WedgeAngle<'_> {}
 impl DrawComponent for WedgeAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -780,7 +780,7 @@ impl ModifiedRenawatIndex<'_> {
 impl DrawComponent for ModifiedRenawatIndex<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -841,7 +841,7 @@ impl ThoracicInletAngle<'_> {
 impl DrawComponent for ThoracicInletAngle<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -896,7 +896,7 @@ impl NeckTilt<'_> {
 impl DrawComponent for NeckTilt<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -948,7 +948,7 @@ impl NeckSagittalComponent for CervicalPoints<'_> {}
 impl DrawComponent for CervicalPoints<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
@@ -988,7 +988,7 @@ impl NeckSagittalComponent for VertebralLabels<'_> {}
 impl DrawComponent for VertebralLabels<'_> {
     fn draw(
         &self,
-        painter: &Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {

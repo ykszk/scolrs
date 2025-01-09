@@ -210,7 +210,7 @@ where
     let draw_param: DrawParam = serde_json::from_str(draw_param_json)?;
 
     let style = element::Style::new(draw_param.style());
-    let painter = Painter::new(draw_param, svg_size);
+    let mut painter = Painter::new(draw_param, svg_size);
 
     let mut line_colors = ColorPalette::new(line_colors);
     let mut label_colors = ColorPalette::new(label_colors);
@@ -224,9 +224,7 @@ where
         None => Cow::Borrowed(&image),
     };
 
-    let mut document = painter.doc_w_background(&image)?;
-
-    document = document.add(style);
+    let mut middle_layers = Vec::new();
 
     if let Some(overlay) = overlay {
         let overlay_image = ndarray_to_dynamic_image(overlay)?;
@@ -235,11 +233,11 @@ where
             "heatmap".to_string(),
             None,
             overlay_image,
-            (svg_size.0 as usize, svg_size.1 as usize),
+            (svg_size.0, svg_size.1),
         )
-        .draw(&painter, &mut label_colors, &mut line_colors)?;
+        .draw(&mut painter, &mut label_colors, &mut line_colors)?;
         let g = g.set("visibility", "hidden");
-        document = document.add(g);
+        middle_layers.push(g);
     }
     if let Some(mut point_sets) = point_sets {
         // Scale the coordinates from the original image size to the svg size
@@ -256,12 +254,12 @@ where
 
         for (label, point_set) in point_sets {
             let g = scolrs::draw::DrawPointSet::new(label.clone(), label, None, point_set).draw(
-                &painter,
+                &mut painter,
                 &mut label_colors,
                 &mut line_colors,
             )?;
             let g = g.set("visibility", "hidden");
-            document = document.add(g);
+            middle_layers.push(g);
         }
     }
     let palettes = ColorPalettes {
@@ -269,7 +267,17 @@ where
         label_colors,
     };
 
-    let groups = draw_components(data, &draws, &hide, &painter, palettes)?;
+    // draw first to update the internal bounding box
+    let groups = draw_components(data, &draws, &hide, &mut painter, palettes)?;
+
+    let bbox = painter.bbox;
+    let mut document = painter.doc_w_background_and_bbox(&image, bbox)?;
+
+    document = document.add(style);
+
+    for g in middle_layers {
+        document = document.add(g);
+    }
 
     for g in groups {
         document = document.add(g);
