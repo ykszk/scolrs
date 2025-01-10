@@ -32,7 +32,7 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         File::create(&args.output).with_context(|| format!("Writing to {:?}", args.output))?,
     );
     writer.ws("<html>\n")?;
-    writer.ws("<head>")?;
+    writer.ws("<head><meta charset=\"utf-8\">")?;
     if let Some(title) = args.title {
         writer.ws(&format!("<title>{}</title>\n", title))?;
     }

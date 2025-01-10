@@ -7,6 +7,8 @@ function initializeMagnifier() {
     const toggleAllBtn = overlay.querySelector('#toggle-all-btn');
     const imageTitle = overlay.querySelector('#image-title');
 
+    let show_all = false;
+
     // Add click handlers to all magnify buttons
     document.querySelectorAll('.magnify-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -63,6 +65,8 @@ function initializeMagnifier() {
                     }
                 });
 
+                show_all = false;
+
                 // Show overlay
                 overlay.style.display = 'flex';
             }
@@ -84,26 +88,30 @@ function initializeMagnifier() {
         });
     });
 
+    function close_popup() {
+        toggleAllBtn.innerHTML = "Hide All";
+        overlay.style.display = 'none';
+    }
+
     // Close popup when clicking close button
     closeBtn.addEventListener('click', () => {
-        overlay.style.display = 'none';
+        close_popup();
     });
 
     // Close popup when clicking outside the image
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
-            overlay.style.display = 'none';
+            close_popup();
         }
     });
 
     // Handle escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && overlay.style.display === 'flex') {
-            overlay.style.display = 'none';
+            close_popup();
         }
     });
 
-    let show_all = false;
     toggleAllBtn.addEventListener('click', () => {
         const checkboxes = overlay.querySelectorAll('input[type="checkbox"]');
         checkboxes.forEach(cb => {
