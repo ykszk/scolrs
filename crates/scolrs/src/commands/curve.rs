@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use anyhow::Result;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
-use scolrs::{CoronalPoints, Curve, CurveDesc, VertebraDiscIndex};
+use scolrs::{CoronalPoints, Curve, CurveDesc, CurveScoreSet, CurveSet, VertebraDiscIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::CurveArgs;
@@ -19,6 +19,7 @@ pub struct CurveInfoAll {
     #[serde(flatten)]
     pub info: CurveDesc,
     pub all_curves: Vec<(Curve, f64, VertebraDiscIndex)>,
+    pub all_curve_scores: Vec<(CurveSet, CurveScoreSet)>,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoAllLine {
@@ -31,8 +32,8 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
 
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let mut coronal_points = CoronalPoints::try_from(data)?;
-        let info = coronal_points.identify_curves();
         coronal_points.spine.verticalize();
+        let info = coronal_points.identify_curves();
         let all_curves = coronal_points.find_all_curves();
         let all_curves: Vec<_> = all_curves
             .into_iter()
@@ -41,7 +42,19 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
                 (curve, angle, apex)
             })
             .collect();
-        Ok(CurveInfoAll { info, all_curves })
+        let all_curve_sets = coronal_points.find_all_curve_sets();
+        let all_curve_scores = all_curve_sets
+            .into_iter()
+            .map(|set| {
+                let score = set.score(&coronal_points);
+                (set, score)
+            })
+            .collect();
+        Ok(CurveInfoAll {
+            info,
+            all_curves,
+            all_curve_scores,
+        })
     }
 }
 

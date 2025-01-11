@@ -649,77 +649,133 @@ fn offsetted_rotate_array3(
     rotated.into_shape((shape[0], shape[1], 2)).unwrap() + offset
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct CurveScore {
+    range: f64,
+    apex: f64,
+    angle: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub struct CurveScoreSet {
+    pt: Option<CurveScore>,
+    mt: Option<CurveScore>,
+    tll: Option<CurveScore>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CurveWeights {
+    pt: CurveScore,
+    mt: CurveScore,
+    tll: CurveScore,
+}
+
+impl CurveScoreSet {
+    fn total(&self, weights: &CurveWeights) -> i64 {
+        let mut total = 0.0;
+        if let Some(pt) = self.pt {
+            total += pt.range * weights.pt.range;
+            total += pt.apex * weights.pt.apex;
+            total += pt.angle * weights.pt.angle;
+        }
+        if let Some(mt) = self.mt {
+            total += mt.range * weights.mt.range;
+            total += mt.apex * weights.mt.apex;
+            total += mt.angle * weights.mt.angle;
+        }
+        if let Some(tll) = self.tll {
+            total += tll.range * weights.tll.range;
+            total += tll.apex * weights.tll.apex;
+            total += tll.angle * weights.tll.angle;
+        }
+        (total * 100.0).round() as i64
+    }
+}
+
 /// Assess the curve set
 ///
 /// For mt curve, add number of thoracic vertebrae and deduct number of lumbar vertebrae
 /// For tll curve, deduct number of thoracic vertebrae and add number of lumbar vertebrae
 /// For pt curve, add one point if the curve is above T12
-fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> i16 {
-    let mut points = 0.0;
+fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> CurveScoreSet {
+    let mut curve_score_set = CurveScoreSet::default();
     if let Some((curve, angle)) = &curve_set.pt {
-        // for i in curve.sup..=curve.inf {
-        //     let vertebra = VertebralIndex::from(i as u8);
-        //     // add number of thoracic vertebrae
-        //     if vertebra <= VertebralIndex::T3 {
-        //         points += 1.0;
-        //     }
-        //     // deduct number of lumbar vertebrae
-        //     if vertebra > VertebralIndex::T5 {
-        //         points -= 1.0;
-        //     }
-        // }
-        let apex = apex_set.mt.unwrap();
-        points += ((VertebraDiscIndex::T3 as i8 - apex as i8) as f64 / 2.0).max(5.0);
-        // points += ((VertebraDiscIndex::T3 as i8 - apex as i8) as f64 / 2.0).max(2.0);
-        // points += (angle.abs() / 50.0).max(3.0);
-
-        if let Some((_curve, mt_angle)) = &curve_set.mt {
-            points += (mt_angle - angle).abs() / 40.0;
-        } else {
-            points += angle.abs() / 40.0;
+        let mut range_score = 0.0;
+        for i in curve.sup..=curve.inf {
+            let vertebra = VertebralIndex::from(i as u8);
+            if vertebra <= VertebralIndex::T3 {
+                range_score += 1.0;
+            }
+            if vertebra > VertebralIndex::T5 {
+                range_score -= 1.0;
+            }
         }
+        let apex = apex_set.pt.unwrap();
+        let apex_score = -(VertebraDiscIndex::T2 as i8 - apex as i8) as f64;
+
+        let angle_score = angle.abs();
+        curve_score_set.pt = Some(CurveScore {
+            range: range_score,
+            apex: apex_score,
+            angle: angle_score,
+        });
     };
     if let Some((curve, angle)) = &curve_set.mt {
+        let mut range_score = 0.0;
         for i in curve.sup..=curve.inf {
             let vertebra = VertebralIndex::from(i as u8);
             // add number of thoracic vertebrae
             if vertebra <= VertebralIndex::T12 {
-                points += 1.0;
+                range_score += 1.0;
             }
             // deduct number of non-thoracolumbar vertebrae
             if vertebra >= VertebralIndex::L2 {
-                points -= 1.0;
+                range_score -= 1.0;
             }
         }
         let apex = apex_set.mt.unwrap();
-        // points += (10.0 - (VertebraDiscIndex::T8 as i8 - apex as i8).abs() as f64 / 2.0).max(0.0);
-        points += ((VertebraDiscIndex::DiscT11T12 as i8 - apex as i8) as f64 / 2.0).max(5.0);
-        if let Some((_curve, tll_angle)) = &curve_set.tll {
-            points += (tll_angle - angle).abs() / 10.0;
+        // let apex_score = ((VertebraDiscIndex::T11 as i8 - apex as i8) as f64 / 2.0).max(5.0);
+        let apex_score = (-(VertebraDiscIndex::T9 as i8 - apex as i8) as f64).max(-5.0);
+        let angle_score = if let Some((_curve, pt_angle)) = &curve_set.pt {
+            (pt_angle - angle).abs()
         } else {
-            points += angle.abs() / 10.0;
-        }
+            angle.abs()
+        };
+        curve_score_set.mt = Some(CurveScore {
+            range: range_score,
+            apex: apex_score,
+            angle: angle_score,
+        });
     };
     if let Some((curve, angle)) = &curve_set.tll {
+        let mut range_score = 0.0;
         for i in curve.sup..=curve.inf {
             let vertebra = VertebralIndex::from(i as u8);
             // add number of thoracolumbar/lumbar vertebrae
             if vertebra >= VertebralIndex::T10 {
-                points += 1.0;
+                range_score += 1.0;
             }
             // deduct number of non-thoracolumbar vertebrae
             if vertebra <= VertebralIndex::T9 {
-                points -= 1.0;
+                range_score -= 1.0;
             }
         }
         let apex = apex_set.tll.unwrap();
-        // points += (10.0 - (VertebraDiscIndex::L2 as i8 - apex as i8).abs() as f64 / 2.0).max(0.0);
-        points += (apex as i8 - VertebraDiscIndex::DiscT11T12 as i8) as f64 / 2.0;
-        if curve_set.tll.is_none() {
-            points += angle.abs() / 10.0;
-        }
+        // let apex_score = ((VertebraDiscIndex::DiscT11T12 as i8 - apex as i8) as f64 / 2.0).max(5.0);
+        let apex_score = (-(VertebraDiscIndex::L2 as i8 - apex as i8) as f64).max(-5.0);
+        let angle_score = if let Some((_curve, mt_angle)) = &curve_set.mt {
+            (mt_angle - angle).abs()
+        } else {
+            angle.abs()
+        };
+        curve_score_set.tll = Some(CurveScore {
+            range: range_score,
+            apex: apex_score,
+            angle: angle_score,
+        });
     };
-    (points * 10.00) as i16
+    curve_score_set
 }
 
 impl CoronalPoints {
@@ -868,12 +924,7 @@ impl CoronalPoints {
         }
     }
 
-    /// Identify the curves of the spine
-    ///
-    /// The curves is optimized by the [assess_curve_set] function
-    fn identify_curves_impl(&self) -> CurveDesc {
-        let mut curves = CurveSet::default();
-        let mut major_curve = None;
+    pub fn find_all_curve_sets(&self) -> Vec<CurveSet> {
         if let Some(largest_curve) = self.find_largest_curve() {
             let ups = self.find_all_up(largest_curve.0.sup);
             let downs = self.find_all_down(largest_curve.0.inf);
@@ -923,18 +974,47 @@ impl CoronalPoints {
                     });
                 }
             }
-            if !curveset_candidates.is_empty() {
-                let points = curveset_candidates
-                    .iter()
-                    .map(|cs| {
-                        let apex_set = cs.apices(self);
-                        (cs, assess_curve_set(cs, apex_set))
-                    })
-                    .collect::<Vec<_>>();
-                let (curve_set, _) = points.iter().max_by_key(|(_, points)| *points).unwrap();
-                curves = (*curve_set).clone();
-                major_curve = curves.major_curve();
-            }
+            curveset_candidates
+        } else {
+            Vec::default()
+        }
+    }
+
+    /// Identify the curves of the spine
+    ///
+    /// The curves is optimized by the [assess_curve_set] function
+    fn identify_curves_impl(&self) -> CurveDesc {
+        let mut curves = CurveSet::default();
+        let mut major_curve = None;
+        let curveset_candidates = self.find_all_curve_sets();
+        if !curveset_candidates.is_empty() {
+            let points = curveset_candidates
+                .iter()
+                .map(|cs| {
+                    let apex_set = cs.apices(self);
+                    let weights = CurveWeights {
+                        pt: CurveScore {
+                            range: 3.58,
+                            apex: 0.58,
+                            angle: 0.61,
+                        },
+                        mt: CurveScore {
+                            range: 9.95,
+                            apex: 4.09,
+                            angle: 1.15,
+                        },
+                        tll: CurveScore {
+                            range: 10.0,
+                            apex: 1.05,
+                            angle: 2.84,
+                        },
+                    };
+                    (cs, assess_curve_set(cs, apex_set).total(&weights))
+                })
+                .collect::<Vec<_>>();
+            let (curve_set, _) = points.iter().max_by_key(|(_, points)| *points).unwrap();
+            curves = (*curve_set).clone();
+            major_curve = curves.major_curve();
         }
         let apices = curves.apices(self);
         CurveDesc::new(curves, apices, major_curve)
@@ -1170,6 +1250,10 @@ impl CurveSet {
         } else {
             Some(MajorCurve::TLL)
         }
+    }
+
+    pub fn score(&self, coronal_points: &CoronalPoints) -> CurveScoreSet {
+        assess_curve_set(self, self.apices(coronal_points))
     }
 }
 
