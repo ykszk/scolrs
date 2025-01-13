@@ -711,8 +711,9 @@ fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> CurveScoreSet {
                 range_score -= 1.0;
             }
         }
-        let apex = apex_set.pt.unwrap();
-        let apex_score = -(VertebraDiscIndex::T2 as i8 - apex as i8) as f64;
+        let apex = apex_set.pt.unwrap() as i8;
+        let apex = (apex + (curve.inf + curve.sup) as i8 / 2) / 2;
+        let apex_score = -(VertebraDiscIndex::T2 as i8 - apex) as f64;
 
         let angle_score = angle.abs();
         curve_score_set.pt = Some(CurveScore {
@@ -734,9 +735,9 @@ fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> CurveScoreSet {
                 range_score -= 1.0;
             }
         }
-        let apex = apex_set.mt.unwrap();
-        // let apex_score = ((VertebraDiscIndex::T11 as i8 - apex as i8) as f64 / 2.0).max(5.0);
-        let apex_score = (-(VertebraDiscIndex::T9 as i8 - apex as i8) as f64).max(-5.0);
+        let apex = apex_set.mt.unwrap() as i8;
+        let apex = (apex + (curve.inf + curve.sup) as i8 / 2) / 2;
+        let apex_score = (-(VertebraDiscIndex::T9 as i8 - apex) as f64).max(-5.0);
         let angle_score = if let Some((_curve, pt_angle)) = &curve_set.pt {
             (pt_angle - angle).abs()
         } else {
@@ -761,9 +762,9 @@ fn assess_curve_set(curve_set: &CurveSet, apex_set: ApexSet) -> CurveScoreSet {
                 range_score -= 1.0;
             }
         }
-        let apex = apex_set.tll.unwrap();
-        // let apex_score = ((VertebraDiscIndex::DiscT11T12 as i8 - apex as i8) as f64 / 2.0).max(5.0);
-        let apex_score = (-(VertebraDiscIndex::L2 as i8 - apex as i8) as f64).max(-5.0);
+        let apex = apex_set.tll.unwrap() as i8;
+        let apex = (apex + (curve.inf + curve.sup) as i8 / 2) / 2;
+        let apex_score = (-(VertebraDiscIndex::L2 as i8 - apex) as f64).max(-5.0);
         let angle_score = if let Some((_curve, mt_angle)) = &curve_set.mt {
             (mt_angle - angle).abs()
         } else {
@@ -987,28 +988,29 @@ impl CoronalPoints {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
         let curveset_candidates = self.find_all_curve_sets();
+
         if !curveset_candidates.is_empty() {
+            let weights = CurveWeights {
+                pt: CurveScore {
+                    range: 9.4,
+                    apex: 0.0,
+                    angle: 4.2,
+                },
+                mt: CurveScore {
+                    range: 7.3,
+                    apex: 0.7,
+                    angle: 0.35,
+                },
+                tll: CurveScore {
+                    range: 9.2,
+                    apex: 1.7,
+                    angle: 3.9,
+                },
+            };
             let points = curveset_candidates
                 .iter()
                 .map(|cs| {
                     let apex_set = cs.apices(self);
-                    let weights = CurveWeights {
-                        pt: CurveScore {
-                            range: 3.58,
-                            apex: 0.58,
-                            angle: 0.61,
-                        },
-                        mt: CurveScore {
-                            range: 9.95,
-                            apex: 4.09,
-                            angle: 1.15,
-                        },
-                        tll: CurveScore {
-                            range: 10.0,
-                            apex: 1.05,
-                            angle: 2.84,
-                        },
-                    };
                     (cs, assess_curve_set(cs, apex_set).total(&weights))
                 })
                 .collect::<Vec<_>>();

@@ -33,7 +33,10 @@ impl TryFrom<&LabelMeData> for CurveInfoAll {
     fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
         let mut coronal_points = CoronalPoints::try_from(data)?;
         coronal_points.spine.verticalize();
+        coronal_points.c_coefs = coronal_points.spine.fit_poly().unwrap();
+
         let info = coronal_points.identify_curves();
+        coronal_points.spine.verticalize();
         let all_curves = coronal_points.find_all_curves();
         let all_curves: Vec<_> = all_curves
             .into_iter()
