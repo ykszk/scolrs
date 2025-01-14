@@ -1849,7 +1849,7 @@ impl MeasureComponent for LumbarLordosis<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
-        let angle = spine.angle(&Curve { sup, inf }).unwrap();
+        let angle = -spine.angle(&Curve { sup, inf }).unwrap();
         Ok(angle)
     }
 }
