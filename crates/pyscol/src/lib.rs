@@ -267,6 +267,9 @@ where
         label_colors,
     };
 
+    // reset the bounding box because DrawPointSet is not scaled in the same way as other components
+    painter.bbox = scolrs::draw::BoundingBox::default();
+
     // draw first to update the internal bounding box
     let groups = draw_components(data, &draws, &hide, &mut painter, palettes)?;
 
