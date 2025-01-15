@@ -232,6 +232,14 @@ pub struct MeasureArgs {
     pub subcommand: MeasureSubCommands,
 }
 
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq)]
+pub enum CurveSetAlgorithm {
+    /// Weighted sum of the scores. Use --weights to specify the weights
+    Score,
+    /// Algorithm based on the position of the curve apex
+    Apex,
+}
+
 #[derive(Parser, Debug)]
 pub struct CurveArgs {
     /// Input labelme json/ndjson filename. Specify '-' for stdin with ndjson format
@@ -242,6 +250,18 @@ pub struct CurveArgs {
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+    /// Curve set selection algorithm
+    #[clap(long, default_value = "score")]
+    pub algorithm: CurveSetAlgorithm,
+    /// Weights for the score algorithm
+    #[clap(
+        short,
+        long,
+        allow_hyphen_values = true,
+        num_args = 9,
+        value_name = "x"
+    )]
+    pub weights: Option<Vec<f64>>,
 }
 
 #[derive(Parser, Debug)]

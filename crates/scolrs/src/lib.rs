@@ -665,10 +665,54 @@ pub struct CurveScoreSet {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CurveWeights {
+pub struct CurveWeights {
     pt: CurveScore,
     mt: CurveScore,
     tll: CurveScore,
+}
+
+impl Default for CurveWeights {
+    fn default() -> Self {
+        Self {
+            pt: CurveScore {
+                range: 9.4,
+                apex: 0.0,
+                angle: 4.2,
+            },
+            mt: CurveScore {
+                range: 7.3,
+                apex: 0.7,
+                angle: 0.35,
+            },
+            tll: CurveScore {
+                range: 9.2,
+                apex: 1.7,
+                angle: 3.9,
+            },
+        }
+    }
+}
+
+impl From<[f64; 9]> for CurveWeights {
+    fn from(weights: [f64; 9]) -> Self {
+        Self {
+            pt: CurveScore {
+                range: weights[0],
+                apex: weights[1],
+                angle: weights[2],
+            },
+            mt: CurveScore {
+                range: weights[3],
+                apex: weights[4],
+                angle: weights[5],
+            },
+            tll: CurveScore {
+                range: weights[6],
+                apex: weights[7],
+                angle: weights[8],
+            },
+        }
+    }
 }
 
 impl CurveScoreSet {
@@ -691,6 +735,11 @@ impl CurveScoreSet {
         }
         (total * 100.0).round() as i64
     }
+}
+
+pub enum CurveSetAlgorithm {
+    Score(CurveWeights),
+    Apex,
 }
 
 /// Assess the curve set
@@ -984,34 +1033,17 @@ impl CoronalPoints {
     /// Identify the curves of the spine
     ///
     /// The curves is optimized by the [assess_curve_set] function
-    fn identify_curves_impl(&self) -> CurveDesc {
+    fn identify_curves_score(&self, weights: &CurveWeights) -> CurveDesc {
         let mut curves = CurveSet::default();
         let mut major_curve = None;
         let curveset_candidates = self.find_all_curve_sets();
 
         if !curveset_candidates.is_empty() {
-            let weights = CurveWeights {
-                pt: CurveScore {
-                    range: 9.4,
-                    apex: 0.0,
-                    angle: 4.2,
-                },
-                mt: CurveScore {
-                    range: 7.3,
-                    apex: 0.7,
-                    angle: 0.35,
-                },
-                tll: CurveScore {
-                    range: 9.2,
-                    apex: 1.7,
-                    angle: 3.9,
-                },
-            };
             let points = curveset_candidates
                 .iter()
                 .map(|cs| {
                     let apex_set = cs.apices(self);
-                    (cs, assess_curve_set(cs, apex_set).total(&weights))
+                    (cs, assess_curve_set(cs, apex_set).total(weights))
                 })
                 .collect::<Vec<_>>();
             let (curve_set, _) = points.iter().max_by_key(|(_, points)| *points).unwrap();
@@ -1022,13 +1054,57 @@ impl CoronalPoints {
         CurveDesc::new(curves, apices, major_curve)
     }
 
-    pub fn identify_curves(&self) -> CurveDesc {
+    fn identify_curves_apex(&self) -> CurveDesc {
+        let mut curves = CurveSet::default();
+        let mut major_curve = None;
+        if let Some(largest_curve) = self.find_largest_curve() {
+            let major_apex = self.id_apex(&largest_curve.0);
+            major_curve = if major_apex <= VertebraDiscIndex::T5 {
+                // largest curve is PT
+                debug!("PT is the largest curve");
+                if let Some(mt) = self.find_largest_down(largest_curve.0.inf) {
+                    curves.tll = self.find_largest_down(mt.0.inf);
+                    curves.mt = Some(mt);
+                }
+                curves.pt = Some(largest_curve);
+                Some(MajorCurve::MT) // PT is never major
+            } else if major_apex <= VertebraDiscIndex::DiscT11T12 {
+                // largest curve is MT
+                debug!("MT is the largest curve");
+                curves.pt = self.find_largest_up(largest_curve.0.sup);
+                curves.tll = self.find_largest_down(largest_curve.0.inf);
+                curves.mt = Some(largest_curve);
+                Some(MajorCurve::MT)
+            } else {
+                // largest curve is TLL
+                debug!("TLL is the largest curve");
+                if let Some(mt) = self.find_largest_up(largest_curve.0.sup) {
+                    curves.pt = self.find_largest_up(mt.0.sup);
+                    curves.mt = Some(mt);
+                }
+                curves.tll = Some(largest_curve);
+                Some(MajorCurve::TLL)
+            };
+        }
+        let apices = curves.apices(self);
+        CurveDesc::new(curves, apices, major_curve)
+    }
+
+    pub fn identify_curves_with_algorithm(&self, algorithm: &CurveSetAlgorithm) -> CurveDesc {
         let mut cloned = self.clone();
         cloned.spine.verticalize();
         cloned.c_coefs = cloned.spine.fit_poly().unwrap();
 
         cloned.spine.fit_poly().unwrap();
-        cloned.identify_curves_impl()
+        match algorithm {
+            CurveSetAlgorithm::Score(weights) => cloned.identify_curves_score(weights),
+            CurveSetAlgorithm::Apex => cloned.identify_curves_apex(),
+        }
+    }
+
+    pub fn identify_curves(&self) -> CurveDesc {
+        let algorithm = CurveSetAlgorithm::Score(CurveWeights::default());
+        self.identify_curves_with_algorithm(&algorithm)
     }
 
     pub fn lumbar_modifier(&self, apex: VertebraDiscIndex) -> LumbarModifier {
@@ -1294,12 +1370,14 @@ impl CurveDesc {
     }
 }
 
-impl TryFrom<&LabelMeData> for CurveDesc {
+impl TryFrom<(&LabelMeData, &CurveSetAlgorithm)> for CurveDesc {
     type Error = ScolError;
 
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+    fn try_from(
+        (data, algorithm): (&LabelMeData, &CurveSetAlgorithm),
+    ) -> Result<Self, Self::Error> {
         let coronal_points = CoronalPoints::try_from(data.clone())?;
-        Ok(coronal_points.identify_curves())
+        Ok(coronal_points.identify_curves_with_algorithm(algorithm))
     }
 }
 
