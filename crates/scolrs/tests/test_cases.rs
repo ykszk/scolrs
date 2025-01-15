@@ -1,9 +1,10 @@
 use ndarray::Axis;
-use scolrs::{
-    BendReasonAngles, CoronalPoints, Curve, CurveType, IsStructural, LumbarModifier, MajorCurve,
-    MinorReason, RegionalCurveType, SagittalModifier, Spine, StructuralReason, Study,
-    VertebralIndex, KYOPHOSIS_CURVE_MT, KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
+use scolrs::lenke::{
+    BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
+    RegionalCurveType, SagittalModifier, StructuralReason, Study, KYOPHOSIS_CURVE_MT,
+    KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
+use scolrs::{CoronalPoints, Curve, Spine, VertebralIndex};
 
 use anyhow::{Context, Result};
 use labelme_rs::LabelMeData;
@@ -261,7 +262,7 @@ fn test_lenke_case1() -> Result<()> {
         LumbarModifier::AorB
     );
     assert_eq!(
-        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::lenke::T5T12_CURVE)),
         SagittalModifier::Normokyphosis
     );
     Ok(())
@@ -308,7 +309,7 @@ fn test_lenke_case2() -> Result<()> {
         LumbarModifier::C
     );
     assert_eq!(
-        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::lenke::T5T12_CURVE)),
         SagittalModifier::Hypokyphosis
     );
     Ok(())
@@ -366,7 +367,7 @@ fn test_lenke_case3() -> Result<()> {
         LumbarModifier::AorB
     );
     assert_eq!(
-        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::lenke::T5T12_CURVE)),
         SagittalModifier::Normokyphosis
     );
     Ok(())
@@ -443,7 +444,7 @@ fn test_lenke_case4() -> Result<()> {
         LumbarModifier::AorB
     );
     assert_eq!(
-        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::T5T12_CURVE)),
+        SagittalModifier::from(study.sagittal.angle_wild(&scolrs::lenke::T5T12_CURVE)),
         SagittalModifier::Hypokyphosis
     );
     Ok(())
