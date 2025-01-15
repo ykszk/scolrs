@@ -1,9 +1,8 @@
 use crate::{
-    angle_from_lines, CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve,
-    HasCornerPoints, HasImageMetadata, L2Norm, SagittalDraw, SagittalMeasure, SagittalPoints,
-    Scalable, ValidateLength, CORNER_LABELS,
+    angle_from_lines, CoronalDraw, CoronalPointsAndCurve, HasCornerPoints, HasImageMetadata,
+    L2Norm, SagittalDraw, SagittalPoints, Scalable, ValidateLength, CORNER_LABELS,
 };
-use crate::{ApexSet, Curve, DrawParam, Spine, VertebralIndex, VERTEBRAL_LABELS};
+use crate::{Curve, DrawParam, Spine, VERTEBRAL_LABELS};
 use base64::Engine;
 use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
@@ -20,6 +19,9 @@ use svg::node::element;
 use svg::Node;
 pub type LineColors = HashMap<String, String>;
 
+mod coronal;
+mod sagittal;
+
 #[derive(Debug, serde::Deserialize)]
 struct LineColor {
     label: String,
@@ -34,6 +36,38 @@ pub fn load_line_colors<S: Read>(reader: S) -> Result<LineColors, csv::Error> {
         colors.insert(lc.label, lc.color);
     }
     Ok(colors)
+}
+
+type ColorMap = HashMap<String, String>;
+
+#[derive(Debug, Clone, Default)]
+pub struct ColorPalette {
+    color_map: HashMap<String, String>,
+    color_cycler: labelme_rs::ColorCycler,
+}
+
+impl ColorPalette {
+    pub fn new(color_map: ColorMap) -> ColorPalette {
+        let color_cycler = labelme_rs::ColorCycler::default();
+        Self {
+            color_map,
+            color_cycler,
+        }
+    }
+
+    pub fn get_or_new<Q>(&mut self, key: &Q) -> &str
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: ?Sized + core::hash::Hash + std::cmp::Eq + std::fmt::Display,
+    {
+        self.color_map.get(key).map_or_else(
+            || {
+                debug!("New color generated for {}", key);
+                self.color_cycler.cycle()
+            },
+            |s| s.as_str(),
+        )
+    }
 }
 
 pub struct Painter {
@@ -622,38 +656,6 @@ where
     lyon_geom::Line { point, vector }
 }
 
-type ColorMap = HashMap<String, String>;
-
-#[derive(Debug, Clone, Default)]
-pub struct ColorPalette {
-    color_map: HashMap<String, String>,
-    color_cycler: labelme_rs::ColorCycler,
-}
-
-impl ColorPalette {
-    pub fn new(color_map: ColorMap) -> ColorPalette {
-        let color_cycler = labelme_rs::ColorCycler::default();
-        Self {
-            color_map,
-            color_cycler,
-        }
-    }
-
-    pub fn get_or_new<Q>(&mut self, key: &Q) -> &str
-    where
-        String: std::borrow::Borrow<Q>,
-        Q: ?Sized + core::hash::Hash + std::cmp::Eq + std::fmt::Display,
-    {
-        self.color_map.get(key).map_or_else(
-            || {
-                debug!("New color generated for {}", key);
-                self.color_cycler.cycle()
-            },
-            |s| s.as_str(),
-        )
-    }
-}
-
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]
 pub enum InvalidNumberOfPoints {
     /// Too few points, expected and actual
@@ -773,20 +775,6 @@ const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: DrawComponent {
     fn default_group(&self) -> element::Group {
         self.default_group_w_classes(&["Component", COMMON_COMPONENT_CLASS])
-    }
-}
-
-const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
-pub trait CoronalComponent: DrawComponent {
-    fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&["Component", CORONAL_COMPONENT_CLASS])
-    }
-}
-
-const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
-pub trait SagittalComponent: DrawComponent + MeasureComponent {
-    fn default_group(&self) -> element::Group {
-        self.default_group_w_classes(&["Component", SAGITTAL_COMPONENT_CLASS])
     }
 }
 
@@ -1057,329 +1045,6 @@ fn mean_plate_length(scol: &Spine) -> f64 {
     diff.map_axis(Axis(1), |a| a.l2norm()).mean().unwrap()
 }
 
-macro_rules! impl_cobb_angle {
-    ($name:ident) => {
-        impl<'a> DrawComponent for $name<'a> {
-            fn draw(
-                &self,
-                painter: &mut Painter,
-                _label_colors: &mut ColorPalette,
-                line_colors: &mut ColorPalette,
-            ) -> Result<element::Group, DrawError> {
-                if self.1.is_none() {
-                    return Err(DrawError::MeasureError(MeasureError::NoCurveFound));
-                }
-                let coronal_points = self.0;
-                let (curve, _angle) = self.1.as_ref().unwrap();
-                let color = line_colors.get_or_new(self.id());
-                let g = self.default_group().set("stroke", color);
-                let aux_param = CobbAux::default();
-                let mean_plate_length = mean_plate_length(&coronal_points.spine);
-
-                let group = painter.cobb(
-                    g,
-                    &coronal_points.spine,
-                    curve,
-                    &aux_param,
-                    mean_plate_length,
-                    Some(self.id()),
-                );
-                Ok(group)
-            }
-        }
-        impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f64, MeasureError> {
-                if let Some((_curve, angle)) = self.1.as_ref() {
-                    Ok(*angle)
-                } else {
-                    Err(MeasureError::NoCurveFound)
-                }
-            }
-        }
-    };
-}
-
-/// Cobb angle for PT curve
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
-impl CoronalComponent for CobbPT<'_> {}
-impl_cobb_angle!(CobbPT);
-
-/// Cobb angle for MT curve
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
-impl CoronalComponent for CobbMT<'_> {}
-impl_cobb_angle!(CobbMT);
-
-/// Cobb angle for TLL curve
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
-impl CoronalComponent for CobbTLL<'_> {}
-impl_cobb_angle!(CobbTLL);
-
-/// Curve apices for each curve
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
-struct CurveApex<'a>(&'a CoronalPoints, &'a ApexSet);
-impl CoronalComponent for CurveApex<'_> {}
-impl DrawComponent for CurveApex<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        let apex_set = &self.1;
-        let vert_discs = coronal_points.spine.tl_vert_disc_corners().0;
-
-        let label = self.id();
-        let mut g = self.default_group();
-
-        for apex in [apex_set.pt, apex_set.mt, apex_set.tll]
-            .into_iter()
-            .flatten()
-        {
-            let mut corners = vert_discs.index_axis(Axis(0), apex as usize).to_owned();
-            // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
-            corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
-            corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
-            let polygon = painter
-                .polygon(corners)
-                .set("stroke", line_colors.get_or_new(label));
-            g = g.add(polygon);
-        }
-        Ok(g)
-    }
-}
-
-/// Spinal center line
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
-struct SpinalLine<'a>(&'a Spine);
-impl CommonComponent for SpinalLine<'_> {}
-impl DrawComponent for SpinalLine<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let label = self.id();
-        let g = self.default_group();
-        let centroids = self.0.tl_centroids();
-        let coefs =
-            crate::polyfit(centroids.slice(s![.., 1]), centroids.slice(s![.., 0]), 6).unwrap();
-        let ys = ndarray::Array::linspace(
-            centroids[[0, 1]],
-            centroids[[centroids.len_of(Axis(0)) - 1, 1]],
-            50,
-        );
-        let xs = crate::polynomial(ys.view(), coefs);
-        let spinal_line = painter
-            .polyline(ndarray::stack![Axis(1), xs, ys])
-            .set("stroke", line_colors.get_or_new(label));
-
-        Ok(g.add(spinal_line))
-    }
-}
-
-/// center sacral vertical line (CSVL) (p. 54)
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
-pub struct Csvl<'a>(&'a CoronalPoints, &'a ApexSet);
-impl CoronalComponent for Csvl<'_> {}
-impl DrawComponent for Csvl<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        let spine = &coronal_points.spine;
-        let label = self.id();
-        let line_color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("stroke", line_color);
-        let sup_plate = spine.sacral_sup_plate();
-        let sacral_line = painter.line(sup_plate.view());
-        g = g.add(sacral_line);
-        if let Some(tll) = self.1.tll {
-            let v_idx = ((tll as u8) / 2 - 1) as usize; // one level above the tll apex
-            let mid = sup_plate.mean_axis(Axis(0)).unwrap();
-            let mut vl = ndarray::stack![Axis(0), mid, mid];
-            let y = spine.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
-            vl[[0, 1]] = y;
-            g = g.add(painter.line(vl));
-        }
-        Ok(g)
-    }
-}
-
-/// Shared function for drawing T1 tilt angle in coronal view and T1 slope in sagittal view
-fn draw_t1_angle<T>(
-    painter: &mut Painter,
-    line_colors: &mut ColorPalette,
-    spine: &Spine,
-    component: &T,
-    default_group: element::Group,
-) -> Result<element::Group, DrawError>
-where
-    T: DrawComponent,
-{
-    // let spine = &component.0.spine;
-    let label = component.id();
-    let mut g = default_group
-        .set("stroke", line_colors.get_or_new(label))
-        .set("fill", "none");
-    let tl_sup_lines = spine.tl_sup_lines();
-    let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-    let mid = t1sup.mean_axis(Axis(0)).unwrap();
-    let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
-    let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
-    if l2r.l2norm() == 0.0 {
-        return Err(DrawError::MeasureError(MeasureError::ZeroLengthLine));
-    }
-    let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
-    g = g.add(painter.line(sup_line.view()));
-    if l2r[0] == 0.0 {
-        // T1 is vertical, which is highly unlikely
-        debug!("T1 is vertical");
-        g = g.add(painter.line(t1sup.view()));
-        g = g.add(painter.text("90°", mid, Some(label), None));
-    } else {
-        let mut arc_start = mid.to_owned();
-        let arc_radius = mult_arc * l2r.l2norm();
-        arc_start[[0]] += arc_radius;
-
-        if l2r[1] != 0.0 {
-            // draw tilted T1 line
-            let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
-            hor_line[[0, 0]] -= mult_left * l2r.l2norm();
-            hor_line[[1, 0]] += mult_right * l2r.l2norm();
-            g = painter
-                .angle_between(
-                    g,
-                    sup_line.view(),
-                    hor_line.view(),
-                    mid.view(),
-                    arc_radius,
-                    Some(label),
-                )
-                .0;
-        }
-    };
-    Ok(g)
-}
-
-/// T1 Tilt Angle (p.55)
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_ANGLE])]
-pub struct T1TiltAngle<'a>(&'a CoronalPoints);
-impl CoronalComponent for T1TiltAngle<'_> {}
-impl DrawComponent for T1TiltAngle<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        draw_t1_angle(
-            painter,
-            line_colors,
-            &self.0.spine,
-            self,
-            self.default_group(),
-        )
-    }
-}
-impl MeasureComponent for T1TiltAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let tl_sup_lines = self.0.spine.tl_sup_lines();
-        let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        tilt_angle("Vertebra", t1sup)
-    }
-}
-
-/// Coronal balance (p. 54)
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_DISTANCE])]
-pub struct CoronalBalance<'a>(&'a CoronalPoints);
-impl CoronalComponent for CoronalBalance<'_> {}
-impl CoronalBalance<'_> {
-    fn prep(&self, spine: &Spine) -> Array2<f64> {
-        let c_c7 = spine.c_c7tl.index_axis(Axis(0), 0);
-        let sac_sup = spine.sacral_sup_plate();
-        let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
-        let points = stack![Axis(0), c_c7, mid_sac];
-        points
-    }
-}
-impl DrawComponent for CoronalBalance<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let spine = &self.0.spine;
-        let label = self.id();
-        let points = self.prep(spine);
-        let color = line_colors.get_or_new(label);
-        let g = self.default_group().set("fill", color).set("stroke", color);
-        let g = draw_difference_in_x(
-            g,
-            "C7andSacrum",
-            label,
-            points.view(),
-            painter,
-            self.0.image_metadata.unit.as_str(),
-        );
-        g
-    }
-}
-impl MeasureComponent for CoronalBalance<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let points = self.prep(&self.0.spine);
-        let dx = points.index_axis(Axis(0), 0)[0] - points.index_axis(Axis(0), 1)[0];
-        Ok(dx)
-    }
-}
-
-/// Clavicle angle (p. 56)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct ClavicleAngle<'a>(&'a CoronalPoints);
-impl CoronalComponent for ClavicleAngle<'_> {}
-impl DrawComponent for ClavicleAngle<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        coronal_points
-            .clavicle
-            .0
-            .validate_label_length("Clavicle", 2)?;
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
-        let clavicle = &coronal_points.clavicle.0;
-        g = draw_tilt_angle(g, painter, clavicle, Some(label));
-        Ok(g)
-    }
-}
-impl MeasureComponent for ClavicleAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle("Clavicle", self.0.clavicle.0.view())
-    }
-}
-
 fn difference_in_index(
     label: &str,
     points: ArrayView2<f64>,
@@ -1466,44 +1131,6 @@ fn draw_difference_in_y(
     Ok(g)
 }
 
-/// Radiographic shoulder height (p.57)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
-pub struct ShoulderHeight<'a>(&'a CoronalPoints);
-impl CoronalComponent for ShoulderHeight<'_> {}
-impl DrawComponent for ShoulderHeight<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let color = line_colors.get_or_new(self.id());
-        let g = self.default_group().set("fill", color).set("stroke", color);
-
-        draw_difference_in_y(
-            g,
-            "Shoulder",
-            self.id(),
-            self.0.shoulder.0.view(),
-            painter,
-            self.0.image_metadata.unit.as_str(),
-        )
-    }
-}
-impl MeasureComponent for ShoulderHeight<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let coronal_points = self.0;
-        coronal_points
-            .shoulder
-            .0
-            .validate_label_length("Shoulder", 2)?;
-        let points = coronal_points.shoulder.0.view();
-        let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
-        Ok(dy)
-    }
-}
-
 fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();
@@ -1537,127 +1164,6 @@ fn draw_tilt_angle(
         )
         .0;
     g
-}
-
-/// Pelvic Obliquity (p.69)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct PelvicObliquity<'a>(&'a CoronalPoints);
-impl CoronalComponent for PelvicObliquity<'_> {}
-impl DrawComponent for PelvicObliquity<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        coronal_points.pelvis.0.validate_label_length("Pelvis", 2)?;
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
-        let pelvis = &coronal_points.pelvis.0;
-        g = draw_tilt_angle(g, painter, pelvis, Some(label));
-        Ok(g)
-    }
-}
-impl MeasureComponent for PelvicObliquity<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle("Pelvis", self.0.pelvis.0.view())
-    }
-}
-
-/// Sacral Obliquity (p.70)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct SacralObliquity<'a>(&'a CoronalPoints);
-impl CoronalComponent for SacralObliquity<'_> {}
-impl DrawComponent for SacralObliquity<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        coronal_points
-            .femoral_head
-            .0
-            .validate_label_length("FemoralHead", 2)?;
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
-        let femoral_head = &coronal_points.femoral_head.0;
-        for c in femoral_head.axis_iter(Axis(0)) {
-            g = g.add(painter.point(c));
-        }
-        g = g.add(painter.line(femoral_head.view()));
-        let sac_line = points2line(coronal_points.spine.sacral_sup_plate());
-        let line_eqn = sac_line.equation();
-        let mut sac_seg = femoral_head.clone();
-        sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
-        sac_seg[[1, 1]] = line_eqn.solve_y_for_x(femoral_head[[1, 0]]).unwrap();
-        g = g.add(painter.line(sac_seg.view()));
-        let mut hor_line = sac_seg.clone();
-        hor_line[[1, 1]] = hor_line[[0, 1]];
-
-        g = painter
-            .angle_between(
-                g,
-                hor_line.view(),
-                sac_seg.view(),
-                hor_line.index_axis(Axis(0), 0),
-                0.8 * sac_seg
-                    .index_axis(Axis(0), 0)
-                    .l2_dist(&sac_seg.index_axis(Axis(0), 1))
-                    .unwrap(),
-                Some(label),
-            )
-            .0;
-        Ok(g)
-    }
-}
-impl MeasureComponent for SacralObliquity<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle("FemoralHead", self.0.femoral_head.0.view())
-    }
-}
-
-/// Leg Length Discrepancy (p.69)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
-pub struct LegLengthDiscrepancy<'a>(&'a CoronalPoints);
-impl CoronalComponent for LegLengthDiscrepancy<'_> {}
-impl DrawComponent for LegLengthDiscrepancy<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let color = line_colors.get_or_new(self.id());
-        let g = self.default_group().set("fill", color).set("stroke", color);
-        draw_difference_in_y(
-            g,
-            "FemoralHead",
-            self.id(),
-            self.0.femoral_head.0.view(),
-            painter,
-            self.0.image_metadata.unit.as_str(),
-        )
-    }
-}
-impl MeasureComponent for LegLengthDiscrepancy<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let coronal_points = self.0;
-        coronal_points
-            .femoral_head
-            .0
-            .validate_label_length("FemoralHead", 2)?;
-        let points = coronal_points.femoral_head.0.view();
-        let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
-        Ok(dy)
-    }
 }
 
 pub fn draw_incidence_angle(
@@ -1697,545 +1203,6 @@ pub fn draw_incidence_angle(
     g
 }
 
-macro_rules! impl_kyophosis {
-    ($name:ident, $opposite:expr) => {
-        impl<'a> DrawComponent for $name<'a> {
-            fn draw(
-                &self,
-                painter: &mut Painter,
-                _label_colors: &mut ColorPalette,
-                line_colors: &mut ColorPalette,
-            ) -> Result<element::Group, DrawError> {
-                let label = self.id();
-                let mut aux_param = if $opposite {
-                    CobbAux::opposite_default()
-                } else {
-                    CobbAux::default()
-                };
-                aux_param.flip_sign = true;
-                let curve = Curve {
-                    sup: Self::SUP,
-                    inf: Self::INF,
-                };
-                let group = self
-                    .default_group()
-                    .set("stroke", line_colors.get_or_new(label));
-                let mean_plate_length = mean_plate_length(&self.0.spine);
-                let g = painter.cobb(
-                    group,
-                    &self.0.spine,
-                    &curve,
-                    &aux_param,
-                    mean_plate_length,
-                    Some(label),
-                );
-                Ok(g)
-            }
-        }
-        impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f64, MeasureError> {
-                let angle = -self
-                    .0
-                    .spine
-                    .angle(&Curve {
-                        sup: Self::SUP,
-                        inf: Self::INF,
-                    })
-                    .unwrap();
-                Ok(angle)
-            }
-        }
-    };
-}
-
-/// Proximal thoracic (T2-T5) kyphosis (p.65)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct ProximalThoracicKyphosis<'a>(&'a SagittalPoints);
-impl ProximalThoracicKyphosis<'_> {
-    const SUP: usize = VertebralIndex::T2 as usize;
-    const INF: usize = VertebralIndex::T5 as usize;
-}
-impl SagittalComponent for ProximalThoracicKyphosis<'_> {}
-impl_kyophosis!(ProximalThoracicKyphosis, false);
-
-/// Thoracic (T2-T12) kyphosis (p.65)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct ThoracicKyphosis<'a>(&'a SagittalPoints);
-impl ThoracicKyphosis<'_> {
-    const SUP: usize = VertebralIndex::T2 as usize;
-    const INF: usize = VertebralIndex::T12 as usize;
-}
-impl SagittalComponent for ThoracicKyphosis<'_> {}
-impl_kyophosis!(ThoracicKyphosis, true);
-
-/// Thoracic (T1-T12) kyphosis with T1 as the upper endplate.
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct T1ThoracicKyphosis<'a>(&'a SagittalPoints);
-impl T1ThoracicKyphosis<'_> {
-    const SUP: usize = VertebralIndex::T1 as usize;
-    const INF: usize = VertebralIndex::T12 as usize;
-}
-impl SagittalComponent for T1ThoracicKyphosis<'_> {}
-impl_kyophosis!(T1ThoracicKyphosis, true);
-
-/// Mid/Lower thoracic (T5-T12) kyphosis (p.65).
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-#[label("Mid/LowerThoracicKyphosis")]
-pub struct MidLowerThoracicKyphosis<'a>(&'a SagittalPoints);
-impl SagittalComponent for MidLowerThoracicKyphosis<'_> {}
-impl MidLowerThoracicKyphosis<'_> {
-    const SUP: usize = VertebralIndex::T5 as usize;
-    const INF: usize = VertebralIndex::T12 as usize;
-}
-impl_kyophosis!(MidLowerThoracicKyphosis, false);
-
-/// Thoracolumbar (T10/L2) sagittal alignment (p.66)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct ThoracolumbarSagittalAlignment<'a>(&'a SagittalPoints);
-impl ThoracolumbarSagittalAlignment<'_> {
-    const SUP: usize = VertebralIndex::T10 as usize;
-    const INF: usize = VertebralIndex::L2 as usize;
-}
-impl SagittalComponent for ThoracolumbarSagittalAlignment<'_> {}
-impl_kyophosis!(ThoracolumbarSagittalAlignment, false);
-
-/// Lumbar sagittal (T12/S1) alignment (p.66)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct LumbarLordosis<'a>(&'a SagittalPoints);
-impl LumbarLordosis<'_> {
-    fn prep(spine: &Spine) -> (usize, usize) {
-        let sup = VertebralIndex::T12 as usize;
-        let inf = spine.v_c7tl.0.len_of(Axis(0)) - 1;
-        (sup, inf)
-    }
-}
-impl SagittalComponent for LumbarLordosis<'_> {}
-impl DrawComponent for LumbarLordosis<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let spine = &self.0.spine;
-        let aux_param = CobbAux {
-            flip_sign: true,
-            ..CobbAux::default()
-        };
-        let label = self.id();
-        let group = self
-            .default_group()
-            .set("stroke", line_colors.get_or_new(label));
-        let mean_plate_length = mean_plate_length(spine);
-        let (sup, inf) = Self::prep(spine);
-        let g = painter.cobb(
-            group,
-            spine,
-            &Curve { sup, inf },
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        );
-        Ok(g)
-    }
-}
-impl MeasureComponent for LumbarLordosis<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let spine = &self.0.spine;
-        let (sup, inf) = Self::prep(spine);
-        let angle = -spine.angle(&Curve { sup, inf }).unwrap();
-        Ok(angle)
-    }
-}
-
-/// T1 slope angle
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct T1Slope<'a>(&'a SagittalPoints);
-impl SagittalComponent for T1Slope<'_> {}
-impl DrawComponent for T1Slope<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        draw_t1_angle(
-            painter,
-            line_colors,
-            &self.0.spine,
-            self,
-            self.default_group(),
-        )
-    }
-}
-impl MeasureComponent for T1Slope<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let tl_sup_lines = self.0.spine.tl_sup_lines();
-        let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        tilt_angle("Vertebra", t1sup)
-    }
-}
-
-/// Sagittal balance (p.67)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
-pub struct SagittalBalance<'a>(&'a SagittalPoints);
-impl SagittalBalance<'_> {
-    fn prep(sagittal_points: &SagittalPoints) -> Array2<f64> {
-        let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        let pos_sac = sac_sup.index_axis(Axis(0), 1);
-        stack![Axis(0), c_c7, pos_sac]
-    }
-}
-impl SagittalComponent for SagittalBalance<'_> {}
-impl DrawComponent for SagittalBalance<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let points = Self::prep(self.0);
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let g = self.default_group().set("stroke", color).set("fill", color);
-        let g = draw_difference_in_x(
-            g,
-            "C7andSacrum",
-            label,
-            points.view(),
-            painter,
-            self.0.image_metadata.unit.as_str(),
-        );
-        g
-    }
-}
-impl MeasureComponent for SagittalBalance<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let points = Self::prep(self.0);
-        let p1 = points.index_axis(Axis(0), 0);
-        let p2 = points.index_axis(Axis(0), 1);
-        let dx = p1[0] - p2[0];
-        Ok(dx)
-    }
-}
-
-/// Lumbosacral angle (p.105)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct LumbosacralAngle<'a>(&'a SagittalPoints);
-impl LumbosacralAngle<'_> {
-    fn prep(spine: &Spine) -> (Array2<f64>, Array2<f64>) {
-        let sup = spine
-            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 2)
-            .to_owned();
-        let inf = spine
-            .inf_plate(spine.v_c7tl.0.len_of(Axis(0)) - 1)
-            .to_owned();
-        (sup, inf)
-    }
-}
-impl SagittalComponent for LumbosacralAngle<'_> {}
-impl DrawComponent for LumbosacralAngle<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let spine = &self.0.spine;
-        let (sup, inf) = Self::prep(spine);
-        let label = self.id();
-        let mean_plate_length = mean_plate_length(spine);
-        let group = self
-            .default_group()
-            .set("stroke", line_colors.get_or_new(label));
-        let aux_param = CobbAux {
-            flip_sign: true,
-            ..CobbAux::default()
-        };
-        let g = painter.cobb_from_plates(
-            group,
-            (sup, inf),
-            &aux_param,
-            mean_plate_length,
-            Some(label),
-        );
-        Ok(g)
-    }
-}
-impl MeasureComponent for LumbosacralAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let (sup, inf) = Self::prep(&self.0.spine);
-        let angle = angle_between(sup.view(), inf.view()).to_degrees();
-        Ok(angle)
-    }
-}
-
-/// Pelvic Incidence (p.97)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct PelvicIncidence<'a>(&'a SagittalPoints);
-impl SagittalComponent for PelvicIncidence<'_> {}
-impl DrawComponent for PelvicIncidence<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        self.0
-            .femoral_head
-            .0
-            .validate_label_length_more_than("FemoralHead", 1)?;
-        let label = self.id();
-        let sac_sup = self.0.spine.sacral_sup_plate();
-        let color = line_colors.get_or_new(label);
-        let g = self.default_group().set("fill", color).set("stroke", color);
-        let g = draw_incidence_angle(g, label, self.0.femoral_head.0.view(), sac_sup, painter);
-        Ok(g)
-    }
-}
-impl MeasureComponent for PelvicIncidence<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let plate = self.0.spine.sacral_sup_plate();
-        femoral_incidence_angle(plate, &self.0.femoral_head)
-    }
-}
-
-// Pelvic Tilt (p.98)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct PelvicTilt<'a>(&'a SagittalPoints);
-impl PelvicTilt<'_> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
-        sagittal_points
-            .femoral_head
-            .0
-            .validate_label_length_more_than("FemoralHead", 1)?;
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
-        let femoral_head = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let sac2fem = stack![Axis(0), mid_sac, femoral_head];
-        let mut v_line_from_fem = sac2fem.clone();
-        v_line_from_fem[[0, 0]] = v_line_from_fem[[1, 0]];
-        Ok((sac2fem, v_line_from_fem))
-    }
-}
-impl SagittalComponent for PelvicTilt<'_> {}
-impl DrawComponent for PelvicTilt<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let sagittal_points = self.0;
-        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
-        g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
-        g = g.add(painter.point(sac2fem.index_axis(Axis(0), 0)));
-        // TODO: use painter.angle_between
-        g = g.add(painter.line(sac2fem.view()));
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        g = g.add(painter.line(sac_sup.view()));
-        g = g.add(painter.line(v_line.view()));
-        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
-        let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, sac2fem.index_axis(Axis(0), 1), Some(label), None);
-        g = g.add(text);
-        Ok(g)
-    }
-}
-impl MeasureComponent for PelvicTilt<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let sagittal_points = self.0;
-        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
-        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
-        Ok(angle)
-    }
-}
-
-// Sacral Slope (p.99)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct SacralSlope<'a>(&'a SagittalPoints);
-impl SagittalComponent for SacralSlope<'_> {}
-impl SacralSlope<'_> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
-        let sac_sup = sagittal_points.spine.sacral_sup_plate().to_owned();
-        let h_len = sac_sup
-            .index_axis(Axis(0), 0)
-            .l2_dist(&sac_sup.index_axis(Axis(0), 1))
-            .unwrap();
-        let mut h_line_sac = sac_sup.clone();
-        h_line_sac[[1, 1]] = h_line_sac[[0, 1]];
-        h_line_sac[[1, 0]] = h_line_sac[[0, 0]] + h_len;
-        Ok((sac_sup, h_line_sac))
-    }
-}
-
-impl DrawComponent for SacralSlope<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let sagittal_points = self.0;
-        let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("stroke", color);
-        // let angle = angle_between(h_line_sac.view(), sac_sup.view()).to_degrees();
-        let arc_radius = 0.5
-            * sac_sup
-                .index_axis(Axis(0), 0)
-                .l2_dist(&sac_sup.index_axis(Axis(0), 1))
-                .unwrap();
-        g = painter
-            .angle_between(
-                g,
-                sac_sup.view(),
-                h_line_sac.view(),
-                h_line_sac.index_axis(Axis(0), 0),
-                arc_radius,
-                Some(label),
-            )
-            .0;
-        Ok(g)
-    }
-}
-impl MeasureComponent for SacralSlope<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let sagittal_points = self.0;
-        let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
-        let angle = angle_between(sac_sup.view(), h_line_sac.view()).to_degrees();
-        Ok(angle)
-    }
-}
-
-/// L5 Incidence Angle (p.102)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct L5IncidenceAngle<'a>(&'a SagittalPoints);
-impl SagittalComponent for L5IncidenceAngle<'_> {}
-impl DrawComponent for L5IncidenceAngle<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        self.0
-            .femoral_head
-            .0
-            .validate_label_length_more_than("FemoralHead", 1)?;
-        let label = self.id();
-        let l5_sup = self
-            .0
-            .spine
-            .sup_plate(self.0.spine.v_c7tl.0.len_of(Axis(0)) - 2)
-            .to_owned();
-        let color = line_colors.get_or_new(label);
-        let g = self.default_group().set("fill", color).set("stroke", color);
-        let g = draw_incidence_angle(
-            g,
-            label,
-            self.0.femoral_head.0.view(),
-            l5_sup.view(),
-            painter,
-        );
-        Ok(g)
-    }
-}
-impl MeasureComponent for L5IncidenceAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let sagittal_points = self.0;
-        let plate = sagittal_points
-            .spine
-            .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2);
-        femoral_incidence_angle(plate, &sagittal_points.femoral_head)
-    }
-}
-
-fn draw_femoral_center(
-    group: element::Group,
-    femoral_head: ArrayView2<f64>,
-    painter: &mut Painter,
-) -> element::Group {
-    let mut g = group;
-    for p in femoral_head.axis_iter(Axis(0)) {
-        g = g.add(painter.point(p));
-    }
-    if femoral_head.len_of(Axis(0)) == 2 {
-        let mid_femoral_heads = femoral_head.mean_axis(Axis(0)).unwrap();
-        g = g.add(painter.point(mid_femoral_heads.view()));
-        g = g.add(painter.line(femoral_head.view()));
-    }
-    g
-}
-
-/// Pelvic Radius Angle (p.101)
-#[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct PelvicRadiusAngle<'a>(&'a SagittalPoints);
-impl PelvicRadiusAngle<'_> {
-    fn prep(sagittal_points: &SagittalPoints) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
-        sagittal_points
-            .femoral_head
-            .0
-            .validate_label_length_more_than("FemoralHead", 1)?;
-        let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let sac_sup = sagittal_points.spine.sacral_sup_plate();
-        let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
-        Ok((sac_sup.to_owned(), line_fem2post_sac))
-    }
-}
-impl SagittalComponent for PelvicRadiusAngle<'_> {}
-impl DrawComponent for PelvicRadiusAngle<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut ColorPalette,
-        line_colors: &mut ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let sagittal_points = self.0;
-        let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
-        let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let label = self.id();
-        let color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("fill", color).set("stroke", color);
-        g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
-        g = g.add(painter.line(sac_sup.view()));
-        g = g.add(painter.line(line_fem2post_sac.view()));
-        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
-        let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, post_sac, Some(label), None);
-        g = g.add(text);
-        Ok(g)
-    }
-}
-
-impl MeasureComponent for PelvicRadiusAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
-        let (sac_sup, line_fem2post_sac) = Self::prep(self.0)?;
-        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
-        Ok(angle)
-    }
-}
-
 pub fn femoral_incidence_angle(
     plate: ArrayView2<f64>,
     femoral_head: &crate::AtMost2<Array2<f64>>,
@@ -2256,113 +1223,60 @@ pub fn femoral_incidence_angle(
     Ok(angle_deg)
 }
 
-impl<'a, 'b> From<(&'b SagittalDraw, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
-    fn from((measure, sagittal_points): (&'b SagittalDraw, &'a SagittalPoints)) -> Self {
-        match measure {
-            SagittalDraw::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
-            SagittalDraw::ThoracicKyphosisT1 => Box::new(T1ThoracicKyphosis(sagittal_points)),
-            SagittalDraw::ProximalThoracicKyphosis => {
-                Box::new(ProximalThoracicKyphosis(sagittal_points))
-            }
-            SagittalDraw::MidLowerThoracicKyphosis => {
-                Box::new(MidLowerThoracicKyphosis(sagittal_points))
-            }
-            SagittalDraw::ThoracolumbarSagittalAlignment => {
-                Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
-            }
-            SagittalDraw::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
-            SagittalDraw::T1Slope => Box::new(T1Slope(sagittal_points)),
-            SagittalDraw::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
-            SagittalDraw::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
-            SagittalDraw::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
-            SagittalDraw::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
-            SagittalDraw::SacralSlope => Box::new(SacralSlope(sagittal_points)),
-            SagittalDraw::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
-            SagittalDraw::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
-
-            SagittalDraw::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
-            SagittalDraw::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
-        }
-    }
-}
-
-impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponent + 'a> {
-    fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
-        match measure {
-            SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
-            SagittalMeasure::T1ThoracicKyphosis => Box::new(T1ThoracicKyphosis(sagittal_points)),
-            SagittalMeasure::ProximalThoracicKyphosis => {
-                Box::new(ProximalThoracicKyphosis(sagittal_points))
-            }
-            SagittalMeasure::MidLowerThoracicKyphosis => {
-                Box::new(MidLowerThoracicKyphosis(sagittal_points))
-            }
-            SagittalMeasure::ThoracolumbarSagittalAlignment => {
-                Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
-            }
-            SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
-            SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
-            SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
-            SagittalMeasure::T1Slope => Box::new(T1Slope(sagittal_points)),
-            SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
-            SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
-            SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
-            SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
-            SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
-        }
-    }
-}
-
-impl<'a, 'b> From<(&'b CoronalDraw, &'a CoronalPointsAndCurve)> for Box<dyn DrawComponent + 'a> {
-    fn from(value: (&'b CoronalDraw, &'a CoronalPointsAndCurve)) -> Self {
-        let (measure, coronal_set) = value;
-        let coronal_points = &coronal_set.coronal_points;
-        let curve_set = &coronal_set.curves.curves;
-        let apex_set = &coronal_set.curves.apices;
-        match measure {
-            CoronalDraw::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
-            CoronalDraw::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
-            CoronalDraw::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
-
-            CoronalDraw::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
-            CoronalDraw::CSVL => Box::new(Csvl(coronal_points, apex_set)),
-            CoronalDraw::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
-            CoronalDraw::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
-            CoronalDraw::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
-            CoronalDraw::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
-            CoronalDraw::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
-            CoronalDraw::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
-            CoronalDraw::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
-
-            CoronalDraw::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
-            CoronalDraw::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
-            CoronalDraw::Centroids => Box::new(Centroids(&coronal_points.spine)),
-            CoronalDraw::SpinalLine => Box::new(SpinalLine(&coronal_points.spine)),
-        }
-    }
-}
-
-impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)>
-    for Box<dyn MeasureComponent + 'a>
+/// Shared function for drawing T1 tilt angle in coronal view and T1 slope in sagittal view
+fn draw_t1_angle<T>(
+    painter: &mut Painter,
+    line_colors: &mut ColorPalette,
+    spine: &Spine,
+    component: &T,
+    default_group: element::Group,
+) -> Result<element::Group, DrawError>
+where
+    T: DrawComponent,
 {
-    fn from(value: (&'b CoronalMeasure, &'a CoronalPointsAndCurve)) -> Self {
-        let (measure, coronal_points_and_curve) = value;
-        let coronal_points = &coronal_points_and_curve.coronal_points;
-        let curve_set = &coronal_points_and_curve.curves.curves;
-        match measure {
-            CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
-            CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
-            CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
-
-            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
-            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
-            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
-            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
-            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
-            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
-            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
-        }
+    // let spine = &component.0.spine;
+    let label = component.id();
+    let mut g = default_group
+        .set("stroke", line_colors.get_or_new(label))
+        .set("fill", "none");
+    let tl_sup_lines = spine.tl_sup_lines();
+    let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
+    let mid = t1sup.mean_axis(Axis(0)).unwrap();
+    let (mult_left, mult_right, mult_arc) = (1.0, 4.0, 3.0);
+    let l2r = &t1sup.index_axis(Axis(0), 1) - mult_left * &t1sup.index_axis(Axis(0), 0);
+    if l2r.l2norm() == 0.0 {
+        return Err(DrawError::MeasureError(MeasureError::ZeroLengthLine));
     }
+    let sup_line = stack![Axis(0), &mid - &l2r, &mid + mult_right * &l2r];
+    g = g.add(painter.line(sup_line.view()));
+    if l2r[0] == 0.0 {
+        // T1 is vertical, which is highly unlikely
+        debug!("T1 is vertical");
+        g = g.add(painter.line(t1sup.view()));
+        g = g.add(painter.text("90°", mid, Some(label), None));
+    } else {
+        let mut arc_start = mid.to_owned();
+        let arc_radius = mult_arc * l2r.l2norm();
+        arc_start[[0]] += arc_radius;
+
+        if l2r[1] != 0.0 {
+            // draw tilted T1 line
+            let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
+            hor_line[[0, 0]] -= mult_left * l2r.l2norm();
+            hor_line[[1, 0]] += mult_right * l2r.l2norm();
+            g = painter
+                .angle_between(
+                    g,
+                    sup_line.view(),
+                    hor_line.view(),
+                    mid.view(),
+                    arc_radius,
+                    Some(label),
+                )
+                .0;
+        }
+    };
+    Ok(g)
 }
 
 #[derive(Debug, Clone)]
