@@ -25,6 +25,7 @@ mod defs;
 pub use defs::*;
 pub mod draw;
 pub mod head_neck;
+pub mod implant;
 pub mod lenke;
 use head_neck::Scale2DPoints;
 

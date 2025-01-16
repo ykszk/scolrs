@@ -31,5 +31,6 @@ fn main() -> Result<()> {
         Command::Catalog(args) => commands::catalog::cmd(args),
         Command::Html(args) => commands::html::cmd(args),
         Command::Conv(args) => commands::conv::cmd(args),
+        Command::Implant(args) => commands::implant::cmd(args),
     }
 }

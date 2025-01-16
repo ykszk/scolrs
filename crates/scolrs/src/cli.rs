@@ -35,6 +35,8 @@ pub enum Command {
     Html(HtmlArgs),
     /// Convert data format
     Conv(ConvArgs),
+    /// Evaluate implant
+    Implant(ImplantArgs),
 }
 
 #[derive(Parser)]
@@ -353,4 +355,11 @@ pub struct ConvArgs {
     /// Try Pixel Spacing (0028,0030) first, then Imager Pixel Spacing (0018,1164)
     #[clap(long = "spacing")]
     pub pull_spacing: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ImplantArgs {
+    /// Input json file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
 }

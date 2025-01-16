@@ -1036,7 +1036,7 @@ impl DrawComponent for Centroids<'_> {
     }
 }
 
-fn mean_plate_length(scol: &Spine) -> f64 {
+pub fn mean_plate_length(scol: &Spine) -> f64 {
     let corners = scol.tl_corners().0;
     let sup_inf_shape = (corners.len_of(Axis(0)) * 2, 2, 2); // [n * sup_inf, lr, xy]
 
