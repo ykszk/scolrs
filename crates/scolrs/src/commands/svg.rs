@@ -530,6 +530,19 @@ mod tests {
         _test_case("case4", false)
     }
 
+    #[test]
+    fn svg_cmd_scol_case5() -> Result<()> {
+        // test bending
+        let mut svg_args = gen_svg_args();
+        let data_dir = PathBuf::from("../../tests/data/");
+        svg_args.input = data_dir.join("case5/frontal_postop.json");
+        svg_args.output = output_path("scoliosis/case5_frontal_postop.svg")?;
+        svg_args.svg_args.labelme = true;
+        cmd(svg_args)?;
+
+        Ok(())
+    }
+
     // neck
     #[test]
     fn test_svg_cmd_neck_case1() -> Result<()> {

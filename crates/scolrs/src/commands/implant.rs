@@ -11,3 +11,17 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_cmd() {
+        let args = ImplantArgs {
+            input: PathBuf::from("../../tests/data/case5/frontal_postop.json"),
+        };
+        cmd(args).unwrap();
+    }
+}
