@@ -7,16 +7,17 @@ use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
 use labelme_rs::{
     image::{DynamicImage, GenericImageView},
-    LabelMeData, LabelMeDataWImage, ResizeParam,
+    LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam,
 };
 use log::debug;
 use rayon::prelude::*;
 use scolrs::{
-    draw::{draw_coronal, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
+    draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
+    implant::ScrewSpine,
     ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
-    HasImageMetadata, ImageMetadata, MeasureAndDraw, PointDataWithImage, SagittalDraw,
-    SagittalPoints, SagittalPointsLine, Scalable, UpdatePoints,
+    HasImageMetadata, ImageMetadata, ImplantDraw, MeasureAndDraw, PointDataWithImage, SagittalDraw,
+    SagittalPoints, SagittalPointsLine, Scalable,
 };
 use serde::Deserialize;
 use svg::node::element;
@@ -49,6 +50,30 @@ impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
         draw_coronal(
             image,
             sagittal_points,
+            draws_hide,
+            draw_param,
+            resize_param,
+            svg_size,
+            palettes,
+        )
+    }
+}
+
+impl AssociatedMeasureAndDraw for ScrewSpine {
+    type Draw = ImplantDraw;
+
+    fn draw(
+        image: DynamicImage,
+        screw_spine: Self,
+        draws_hide: (&[Self::Draw], &[Self::Draw]),
+        draw_param: DrawParam,
+        resize_param: Option<ResizeParam>,
+        svg_size: (usize, usize),
+        palettes: ColorPalettes,
+    ) -> Result<element::SVG, DrawError> {
+        draw_implant(
+            image,
+            screw_spine,
             draws_hide,
             draw_param,
             resize_param,
@@ -114,7 +139,7 @@ fn process_one<T>(
     output: &std::path::Path,
 ) -> Result<()>
 where
-    T: UpdatePoints + AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
+    T: AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
     <T as AssociatedMeasureAndDraw>::Draw: Clone + Copy + PartialEq,
 {
     // if let Some(resize_param) = svg_common.resize_param {
@@ -160,7 +185,7 @@ where
 
 fn load_from_native_json_file<T>(path: &Path) -> Result<PointDataWithImage<T>>
 where
-    T: UpdatePoints + HasImageMetadata + Clone,
+    T: HasImageMetadata + Clone,
     for<'de> T: Deserialize<'de>,
 
     // <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
@@ -176,8 +201,7 @@ where
 
 fn load_from_labelme_json_file<T>(path: &Path, pull_spacing: bool) -> Result<PointDataWithImage<T>>
 where
-    T: UpdatePoints + HasImageMetadata + Clone + 'static,
-    for<'de> T: Deserialize<'de>,
+    T: HasImageMetadata + Clone + 'static,
 
     for<'a> T: TryFrom<&'a LabelMeData>,
     for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
@@ -201,7 +225,7 @@ fn load_native_or_lableme_json_file<T>(
     pull_spacing: bool,
 ) -> Result<PointDataWithImage<T>>
 where
-    T: UpdatePoints + HasImageMetadata + Clone + 'static,
+    T: HasImageMetadata + Clone + 'static,
     for<'de> T: Deserialize<'de>,
 
     LabelMeData: From<T>,
@@ -256,6 +280,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(NeckLateralDraw::all);
             let hide = svg_sub_neck_args.hide;
+            process_one(svg_common, data, &draws, &hide, &args.output)?;
+        }
+        SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
+            let data: PointDataWithImage<ScrewSpine> =
+                load_from_labelme_json_file(&args.input, svg_common.pull_spacing)?;
+            let draws = svg_sub_implant_args
+                .measures
+                .unwrap_or_else(ImplantDraw::all);
+            let hide = svg_sub_implant_args.hide;
             process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
     };
@@ -332,7 +365,7 @@ fn load_from_native_json_line<S>(
 where
     S: ContentFilename,
     for<'de> S: Deserialize<'de>,
-    <S as ContentFilename>::ContentType: UpdatePoints + HasImageMetadata + Clone,
+    <S as ContentFilename>::ContentType: HasImageMetadata + Clone,
     LabelMeData: From<<S as ContentFilename>::ContentType>,
 {
     let content_filename: S = serde_json::from_str(json)?;
@@ -408,6 +441,28 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
 
                 let output = args.output.join(
                     Path::new(filename.as_str())
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                        + ".svg",
+                );
+                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+            }
+            SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
+                let data_line = LabelMeDataLine::try_from(line.as_str())?;
+                let screw_spine = ScrewSpine::try_from(&data_line.content)?;
+                let data_w_image =
+                    LabelMeDataWImage::try_from_data_and_path(data_line.content, &args.input)?;
+                let data = PointDataWithImage::new(screw_spine, data_w_image);
+
+                let draws = svg_sub_implant_args
+                    .measures
+                    .unwrap_or_else(ImplantDraw::all);
+                let hide = svg_sub_implant_args.hide;
+
+                let output = args.output.join(
+                    Path::new(data_line.filename.as_str())
                         .file_stem()
                         .unwrap()
                         .to_string_lossy()
@@ -534,6 +589,7 @@ mod tests {
     fn svg_cmd_scol_case5() -> Result<()> {
         // test bending
         let mut svg_args = gen_svg_args();
+        svg_args.svg_args.subcommand = SvgSubCommands::CoronalImplant(Default::default());
         let data_dir = PathBuf::from("../../tests/data/");
         svg_args.input = data_dir.join("case5/frontal_postop.json");
         svg_args.output = output_path("scoliosis/case5_frontal_postop.svg")?;

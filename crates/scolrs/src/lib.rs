@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use draw::MeasureError;
-use head_neck::{LateralPoints, TryConvertContentFilename};
-use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam};
+use head_neck::TryConvertContentFilename;
+use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage};
 use lenke::{LumbarModifier, MajorCurve};
 use log::{debug, error, warn};
 use named_derive::{ContentFilename, HasImageMetadata};
@@ -1392,52 +1392,15 @@ pub struct CoronalPointsAndCurveIR {
     pub curves: Option<CurveDesc>,
 }
 
-pub trait UpdatePoints {
-    /// Update points with new data while maintaining other data
-    fn update_points(&self, data: &LabelMeData) -> Self;
-}
-
-impl UpdatePoints for CoronalPointsAndCurve {
-    fn update_points(&self, data: &LabelMeData) -> Self {
-        let mut cp = self.clone();
-
-        cp.coronal_points = CoronalPoints::try_from(data.clone()).unwrap();
-        cp.coronal_points.c_coefs = self.coronal_points.spine.fit_poly().unwrap();
-
-        cp.coronal_points.image_metadata = self.coronal_points.image_metadata.clone();
-        cp
-    }
-}
-
-impl UpdatePoints for SagittalPoints {
-    fn update_points(&self, data: &LabelMeData) -> Self {
-        let mut sp = SagittalPoints::try_from(data.clone()).unwrap();
-        sp.image_metadata = self.image_metadata.clone();
-        sp
-    }
-}
-
-impl UpdatePoints for LateralPoints {
-    fn update_points(&self, data: &LabelMeData) -> Self {
-        let mut lp = LateralPoints::try_from(data.clone()).unwrap();
-        lp.image_metadata = self.image_metadata.clone();
-        lp
-    }
-}
-
 /// Maintain redundant point data in sync with scaling and resizing
-pub struct PointDataWithImage<T: UpdatePoints> {
+pub struct PointDataWithImage<T> {
     pub data: T,
     pub data_image: LabelMeDataWImage,
 }
 
-impl<T: UpdatePoints> PointDataWithImage<T> {
+impl<T> PointDataWithImage<T> {
     pub fn new(data: T, data_image: LabelMeDataWImage) -> Self {
         Self { data, data_image }
-    }
-    pub fn resize(&mut self, param: &ResizeParam) {
-        self.data_image.resize(param);
-        self.data = self.data.update_points(&self.data_image.data);
     }
 }
 
@@ -1951,6 +1914,29 @@ pub enum CoronalMeasure {
     PelvicObliquity,
     SacralObliquity,
     LegLengthDiscrepancy,
+}
+
+#[derive(
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+)]
+#[serde(rename_all = "PascalCase")]
+#[clap(rename_all = "PascalCase")]
+pub enum ImplantDraw {
+    VertebralLabels,
+    Screws,
 }
 
 pub trait MeasureAndDraw {

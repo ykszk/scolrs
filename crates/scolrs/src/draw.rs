@@ -1,13 +1,14 @@
+use crate::implant::ScrewSpine;
 use crate::{
     angle_from_lines, CoronalDraw, CoronalPointsAndCurve, HasCornerPoints, HasImageMetadata,
-    L2Norm, SagittalDraw, SagittalPoints, Scalable, ValidateLength, CORNER_LABELS,
+    ImplantDraw, L2Norm, SagittalDraw, SagittalPoints, Scalable, ValidateLength, CORNER_LABELS,
 };
 use crate::{Curve, DrawParam, Spine, VERTEBRAL_LABELS};
 use base64::Engine;
 use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
-use named_derive::Named;
+pub use named_derive::Named;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
@@ -136,6 +137,14 @@ fn _scale_coordinates(scale: (f64, f64), node: &mut Box<dyn Node>) {
             } else if Y_ATTRS.contains(&attr.as_str()) {
                 if let Ok(y) = value.parse::<f64>() {
                     *value = format!("{}", y * scale.1).into();
+                }
+            } else if attr == "width" {
+                if let Ok(size) = value.parse::<f64>() {
+                    *value = format!("{}", size * scale.0).into();
+                }
+            } else if attr == "height" {
+                if let Ok(size) = value.parse::<f64>() {
+                    *value = format!("{}", size * scale.1).into();
                 }
             } else if attr == "points" {
                 // polygon and polyline
@@ -371,6 +380,19 @@ impl Painter {
         }
         let s = points.join(" ");
         element::Polyline::new().set("points", s)
+    }
+
+    pub fn rectangle<S>(&mut self, rect: ArrayBase<S, Ix2>) -> element::Rectangle
+    where
+        S: ndarray::Data<Elem = f64>,
+    {
+        self.bbox.update((rect[[0, 0]], rect[[0, 1]]));
+        self.bbox.update((rect[[1, 0]], rect[[1, 1]]));
+        element::Rectangle::new()
+            .set("x", rect[[0, 0]])
+            .set("y", rect[[0, 1]])
+            .set("width", rect[[1, 0]] - rect[[0, 0]])
+            .set("height", rect[[1, 1]] - rect[[0, 1]])
     }
 
     pub fn polygon<S>(&mut self, points: ArrayBase<S, Ix2>) -> element::Polygon
@@ -905,7 +927,7 @@ impl DrawComponent for DrawPointSet {
 /// Label text for each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
-pub struct VertebralLabels<'a>(&'a Spine);
+pub struct VertebralLabels<'a>(pub &'a Spine);
 impl CommonComponent for VertebralLabels<'_> {}
 impl DrawComponent for VertebralLabels<'_> {
     fn draw(
@@ -1413,6 +1435,26 @@ pub fn draw_coronal(
     draw_on_image(
         image,
         coronal_set,
+        draws_hide,
+        draw_param,
+        resize_param,
+        svg_size,
+        palettes,
+    )
+}
+
+pub fn draw_implant(
+    image: DynamicImage,
+    implant_spine: ScrewSpine,
+    draws_hide: (&[ImplantDraw], &[ImplantDraw]),
+    draw_param: DrawParam,
+    resize_param: Option<ResizeParam>,
+    svg_size: (usize, usize),
+    palettes: ColorPalettes,
+) -> Result<element::SVG, DrawError> {
+    draw_on_image(
+        image,
+        implant_spine,
         draws_hide,
         draw_param,
         resize_param,

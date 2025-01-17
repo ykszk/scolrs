@@ -1,7 +1,8 @@
+use crate::{HasImageMetadata, ImplantDraw, Scalable};
 use labelme_rs::LabelMeData;
-use ndarray::{Axis, Slice};
+use ndarray::{Array, Axis, Slice};
 
-use crate::{ScolError, Spine};
+use crate::{ImageMetadata, ScolError, Spine};
 
 #[derive(Debug, Clone)]
 pub struct Rectangle {
@@ -17,6 +18,20 @@ pub struct Implant {
     pub hook: Vec<Rectangle>,
     pub transverse: Vec<Rectangle>,
     pub rod: Vec<Rectangle>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Screw {
+    /// bounding box of the screw
+    pub bb: Rectangle,
+    /// vertebrae that the screw is attached to
+    pub vertebra: usize,
+}
+
+impl Screw {
+    pub fn new(bb: Rectangle, vertebra: usize) -> Self {
+        Self { bb, vertebra }
+    }
 }
 
 impl From<&LabelMeData> for Implant {
@@ -73,45 +88,7 @@ impl TryFrom<&LabelMeData> for ImplantSpine {
 }
 
 impl ImplantSpine {
-    fn impl_list_potential_pairs(
-        mut potential_vertebrae_per_rect: Vec<Vec<(Rectangle, usize, f64)>>,
-        rect_count_per_vertebra: Vec<u8>,
-    ) -> Vec<Vec<(Rectangle, usize, f64)>> {
-        if potential_vertebrae_per_rect.is_empty() {
-            return Vec::new();
-        }
-        let last_rect = potential_vertebrae_per_rect.pop().unwrap();
-        let mut leaves = Vec::new();
-        for (rect, i_vert, dist) in last_rect {
-            if rect_count_per_vertebra[i_vert] < 2 {
-                let mut new_rect_count_per_vertebra = rect_count_per_vertebra.clone();
-                new_rect_count_per_vertebra[i_vert] += 1;
-                let new_leaves = Self::impl_list_potential_pairs(
-                    potential_vertebrae_per_rect.clone(),
-                    new_rect_count_per_vertebra,
-                )
-                .into_iter()
-                .map(|mut leaf| {
-                    leaf.push((rect.clone(), i_vert, dist));
-                    leaf
-                })
-                .collect::<Vec<_>>();
-                leaves.extend(new_leaves);
-            }
-        }
-        leaves
-    }
-
-    fn list_potential_pairs(
-        potential_vertebrae_per_rect: Vec<Vec<(Rectangle, usize, f64)>>,
-        n_vertebrae: usize,
-    ) -> Vec<Vec<(Rectangle, usize, f64)>> {
-        // potential_vertebrae_per_rect.reverse();
-        let rect_count_per_vertebra: Vec<u8> = vec![0; n_vertebrae];
-        Self::impl_list_potential_pairs(potential_vertebrae_per_rect, rect_count_per_vertebra)
-    }
-
-    fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<(Rectangle, usize)> {
+    fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<Screw> {
         let max_allowed_distance = 0.5 * crate::draw::mean_plate_length(&self.spine);
         log::debug!("max_allowed_distance: {}", max_allowed_distance);
         let vertebrae = self.spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
@@ -171,42 +148,136 @@ impl ImplantSpine {
         pairs.iter().for_each(|(_, i, _)| {
             rect_count_per_vertebra[*i] += 1;
         });
+        log::debug!("rect_count_per_vertebra: {:?}", rect_count_per_vertebra);
         let too_many_rect_per_vertebra = rect_count_per_vertebra.iter().any(|&count| count > 2);
         if !too_many_rect_per_vertebra {
-            return pairs.into_iter().map(|(rect, i, _)| (rect, i)).collect();
+            return pairs
+                .into_iter()
+                .map(|(rect, i, _)| Screw::new(rect, i))
+                .collect();
         }
-        panic!("Too many rectangles per vertebra");
-
-        let potential_pairs =
-            Self::list_potential_pairs(potential_vertebrae_per_rect, vertebrae.len_of(Axis(0)));
-        if potential_pairs.is_empty() {
-            log::warn!("No potential pairs found");
-            return Vec::new();
-        }
-        println!("{:?}", potential_pairs);
-        let costs = potential_pairs
-            .iter()
-            .map(|leaf| leaf.iter().map(|(_, _, dist)| dist).sum::<f64>())
-            .collect::<Vec<_>>();
-        let min_cost = costs.iter().cloned().fold(f64::INFINITY, f64::min);
-        let best_leaf = potential_pairs
-            .iter()
-            .enumerate()
-            .find_map(|(i, leaf)| {
-                if costs[i] == min_cost {
-                    Some(leaf)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        best_leaf
-            .iter()
-            .map(|(_, i, _)| (rectangles[*i].clone(), *i))
-            .collect()
+        log::error!("Too many rectangles per vertebra");
+        Vec::new()
     }
 
-    pub fn pair_screw(&self) -> Vec<(Rectangle, usize)> {
+    pub fn pair_screw(&self) -> Vec<Screw> {
         self.pair_impl(&self.implant.screw)
+    }
+}
+
+#[derive(Debug, Clone, HasImageMetadata)]
+pub struct ScrewSpine {
+    pub spine: Spine,
+    pub screws: Vec<Screw>,
+    pub image_metadata: ImageMetadata,
+}
+
+impl TryFrom<&LabelMeData> for ScrewSpine {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let implant_spine = ImplantSpine::try_from(data)?;
+        let screws = implant_spine.pair_screw();
+        let spine = implant_spine.spine;
+        let image_metadata = ImageMetadata::from(data.clone());
+        Ok(Self {
+            spine,
+            screws,
+            image_metadata,
+        })
+    }
+}
+
+impl Scalable for ScrewSpine {
+    type Error = std::convert::Infallible;
+
+    fn scale(&mut self) -> Result<(), Self::Error> {
+        let scale_xy = ndarray::array![
+            self.image_metadata.spacing_xy.0,
+            self.image_metadata.spacing_xy.1
+        ];
+        self.spine.scale(scale_xy.view());
+        self.screws.iter_mut().for_each(|screw| {
+            screw.bb.tl.0 *= scale_xy[0];
+            screw.bb.tl.1 *= scale_xy[1];
+            screw.bb.br.0 *= scale_xy[0];
+            screw.bb.br.1 *= scale_xy[1];
+        });
+        Ok(())
+    }
+}
+
+use crate::draw::{
+    DrawComponent, DrawError, Named, Painter, VertebralLabels, CLASS_ANNOTATION, CLASS_POLYGON,
+};
+use svg::node::element;
+
+const IMPLANT_COMPONENT_CLASS: &str = "CoronalComponent";
+pub trait ImplantComponent: DrawComponent {
+    fn default_group(&self) -> element::Group {
+        self.default_group_w_classes(&["Component", IMPLANT_COMPONENT_CLASS])
+    }
+}
+
+/// Screws and
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
+struct Screws<'a>(&'a ScrewSpine);
+impl ImplantComponent for Screws<'_> {}
+impl DrawComponent for Screws<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut crate::draw::ColorPalette,
+        line_colors: &mut crate::draw::ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let spine = &self.0.spine;
+        let mut style = ".hidden {opacity:0;transition:opacity 0.3s ease;}\n".to_string();
+        let screw_color = line_colors.get_or_new("Screw");
+        style.push_str(format!(".screw {{stroke:{screw_color};fill:transparent}}\n").as_str());
+        let vertebra_color = line_colors.get_or_new("ScrewVertebra");
+        style.push_str(format!(".screw-vertebra {{stroke:{vertebra_color};fill:none}}\n").as_str());
+        for i in 0..self.0.screws.len() {
+            let hover = format!(".screw{i}:hover ~ .screw{i}-vertebra {{opacity:1}}\n");
+            style.push_str(&hover);
+        }
+        let mut g = self.default_group().add(element::Style::new(style));
+
+        for (i, screw) in self.0.screws.iter().enumerate() {
+            let rect = Array::from_shape_vec(
+                (2, 2),
+                vec![screw.bb.tl.0, screw.bb.tl.1, screw.bb.br.0, screw.bb.br.1],
+            )
+            .unwrap();
+            let bbox = painter
+                .rectangle(rect)
+                .set("class", format!("screw screw{}", i));
+            g = g.add(bbox);
+            let mut corners = spine
+                .v_c7tl
+                .0
+                .index_axis(Axis(0), screw.vertebra + 1)
+                .to_owned(); // vertebra + 1 to skip C7
+
+            // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
+            corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
+            corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
+
+            let vertebra = painter.polygon(corners).set(
+                "class",
+                format!("hidden screw-vertebra screw{}-vertebra", i),
+            );
+            g = g.add(vertebra);
+        }
+        Ok(g)
+    }
+}
+
+impl<'a, 'b> From<(&'b ImplantDraw, &'a ScrewSpine)> for Box<dyn DrawComponent + 'a> {
+    fn from((draw, screw_spine): (&'b ImplantDraw, &'a ScrewSpine)) -> Self {
+        match draw {
+            ImplantDraw::Screws => Box::new(Screws(screw_spine)),
+            ImplantDraw::VertebralLabels => Box::new(VertebralLabels(&screw_spine.spine)),
+        }
     }
 }

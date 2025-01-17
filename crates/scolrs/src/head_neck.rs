@@ -14,7 +14,6 @@ use crate::{
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
-use named_derive::Named;
 
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView1, ArrayView2, Axis};

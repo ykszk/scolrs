@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use scolrs::{
     head_neck::{NeckLateralDraw, NeckLateralMeasure},
-    CoronalDraw, CoronalMeasure, SagittalDraw, SagittalMeasure,
+    CoronalDraw, CoronalMeasure, ImplantDraw, SagittalDraw, SagittalMeasure,
 };
 use std::path::PathBuf;
 
@@ -58,6 +58,8 @@ pub enum Plane {
 pub enum SvgSubCommands {
     /// Coronal view
     Coronal(SvgSubCoronalArgs),
+    /// Coronal view with implants
+    CoronalImplant(SvgSubImplantArgs),
     /// Sagittal view
     Sagittal(SvgSubSagittallArgs),
     /// Neck lateral view
@@ -106,6 +108,16 @@ pub struct SvgSubCoronalArgs {
     /// Hide group of measurements. Comma separated list
     #[clap(long, value_delimiter = ',')]
     pub hide_group: Vec<CoronalDrawGroup>,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct SvgSubImplantArgs {
+    /// Measurements to draw. By default, all measurements are drawn. Comma separated list
+    #[clap(short, long, value_delimiter = ',')]
+    pub measures: Option<Vec<ImplantDraw>>,
+    /// Hide measurements. Comma separated list
+    #[clap(long, value_delimiter = ',')]
+    pub hide: Vec<ImplantDraw>,
 }
 
 #[derive(Args, Debug, Clone, Default)]

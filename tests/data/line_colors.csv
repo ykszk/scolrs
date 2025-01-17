@@ -13,6 +13,7 @@ PelvicObliquity,cyan
 LegLength,lime
 SacralObliquity,hotpink
 ThoracicKyphosis,red
+T1ThoracicKyphosis,plum
 Mid/LowerThoracicKyphosis,lime
 ProximalThoracicKyphosis,blue
 LumbarLordosis,blue
@@ -30,3 +31,5 @@ WedgeAngle,firebrick
 ModifiedRenawatIndex,blueviolet
 ThoracicInletAngle,darkcyan
 NeckTilt,coral
+Screw,slateblue
+ScrewVertebra,mediumvioletred
