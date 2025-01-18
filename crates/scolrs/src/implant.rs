@@ -219,12 +219,63 @@ pub trait ImplantComponent: DrawComponent {
     }
 }
 
-/// Screws and
+/// Screws and vertebrae
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
 struct Screws<'a>(&'a ScrewSpine);
 impl ImplantComponent for Screws<'_> {}
 impl DrawComponent for Screws<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut crate::draw::ColorPalette,
+        line_colors: &mut crate::draw::ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let spine = &self.0.spine;
+        let mut g = self.default_group().set("fill", "none");
+
+        let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); spine.v_c7tl.0.len_of(Axis(0))];
+
+        for screw in &self.0.screws {
+            screws_per_vertebra[screw.vertebra].push(screw);
+        }
+
+        for (i, screws) in screws_per_vertebra.iter().enumerate() {
+            if screws.is_empty() {
+                continue;
+            }
+            let line_color = line_colors.get_or_new(format!("screw-vertebra{i}").as_str());
+            let mut g_screw_vertebra = element::Group::new().set("stroke", line_color);
+            let mut corners = spine.v_c7tl.0.index_axis(Axis(0), i + 1).to_owned(); // vertebra + 1 to skip C7
+
+            // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
+            corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
+            corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
+
+            let vertebra = painter.polygon(corners).set("stroke-dasharray", "5,5");
+            g_screw_vertebra = g_screw_vertebra.add(vertebra);
+
+            for screw in screws {
+                let rect = Array::from_shape_vec(
+                    (2, 2),
+                    vec![screw.bb.tl.0, screw.bb.tl.1, screw.bb.br.0, screw.bb.br.1],
+                )
+                .unwrap();
+                let bbox = painter.rectangle(rect);
+                g_screw_vertebra = g_screw_vertebra.add(bbox);
+            }
+            g = g.add(g_screw_vertebra);
+        }
+        Ok(g)
+    }
+}
+
+/// Screws and vertebrae with hover effect
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
+pub struct HoverScrews<'a>(&'a ScrewSpine);
+impl ImplantComponent for HoverScrews<'_> {}
+impl DrawComponent for HoverScrews<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
