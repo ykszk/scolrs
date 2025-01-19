@@ -4,7 +4,7 @@ use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage};
 use lenke::{LumbarModifier, MajorCurve};
 use log::{debug, error, warn};
-use named_derive::{ContentFilename, HasImageMetadata};
+pub use named_derive::{ContentFilename, HasImageMetadata};
 use ndarray::{
     concatenate, s, stack, Array, Array1, Array2, Array3, ArrayBase, ArrayView1, ArrayView2,
     ArrayView3, Axis, Data,

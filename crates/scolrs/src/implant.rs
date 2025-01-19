@@ -1,6 +1,8 @@
+use crate::ContentFilename;
 use crate::{HasImageMetadata, ImplantDraw, Scalable};
 use labelme_rs::LabelMeData;
 use ndarray::{Array, Axis, Slice};
+use serde::{Deserialize, Serialize};
 
 use crate::{ImageMetadata, ScolError, Spine};
 
@@ -207,6 +209,17 @@ impl Scalable for ScrewSpine {
     }
 }
 
+impl ScrewSpine {
+    /// The number of screws per vertebra
+    pub fn count_screws(&self) -> Vec<usize> {
+        let mut count = vec![0; self.spine.v_c7tl.0.len_of(Axis(0)) - 1];
+        for screw in &self.screws {
+            count[screw.vertebra] += 1;
+        }
+        count
+    }
+}
+
 use crate::draw::{
     DrawComponent, DrawError, Named, Painter, VertebralLabels, CLASS_ANNOTATION, CLASS_POLYGON,
 };
@@ -229,7 +242,7 @@ impl DrawComponent for Screws<'_> {
         &self,
         painter: &mut Painter,
         _label_colors: &mut crate::draw::ColorPalette,
-        line_colors: &mut crate::draw::ColorPalette,
+        _line_colors: &mut crate::draw::ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
         let mut g = self.default_group().set("fill", "none");
@@ -241,10 +254,10 @@ impl DrawComponent for Screws<'_> {
         }
 
         for (i, screws) in screws_per_vertebra.iter().enumerate() {
+            let line_color = crate::draw::TAB10_NEW_TAB10[i % 20];
             if screws.is_empty() {
                 continue;
             }
-            let line_color = line_colors.get_or_new(format!("screw-vertebra{i}").as_str());
             let mut g_screw_vertebra = element::Group::new().set("stroke", line_color);
             let mut corners = spine.v_c7tl.0.index_axis(Axis(0), i + 1).to_owned(); // vertebra + 1 to skip C7
 
@@ -331,4 +344,210 @@ impl<'a, 'b> From<(&'b ImplantDraw, &'a ScrewSpine)> for Box<dyn DrawComponent +
             ImplantDraw::VertebralLabels => Box::new(VertebralLabels(&screw_spine.spine)),
         }
     }
+}
+
+pub mod detectron2 {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Output {
+        pub instances: Instances,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Instances {
+        /// bounding box coordinates in (x1, y1, x2, y2) format
+        pub pred_boxes: Vec<(f64, f64, f64, f64)>,
+        pub scores: Vec<f64>,
+        pub pred_classes: Vec<usize>,
+        // pub pred_masks: Vec<Mask>,
+        /// keypoint coordinates in (x, y, score) format
+        pub pred_keypoints: Vec<Vec<(f64, f64, f64)>>,
+        pub image_size: (usize, usize),
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct DetectedBox {
+        /// bounding box coordinates in (x1, y1, x2, y2) format
+        pub coords: (f64, f64, f64, f64),
+        pub score: f64,
+    }
+
+    impl Instances {
+        pub fn boxes(&self, class: usize) -> Vec<DetectedBox> {
+            self.pred_boxes
+                .iter()
+                .zip(self.scores.iter())
+                .zip(self.pred_classes.iter())
+                .filter_map(|((coords, &score), &c)| {
+                    if c == class {
+                        Some(DetectedBox {
+                            coords: *coords,
+                            score,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+    }
+
+    // impl From<&Instances> for Vec<Box> {
+    //     fn from(instance: &Instances) -> Self {
+    //         instance
+    //             .pred_boxes
+    //             .iter()
+    //             .zip(instance.scores.iter())
+    //             .zip(instance.pred_classes.iter())
+    //             .map(|((coords, &score), &class)| Box {
+    //                 coords: *coords,
+    //                 score,
+    //                 class,
+    //             })
+    //             .collect()
+    //     }
+    // }
+}
+
+pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Screw> {
+    let max_allowed_distance = 1.0 * crate::draw::mean_plate_length(spine);
+    log::debug!("max_allowed_distance: {}", max_allowed_distance);
+    let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
+    let screw_centroids = screws
+        .iter()
+        .map(|screw| {
+            (
+                (screw.coords.0 + screw.coords.2) / 2.0,
+                (screw.coords.1 + screw.coords.3) / 2.0,
+            )
+        })
+        .collect::<Vec<_>>();
+    // pair each screw with the closest vertebra
+    // one vertebra can be paired with at most two screws
+    // optimal pairing minimizes the sum of distances between paired screws and vertebrae
+    let potential_vertebrae_per_screw: Vec<_> = screw_centroids
+        .iter()
+        .enumerate()
+        .map(|(i_screw, (x, y))| {
+            let potential_vertebrae: Vec<_> = vertebrae
+                .axis_iter(Axis(0))
+                .enumerate()
+                .filter_map(|(i, vertebra)| {
+                    let distances = vertebra.map_axis(Axis(1), |xy| {
+                        ((x - xy[0]).powi(2) + (y - xy[1]).powi(2)).sqrt()
+                    });
+                    let min_distance = distances.iter().cloned().fold(f64::INFINITY, f64::min);
+                    if min_distance < max_allowed_distance {
+                        Some((screws[i_screw].clone(), i, min_distance))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            potential_vertebrae
+        })
+        .collect();
+    log::debug!(
+        "number of potential vertebrae per screw: {:?}",
+        potential_vertebrae_per_screw
+            .iter()
+            .map(|v| v.len())
+            .collect::<Vec<_>>()
+    );
+    // try simple pairs with closest vertebrae first
+    let pairs: Vec<_> = potential_vertebrae_per_screw
+        .iter()
+        .filter_map(|potential_vertebrae| {
+            let closest_vertebrae = potential_vertebrae
+                .iter()
+                .min_by(|(_, _, dist1), (_, _, dist2)| dist1.partial_cmp(dist2).unwrap())
+                .map(|x| x.to_owned());
+            closest_vertebrae
+        })
+        .collect();
+    let mut screw_count_per_vertebra: Vec<u8> = vec![0; vertebrae.len_of(Axis(0))];
+    pairs.iter().for_each(|(_, i, _)| {
+        screw_count_per_vertebra[*i] += 1;
+    });
+    log::debug!("screw_count_per_vertebra: {:?}", screw_count_per_vertebra);
+    let too_many_screw_per_vertebra = screw_count_per_vertebra.iter().any(|&count| count > 2);
+    if !too_many_screw_per_vertebra {
+        return pairs
+            .into_iter()
+            .map(|(screw, i, _)| {
+                Screw::new(
+                    Rectangle {
+                        tl: (screw.coords.0, screw.coords.1),
+                        br: (screw.coords.2, screw.coords.3),
+                    },
+                    i,
+                )
+            })
+            .collect();
+    }
+    log::debug!("Too many screws per vertebra");
+    let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); vertebrae.len_of(Axis(0))];
+    for pair in pairs {
+        screws_per_vertebra[pair.1].push(pair.0);
+    }
+    let refined_screws_per_vertebra: Vec<_> = screws_per_vertebra
+        .into_iter()
+        .map(|mut screws| {
+            if screws.len() < 3 {
+                return screws;
+            };
+            screws.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+            screws.truncate(2);
+            screws
+        })
+        .collect();
+    refined_screws_per_vertebra
+        .into_iter()
+        .enumerate()
+        .flat_map(|(i, screws)| {
+            screws
+                .into_iter()
+                .map(|screw| {
+                    Screw::new(
+                        Rectangle {
+                            tl: (screw.coords.0, screw.coords.1),
+                            br: (screw.coords.2, screw.coords.3),
+                        },
+                        i,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabelMeDetectron2 {
+    #[serde(flatten)]
+    pub labelme: LabelMeData,
+    #[serde(flatten)]
+    pub detectron2: detectron2::Output,
+}
+
+impl LabelMeDetectron2 {
+    pub fn pair_screw(&self) -> Result<ScrewSpine, ScolError> {
+        let screws = pair_screw(
+            &self.detectron2.instances.boxes(1),
+            &Spine::try_from(&self.labelme).unwrap(),
+        );
+        let spine = Spine::try_from(&self.labelme)?;
+        let image_metadata = ImageMetadata::from(self.labelme.clone());
+        Ok(ScrewSpine {
+            spine,
+            screws,
+            image_metadata,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, ContentFilename)]
+pub struct LabelMeDetectron2Line {
+    pub content: LabelMeDetectron2,
+    pub filename: String,
 }

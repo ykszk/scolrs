@@ -371,7 +371,7 @@ pub struct ConvArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct ImplantArgs {
-    /// Input json file
+    /// Input labelme and detectron2 joined json filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
 }

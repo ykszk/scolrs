@@ -71,6 +71,12 @@ impl ColorPalette {
     }
 }
 
+pub const TAB10_NEW_TAB10: [&str; 20] = [
+    "#1f77b4", "#ff7f0f", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+    "#bcbd22", "#16becf", "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14e", "#edc949",
+    "#af7aa1", "#ff9da7", "#9c755f", "#bab0ac",
+];
+
 pub struct Painter {
     pub param: DrawParam,
     pub size: (usize, usize),

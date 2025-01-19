@@ -7,14 +7,14 @@ use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
 use labelme_rs::{
     image::{DynamicImage, GenericImageView},
-    LabelMeData, LabelMeDataLine, LabelMeDataWImage, ResizeParam,
+    LabelMeData, LabelMeDataWImage, ResizeParam,
 };
 use log::debug;
 use rayon::prelude::*;
 use scolrs::{
     draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
-    implant::ScrewSpine,
+    implant::{LabelMeDetectron2, LabelMeDetectron2Line, ScrewSpine},
     ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
     HasImageMetadata, ImageMetadata, ImplantDraw, MeasureAndDraw, PointDataWithImage, SagittalDraw,
     SagittalPoints, SagittalPointsLine, Scalable,
@@ -283,8 +283,13 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
         SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
-            let data: PointDataWithImage<ScrewSpine> =
-                load_from_labelme_json_file(&args.input, svg_common.pull_spacing)?;
+            let data: LabelMeDetectron2 =
+                serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
+            let screw_spine = data.pair_screw()?;
+            let data_w_image =
+                LabelMeDataWImage::try_from_data_and_path(data.labelme, &args.input)?;
+            let data = PointDataWithImage::new(screw_spine, data_w_image);
+
             let draws = svg_sub_implant_args
                 .measures
                 .unwrap_or_else(ImplantDraw::all);
@@ -450,10 +455,12 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 process_one(svg_common.clone(), data, &draws, &hide, &output)?;
             }
             SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
-                let data_line = LabelMeDataLine::try_from(line.as_str())?;
-                let screw_spine = ScrewSpine::try_from(&data_line.content)?;
-                let data_w_image =
-                    LabelMeDataWImage::try_from_data_and_path(data_line.content, &args.input)?;
+                let data_line: LabelMeDetectron2Line = serde_json::from_str(line.as_str())?;
+                let screw_spine = data_line.content.pair_screw()?;
+                let data_w_image = LabelMeDataWImage::try_from_data_and_path(
+                    data_line.content.labelme,
+                    &args.input,
+                )?;
                 let data = PointDataWithImage::new(screw_spine, data_w_image);
 
                 let draws = svg_sub_implant_args

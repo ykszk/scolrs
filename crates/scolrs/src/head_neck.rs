@@ -238,7 +238,7 @@ struct LateralPointsIR {
     pub image_metadata: ImageMetadata,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, named_derive::ContentFilename)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ContentFilename)]
 pub struct LateralPointsLine {
     pub content: LateralPoints,
     pub filename: String,
