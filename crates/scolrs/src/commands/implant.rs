@@ -2,6 +2,9 @@ use std::io::{BufRead, BufReader};
 
 use crate::cli::ImplantArgs;
 use anyhow::{Context, Result};
+use scolrs::implant::{
+    LabelMeDetectron2, LabelMeOptionalDetectron2, LabelMeOptionalDetectron2Line,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,25 +22,38 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
         };
         for line in reader.lines() {
             let line = line?;
-            let labelme_detectron2: scolrs::implant::LabelMeDetectron2Line =
-                serde_json::from_str(&line)?;
-            let screw_spine = labelme_detectron2.content.pair_screw()?;
-            let screw_counts = screw_spine.count_screws();
-            let screw_count = ScrewCount {
-                content: screw_counts,
-                filename: labelme_detectron2.filename,
-            };
-            let json_str = serde_json::to_string(&screw_count)?;
-            println!("{}", json_str);
+            let data_line = serde_json::from_str::<LabelMeOptionalDetectron2Line>(&line)?;
+            if let Some(detectron2) = data_line.content.detectron2 {
+                let data = LabelMeDetectron2 {
+                    labelme: data_line.content.labelme,
+                    detectron2,
+                };
+                let screw_spine = data.pair_screw()?;
+                let screw_counts = screw_spine.count_screws();
+                println!("{} {:?}", data_line.filename, screw_counts);
+            } else {
+                let implant = scolrs::implant::ImplantSpine::try_from(&data_line.content.labelme)?;
+                let pairs = implant.pair_screw();
+                println!("{} {:?}", data_line.filename, pairs);
+            }
         }
     } else {
         let json_str = std::fs::read_to_string(args.input.as_path())
             .with_context(|| format!("Failed to read file: {:?}", args.input))?;
-        let labelme_detectron2: scolrs::implant::LabelMeDetectron2 =
-            serde_json::from_str(&json_str)?;
-        let screw_spine = labelme_detectron2.pair_screw()?;
-        let screw_counts = screw_spine.count_screws();
-        println!("Screw counts: {:?}", screw_counts);
+        let data: LabelMeOptionalDetectron2 = serde_json::from_str(&json_str)?;
+        if let Some(detectron2) = data.detectron2 {
+            let data = LabelMeDetectron2 {
+                labelme: data.labelme,
+                detectron2,
+            };
+            let screw_spine = data.pair_screw()?;
+            let screw_counts = screw_spine.count_screws();
+            println!("{} {:?}", args.input.display(), screw_counts);
+        } else {
+            let implant = scolrs::implant::ImplantSpine::try_from(&data.labelme)?;
+            let pairs = implant.pair_screw();
+            println!("{} {:?}", args.input.display(), pairs);
+        }
     }
 
     Ok(())

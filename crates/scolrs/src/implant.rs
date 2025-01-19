@@ -103,9 +103,7 @@ impl ImplantSpine {
                 )
             })
             .collect::<Vec<_>>();
-        // pair each rectangle with the closest vertebra
-        // one vertebra can be paired with at most two rectangles
-        // optimal pairing minimizes the sum of distances between paired rectangles and vertebrae
+        // list of potential vertebrae for each rectangle
         let potential_vertebrae_per_rect: Vec<_> = rectangle_centroids
             .iter()
             .enumerate()
@@ -152,18 +150,26 @@ impl ImplantSpine {
         });
         log::debug!("rect_count_per_vertebra: {:?}", rect_count_per_vertebra);
         let too_many_rect_per_vertebra = rect_count_per_vertebra.iter().any(|&count| count > 2);
-        if !too_many_rect_per_vertebra {
-            return pairs
-                .into_iter()
-                .map(|(rect, i, _)| Screw::new(rect, i))
-                .collect();
+        if too_many_rect_per_vertebra {
+            log::error!("Too many rectangles per vertebra");
         }
-        log::error!("Too many rectangles per vertebra");
-        Vec::new()
+        pairs
+            .into_iter()
+            .map(|(rect, i, _)| Screw::new(rect, i))
+            .collect()
     }
 
     pub fn pair_screw(&self) -> Vec<Screw> {
         self.pair_impl(&self.implant.screw)
+    }
+
+    pub fn screw_spine(&self, image_metadata: ImageMetadata) -> ScrewSpine {
+        let screws = self.pair_screw();
+        ScrewSpine {
+            spine: self.spine.clone(),
+            screws,
+            image_metadata,
+        }
     }
 }
 
@@ -549,5 +555,45 @@ impl LabelMeDetectron2 {
 #[derive(Serialize, Deserialize, Clone, Debug, ContentFilename)]
 pub struct LabelMeDetectron2Line {
     pub content: LabelMeDetectron2,
+    pub filename: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabelMeOptionalDetectron2 {
+    #[serde(flatten)]
+    pub labelme: LabelMeData,
+    #[serde(flatten)]
+    pub detectron2: Option<detectron2::Output>,
+}
+
+impl LabelMeOptionalDetectron2 {
+    pub fn screw_spine(&self) -> Result<ScrewSpine, ScolError> {
+        if let Some(detectron2) = &self.detectron2 {
+            let screws = pair_screw(
+                &detectron2.instances.boxes(1),
+                &Spine::try_from(&self.labelme)?,
+            );
+            let spine = Spine::try_from(&self.labelme)?;
+            let image_metadata = ImageMetadata::from(self.labelme.clone());
+            Ok(ScrewSpine {
+                spine,
+                screws,
+                image_metadata,
+            })
+        } else {
+            let implant = ImplantSpine::try_from(&self.labelme)?;
+            let screws = implant.pair_screw();
+            Ok(ScrewSpine {
+                spine: implant.spine,
+                screws,
+                image_metadata: ImageMetadata::from(self.labelme.clone()),
+            })
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LabelMeOptionalDetectron2Line {
+    pub content: LabelMeOptionalDetectron2,
     pub filename: String,
 }

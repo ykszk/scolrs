@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use scolrs::{
     draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
-    implant::{LabelMeDetectron2, LabelMeDetectron2Line, ScrewSpine},
+    implant::{LabelMeOptionalDetectron2, LabelMeOptionalDetectron2Line, ScrewSpine},
     ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
     HasImageMetadata, ImageMetadata, ImplantDraw, MeasureAndDraw, PointDataWithImage, SagittalDraw,
     SagittalPoints, SagittalPointsLine, Scalable,
@@ -283,9 +283,9 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             process_one(svg_common, data, &draws, &hide, &args.output)?;
         }
         SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
-            let data: LabelMeDetectron2 =
+            let data: LabelMeOptionalDetectron2 =
                 serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
-            let screw_spine = data.pair_screw()?;
+            let screw_spine = data.screw_spine()?;
             let data_w_image =
                 LabelMeDataWImage::try_from_data_and_path(data.labelme, &args.input)?;
             let data = PointDataWithImage::new(screw_spine, data_w_image);
@@ -455,8 +455,8 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 process_one(svg_common.clone(), data, &draws, &hide, &output)?;
             }
             SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
-                let data_line: LabelMeDetectron2Line = serde_json::from_str(line.as_str())?;
-                let screw_spine = data_line.content.pair_screw()?;
+                let data_line: LabelMeOptionalDetectron2Line = serde_json::from_str(line.as_str())?;
+                let screw_spine = data_line.content.screw_spine()?;
                 let data_w_image = LabelMeDataWImage::try_from_data_and_path(
                     data_line.content.labelme,
                     &args.input,
