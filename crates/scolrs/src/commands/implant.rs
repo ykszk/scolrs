@@ -23,37 +23,20 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
         for line in reader.lines() {
             let line = line?;
             let data_line = serde_json::from_str::<LabelMeOptionalDetectron2Line>(&line)?;
-            if let Some(detectron2) = data_line.content.detectron2 {
-                let data = LabelMeDetectron2 {
-                    labelme: data_line.content.labelme,
-                    detectron2,
-                };
-                let screw_spine = data.pair_screw()?;
-                let screw_counts = screw_spine.count_screws();
-                println!("{} {:?}", data_line.filename, screw_counts);
-            } else {
-                let implant = scolrs::implant::ImplantSpine::try_from(&data_line.content.labelme)?;
-                let pairs = implant.pair_screw();
-                println!("{} {:?}", data_line.filename, pairs);
+            let screw_spine = data_line.content.screw_spine()?;
+            let screw_counts = screw_spine.count_screws();
+            if screw_counts.iter().any(|&x| x > 2) {
+                log::warn!("Too many! {} {:?}", data_line.filename, screw_counts);
             }
+            println!("{} {:?}", data_line.filename, screw_counts);
         }
     } else {
         let json_str = std::fs::read_to_string(args.input.as_path())
             .with_context(|| format!("Failed to read file: {:?}", args.input))?;
         let data: LabelMeOptionalDetectron2 = serde_json::from_str(&json_str)?;
-        if let Some(detectron2) = data.detectron2 {
-            let data = LabelMeDetectron2 {
-                labelme: data.labelme,
-                detectron2,
-            };
-            let screw_spine = data.pair_screw()?;
-            let screw_counts = screw_spine.count_screws();
-            println!("{} {:?}", args.input.display(), screw_counts);
-        } else {
-            let implant = scolrs::implant::ImplantSpine::try_from(&data.labelme)?;
-            let pairs = implant.pair_screw();
-            println!("{} {:?}", args.input.display(), pairs);
-        }
+        let screw_spine = data.screw_spine()?;
+        let screw_counts = screw_spine.count_screws();
+        println!("{} {:?}", args.input.display(), screw_counts);
     }
 
     Ok(())
