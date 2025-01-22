@@ -2,9 +2,7 @@ use std::io::{BufRead, BufReader};
 
 use crate::cli::ImplantArgs;
 use anyhow::{Context, Result};
-use scolrs::implant::{
-    LabelMeDetectron2, LabelMeOptionalDetectron2, LabelMeOptionalDetectron2Line,
-};
+use scolrs::implant::{LabelMeOptionalDetectron2, LabelMeOptionalDetectron2Line};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

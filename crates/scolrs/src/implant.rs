@@ -1,5 +1,3 @@
-use std::array;
-
 use crate::ContentFilename;
 use crate::{HasImageMetadata, ImplantDraw, Scalable};
 use labelme_rs::LabelMeData;
@@ -117,9 +115,10 @@ impl TryFrom<&LabelMeData> for ImplantSpine {
 
 impl ImplantSpine {
     fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<Screw> {
-        let max_allowed_distance = 0.5 * crate::draw::mean_plate_length(&self.spine);
+        let max_allowed_distance = 1.0 * crate::draw::mean_plate_length(&self.spine);
         log::debug!("max_allowed_distance: {}", max_allowed_distance);
         let vertebrae = self.spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
+        let vertebra_centroids = self.spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
         let rectangle_centroids = rectangles
             .iter()
             .map(|rectangle| {
@@ -133,12 +132,12 @@ impl ImplantSpine {
         #[derive(Debug, Clone)]
         struct ScrewVertebra {
             i_rect: usize,
+            c_rect: (f64, f64),
             i_vert: usize,
             dist: f64,
             /// displacement of the rectangle center from the vertebra center along the x-axis
             dx: f64,
         }
-        let vertebra_centroids = self.spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
         let potential_vertebrae_per_rect: Vec<_> = rectangle_centroids
             .iter()
             .enumerate()
@@ -152,10 +151,10 @@ impl ImplantSpine {
                         });
                         let min_distance = distances.iter().cloned().fold(f64::INFINITY, f64::min);
                         if min_distance < max_allowed_distance {
-                            let (x, _) = rectangle_centroids[i_rect];
                             let dx = x - vertebra_centroids.index_axis(Axis(0), i_vert)[0];
                             Some(ScrewVertebra {
                                 i_rect,
+                                c_rect: (*x, *y),
                                 i_vert,
                                 dist: min_distance,
                                 dx,
@@ -186,23 +185,10 @@ impl ImplantSpine {
                 closest_vertebrae
             })
             .collect();
-        let mut rect_count_per_vertebra: Vec<u8> = vec![0; vertebrae.len_of(Axis(0))];
-        pairs.iter().for_each(|ScrewVertebra { i_vert, .. }| {
-            rect_count_per_vertebra[*i_vert] += 1;
-        });
-        let too_many_rect_per_vertebra = rect_count_per_vertebra.iter().any(|&count| count > 2);
-
-        // let dxs = pairs
-        //     .iter()
-        //     .map(|ScrewVertebra { i_rect, i_vert, .. }| {
-        //         let (x, _) = rectangle_centroids[*i_rect];
-        //         let vc = vertebra_centroids.index_axis(Axis(0), *i_vert);
-        //         x - vc[0]
-        //     })
-        //     .collect::<Vec<_>>();
 
         // sort pairs by dx
         pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
+
         // split pairs into two groups: left and right groups
         // split minimize the sum of standard deviations of dx in each group
         let mut sum_stds = Vec::new();
@@ -216,53 +202,87 @@ impl ImplantSpine {
         }
         let min_sum_std = sum_stds.iter().cloned().fold(f64::INFINITY, f64::min);
         let i_split = sum_stds.iter().position(|&x| x == min_sum_std).unwrap();
-        let (left_pairs, right_pairs) = pairs.split_at(i_split + 1);
+        let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
 
-        let mut pairs = left_pairs
-            .iter()
-            .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, true))
-            .collect::<Vec<_>>();
-        pairs.extend(
+        trait Utils {
+            fn sort_by_y(&mut self);
+            fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8>;
+        }
+
+        impl Utils for &mut [ScrewVertebra] {
+            fn sort_by_y(&mut self) {
+                self.sort_by(|a, b| {
+                    let (_x1, y1) = a.c_rect;
+                    let (_x2, y2) = b.c_rect;
+                    y1.partial_cmp(&y2).unwrap()
+                });
+            }
+            fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8> {
+                let mut count = vec![0; n_vertebrae];
+                self.iter().for_each(|ScrewVertebra { i_vert, .. }| {
+                    count[*i_vert] += 1;
+                });
+                count
+            }
+        }
+
+        // sort by y-coordinate
+        left_pairs.sort_by_y();
+        right_pairs.sort_by_y();
+
+        let n_vertebrae = vertebrae.len_of(Axis(0));
+
+        let mut optimal_pair_list: Vec<Vec<Screw>> = Vec::with_capacity(2);
+
+        for (i_pair, pairs) in [&mut left_pairs, &mut right_pairs].into_iter().enumerate() {
+            let rect_count_per_vertebra = pairs.count_rect_per_vertebra(n_vertebrae);
+            let left = i_pair == 0;
+
+            let optimal_pairs: Vec<Screw> =
+                if rect_count_per_vertebra.iter().any(|&count| count > 1) {
+                    log::warn!("Too many rectangles per vertebra");
+                    // find optimal assignment
+                    let cost_func = |i_rect: usize, i_vert: usize| {
+                        let (x, y): (f64, f64) = pairs[i_rect].c_rect;
+                        let vc = vertebra_centroids.index_axis(Axis(0), i_vert);
+                        ((x - vc[0]).powi(2) + (y - vc[1]).powi(2)).sqrt()
+                    };
+
+                    let optimal_assignments =
+                        ordered_assignment(n_vertebrae, pairs.len(), cost_func);
+
+                    pairs
+                        .iter()
+                        .zip(optimal_assignments.assignments.iter())
+                        .map(|(sv, &i_vert)| {
+                            Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, left)
+                        })
+                        .collect()
+                } else {
+                    pairs
+                        .iter()
+                        .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, left))
+                        .collect::<Vec<_>>()
+                };
+            optimal_pair_list.push(optimal_pairs);
+        }
+
+        let right_pairs = optimal_pair_list.pop().unwrap();
+        let mut left_pairs = optimal_pair_list.pop().unwrap();
+
+        left_pairs.extend(
             right_pairs
                 .iter()
-                .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, false)),
+                .map(|x| Screw::with_pos(x.bb.clone(), x.vertebra, false)),
         );
-        pairs
-
-        // if too_many_rect_per_vertebra {
-        // return pairs
-        //     .into_iter()
-        //     .map(|(i_rect, i, _)| Screw::new(rectangles[i_rect].clone(), i))
-        //     .collect();
-        // log::warn!("Too many rectangles per vertebra");
-        //     log::info!("rect_count_per_vertebra in {:?}: {:?}", rect_count_per_vertebra);
-        // }
-        // log::warn!("Too many rectangles per vertebra");
-        // let mut screws_per_vertebra = vec![Vec::new(); vertebrae.len_of(Axis(0))];
-        // pairs.iter().for_each(
-        //     |ScrewVertebra {
-        //          i_rect,
-        //          i_vert,
-        //          dist,
-        //          ..
-        //      }| {
-        //         screws_per_vertebra[*i_vert].push((i_rect, *dist));
-        //     },
-        // );
-        // for (i_vert, screws) in screws_per_vertebra.iter_mut().enumerate() {
-        //     if screws.len() < 3 {
-        //         continue;
-        //     }
-        //     screws.sort_by(|(_, dist1), (_, dist2)| dist1.partial_cmp(dist2).unwrap());
-        //     screws.truncate(2);
-        // }
-        // // Vec::new()
-        // pairs
-        //     .into_iter()
-        //     .map(|ScrewVertebra { i_rect, i_vert, .. }| {
-        //         Screw::new(rectangles[i_rect].clone(), i_vert)
-        //     })
-        //     .collect()
+        if left_pairs.len() != rectangles.len() {
+            log::warn!(
+                "Number of screws does not match number of rectangles. {} != {}",
+                left_pairs.len(),
+                rectangles.len()
+            );
+        }
+        left_pairs
     }
 
     pub fn pair_screw(&self) -> Vec<Screw> {
@@ -713,4 +733,176 @@ impl LabelMeOptionalDetectron2 {
 pub struct LabelMeOptionalDetectron2Line {
     pub content: LabelMeOptionalDetectron2,
     pub filename: String,
+}
+
+use std::collections::HashMap;
+
+/// Represents a dynamic programming state key
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+struct State {
+    object_idx: usize,
+    slot_idx: usize,
+}
+
+/// Represents the result of the assignment problem
+#[derive(Debug)]
+pub struct AssignmentResult {
+    pub min_cost: f64,
+    pub assignments: Vec<usize>,
+}
+pub fn ordered_assignment<F>(n_slots: usize, m_objects: usize, cost_function: F) -> AssignmentResult
+where
+    F: Fn(usize, usize) -> f64,
+{
+    // Memoization caches
+    let mut dp: HashMap<State, f64> = HashMap::new();
+    let mut prev: HashMap<State, Option<usize>> = HashMap::new();
+
+    // Recursive solver function
+    fn solve<F>(
+        state: State,
+        m_objects: usize,
+        n_slots: usize,
+        cost_function: &F,
+        dp: &mut HashMap<State, f64>,
+        prev: &mut HashMap<State, Option<usize>>,
+    ) -> f64
+    where
+        F: Fn(usize, usize) -> f64,
+    {
+        // Base cases
+        if state.object_idx == m_objects {
+            return 0.0;
+        }
+        if state.slot_idx == n_slots {
+            return f64::INFINITY; // Represents invalid state
+        }
+
+        // Check if we've already solved this state
+        if let Some(&cost) = dp.get(&state) {
+            return cost;
+        }
+
+        // Try skipping current slot
+        let skip_cost = solve(
+            State {
+                object_idx: state.object_idx,
+                slot_idx: state.slot_idx + 1,
+            },
+            m_objects,
+            n_slots,
+            cost_function,
+            dp,
+            prev,
+        );
+
+        // Try using current slot
+        let use_cost = cost_function(state.object_idx, state.slot_idx)
+            + solve(
+                State {
+                    object_idx: state.object_idx + 1,
+                    slot_idx: state.slot_idx + 1,
+                },
+                m_objects,
+                n_slots,
+                cost_function,
+                dp,
+                prev,
+            );
+
+        // Store the better choice
+        let best_cost = skip_cost.min(use_cost);
+        dp.insert(state.clone(), best_cost);
+
+        // Store which choice was made
+        let slot_idx = state.slot_idx;
+        prev.insert(
+            state,
+            if use_cost < skip_cost {
+                Some(slot_idx)
+            } else {
+                None
+            },
+        );
+
+        best_cost
+    }
+
+    // Initial state
+    let initial_state = State {
+        object_idx: 0,
+        slot_idx: 0,
+    };
+
+    // Solve the problem
+    let min_cost = solve(
+        initial_state.clone(),
+        m_objects,
+        n_slots,
+        &cost_function,
+        &mut dp,
+        &mut prev,
+    );
+
+    log::debug!("min_cost: {}", min_cost);
+
+    // Reconstruct the solution
+    let mut assignments = Vec::new();
+    let mut curr_state = initial_state;
+
+    while curr_state.object_idx < m_objects {
+        if let Some(&Some(slot)) = prev.get(&curr_state) {
+            assignments.push(slot);
+            curr_state.object_idx += 1;
+        }
+        curr_state.slot_idx += 1;
+    }
+
+    AssignmentResult {
+        min_cost,
+        assignments,
+    }
+}
+
+// Example usage and tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_case() {
+        let n_slots = 3;
+        let m_objects = 2;
+
+        // Cost matrix for object i to slot j assignments
+        let costs = [
+            vec![1.5, 2.4, 3.1], // costs for object 0
+            vec![2.2, 1.6, 2.4],
+        ];
+
+        let cost_function = |i: usize, j: usize| costs[i][j];
+
+        let result = ordered_assignment(n_slots, m_objects, cost_function);
+        assert!((result.min_cost - 3.1).abs() < 1e-10); // 1.5 + 1.6
+        assert_eq!(result.assignments, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_complex_case() {
+        let n_slots = 6;
+        let m_objects = 3;
+
+        // Cost matrix for object i to slot j assignments
+        let costs = [
+            vec![2.3, 1.1, 0.4, 0.5, 2.2, 1.1], // costs for object 0
+            vec![3.2, 2.2, 1.3, 0.4, 0.8, 1.3], // costs for object 1
+            vec![3.3, 1.3, 2.2, 1.1, 0.4, 0.7],
+        ];
+
+        let cost_function = |i: usize, j: usize| costs[i][j];
+
+        let result = ordered_assignment(n_slots, m_objects, cost_function);
+        assert_eq!(result.assignments, vec![2, 3, 4]);
+        assert!((result.min_cost - 1.2).abs() < 1e-10); // optimal combination
+    }
 }
