@@ -374,4 +374,7 @@ pub struct ImplantArgs {
     /// Input labelme and detectron2 joined json filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
+    /// Include vertebrae in the output
+    #[clap(long)]
+    pub vertebrae: bool,
 }

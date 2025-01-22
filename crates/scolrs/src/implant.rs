@@ -1,5 +1,6 @@
 use crate::ContentFilename;
 use crate::{HasImageMetadata, ImplantDraw, Scalable};
+use indexmap::IndexMap;
 use labelme_rs::LabelMeData;
 use ndarray::{Array, Array1, Axis, Slice};
 use serde::{Deserialize, Serialize};
@@ -349,6 +350,61 @@ impl ScrewSpine {
             count[screw.vertebra] += 1;
         }
         count
+    }
+
+    /// Convert to LabelMeData with Screws and optionally Vertebrae
+    ///
+    /// `group_id` is the vertebrae index starting from 1
+    pub fn to_labelme(
+        &self,
+        flags: IndexMap<String, bool>,
+        include_vertebrae: bool,
+    ) -> LabelMeData {
+        let mut shapes = Vec::new();
+        for screw in &self.screws {
+            let points = vec![screw.bb.tl, screw.bb.br];
+            let shape = labelme_rs::Shape {
+                label: "Screw".to_string(),
+                points,
+                shape_type: "rectangle".to_string(),
+                flags: Default::default(),
+                group_id: Some(screw.vertebra + 1),
+            };
+            shapes.push(shape);
+        }
+        if include_vertebrae {
+            let vertebrae: std::collections::HashSet<_> =
+                self.screws.iter().map(|screw| screw.vertebra).collect();
+            for i_vert in vertebrae.into_iter() {
+                let points = self.spine.v_c7tl.0.index_axis(Axis(0), i_vert + 1);
+                // from (tl, tr, bl, br) to (tl, tr, br, bl)
+                let points = vec![
+                    (points[[0, 0]], points[[0, 1]]),
+                    (points[[1, 0]], points[[1, 1]]),
+                    (points[[3, 0]], points[[3, 1]]),
+                    (points[[2, 0]], points[[2, 1]]),
+                ];
+
+                let shape = labelme_rs::Shape {
+                    label: "Vertebra".to_string(),
+                    points,
+                    shape_type: "polygon".to_string(),
+                    flags: Default::default(),
+                    group_id: Some(i_vert + 1),
+                };
+                shapes.push(shape);
+            }
+        }
+        shapes.sort_by_key(|shape| shape.group_id.unwrap());
+        LabelMeData {
+            version: "4.5.6".to_string(),
+            flags,
+            shapes,
+            imageWidth: self.image_metadata.width,
+            imageHeight: self.image_metadata.height,
+            imagePath: self.image_metadata.path.clone(),
+            imageData: None,
+        }
     }
 }
 
