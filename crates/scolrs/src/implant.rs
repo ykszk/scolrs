@@ -1,5 +1,6 @@
 use crate::ContentFilename;
 use crate::{HasImageMetadata, ImplantDraw, Scalable};
+use detectron2::DetectedBox;
 use indexmap::IndexMap;
 use labelme_rs::LabelMeData;
 use ndarray::{Array, Array1, Axis, Slice};
@@ -114,157 +115,70 @@ impl TryFrom<&LabelMeData> for ImplantSpine {
     }
 }
 
+const ALLOWED_DIST_FACTOR: f64 = 1.0;
+
+trait ScrewVertebraUtils {
+    fn sort_by_y(&mut self);
+    fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8>;
+}
+
+impl ScrewVertebraUtils for &mut [ScrewVertebra] {
+    fn sort_by_y(&mut self) {
+        self.sort_by(|a, b| {
+            let (_x1, y1) = a.c_rect;
+            let (_x2, y2) = b.c_rect;
+            y1.partial_cmp(&y2).unwrap()
+        });
+    }
+    fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8> {
+        let mut count = vec![0; n_vertebrae];
+        self.iter().for_each(|ScrewVertebra { i_vert, .. }| {
+            count[*i_vert] += 1;
+        });
+        count
+    }
+}
+
 impl ImplantSpine {
     fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<Screw> {
-        let max_allowed_distance = 1.0 * crate::draw::mean_plate_length(&self.spine);
-        log::debug!("max_allowed_distance: {}", max_allowed_distance);
+        let (left_pairs, right_pairs) = pair_to_closest(rectangles, &self.spine);
+
         let vertebrae = self.spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
         let vertebra_centroids = self.spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
-        let rectangle_centroids = rectangles
-            .iter()
-            .map(|rectangle| {
-                (
-                    (rectangle.tl.0 + rectangle.br.0) / 2.0,
-                    (rectangle.tl.1 + rectangle.br.1) / 2.0,
-                )
-            })
-            .collect::<Vec<_>>();
-        // list of potential vertebrae for each rectangle
-        #[derive(Debug, Clone)]
-        struct ScrewVertebra {
-            i_rect: usize,
-            c_rect: (f64, f64),
-            i_vert: usize,
-            dist: f64,
-            /// displacement of the rectangle center from the vertebra center along the x-axis
-            dx: f64,
-        }
-        let potential_vertebrae_per_rect: Vec<_> = rectangle_centroids
-            .iter()
-            .enumerate()
-            .map(|(i_rect, (x, y))| {
-                let potential_vertebrae: Vec<_> = vertebrae
-                    .axis_iter(Axis(0))
-                    .enumerate()
-                    .filter_map(|(i_vert, vertebra)| {
-                        let distances = vertebra.map_axis(Axis(1), |xy| {
-                            ((x - xy[0]).powi(2) + (y - xy[1]).powi(2)).sqrt()
-                        });
-                        let min_distance = distances.iter().cloned().fold(f64::INFINITY, f64::min);
-                        if min_distance < max_allowed_distance {
-                            let dx = x - vertebra_centroids.index_axis(Axis(0), i_vert)[0];
-                            Some(ScrewVertebra {
-                                i_rect,
-                                c_rect: (*x, *y),
-                                i_vert,
-                                dist: min_distance,
-                                dx,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                potential_vertebrae
-            })
-            .collect();
-        log::debug!(
-            "number of potential vertebrae per rect: {:?}",
-            potential_vertebrae_per_rect
-                .iter()
-                .map(|v| v.len())
-                .collect::<Vec<_>>()
-        );
-        // try simple pairs with closest vertebrae first
-        let mut pairs: Vec<_> = potential_vertebrae_per_rect
-            .iter()
-            .filter_map(|potential_vertebrae| {
-                let closest_vertebrae = potential_vertebrae
-                    .iter()
-                    .min_by(|sv1, sv2| sv1.dist.partial_cmp(&sv2.dist).unwrap())
-                    .map(|x| x.to_owned());
-                closest_vertebrae
-            })
-            .collect();
-
-        // sort pairs by dx
-        pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
-
-        // split pairs into two groups: left and right groups
-        // split minimize the sum of standard deviations of dx in each group
-        let mut sum_stds = Vec::new();
-        for i in 1..pairs.len() - 1 {
-            let (left, right) = pairs.split_at(i);
-            let left_dx = left.iter().map(|sv| sv.dx).collect::<Vec<_>>();
-            let right_dx = right.iter().map(|sv| sv.dx).collect::<Vec<_>>();
-            let left_std = left_dx.std();
-            let right_std = right_dx.std();
-            sum_stds.push(left_std + right_std);
-        }
-        let min_sum_std = sum_stds.iter().cloned().fold(f64::INFINITY, f64::min);
-        let i_split = sum_stds.iter().position(|&x| x == min_sum_std).unwrap();
-        let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
-
-        trait Utils {
-            fn sort_by_y(&mut self);
-            fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8>;
-        }
-
-        impl Utils for &mut [ScrewVertebra] {
-            fn sort_by_y(&mut self) {
-                self.sort_by(|a, b| {
-                    let (_x1, y1) = a.c_rect;
-                    let (_x2, y2) = b.c_rect;
-                    y1.partial_cmp(&y2).unwrap()
-                });
-            }
-            fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8> {
-                let mut count = vec![0; n_vertebrae];
-                self.iter().for_each(|ScrewVertebra { i_vert, .. }| {
-                    count[*i_vert] += 1;
-                });
-                count
-            }
-        }
-
-        // sort by y-coordinate
-        left_pairs.sort_by_y();
-        right_pairs.sort_by_y();
 
         let n_vertebrae = vertebrae.len_of(Axis(0));
 
         let mut optimal_pair_list: Vec<Vec<Screw>> = Vec::with_capacity(2);
 
-        for (i_pair, pairs) in [&mut left_pairs, &mut right_pairs].into_iter().enumerate() {
-            let rect_count_per_vertebra = pairs.count_rect_per_vertebra(n_vertebrae);
+        for (i_pair, mut pairs) in [left_pairs, right_pairs].into_iter().enumerate() {
+            let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
             let left = i_pair == 0;
+            let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
 
-            let optimal_pairs: Vec<Screw> =
-                if rect_count_per_vertebra.iter().any(|&count| count > 1) {
-                    log::warn!("Too many rectangles per vertebra");
-                    // find optimal assignment
-                    let cost_func = |i_rect: usize, i_vert: usize| {
-                        let (x, y): (f64, f64) = pairs[i_rect].c_rect;
-                        let vc = vertebra_centroids.index_axis(Axis(0), i_vert);
-                        ((x - vc[0]).powi(2) + (y - vc[1]).powi(2)).sqrt()
-                    };
-
-                    let optimal_assignments =
-                        ordered_assignment(n_vertebrae, pairs.len(), cost_func);
-
-                    pairs
-                        .iter()
-                        .zip(optimal_assignments.assignments.iter())
-                        .map(|(sv, &i_vert)| {
-                            Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, left)
-                        })
-                        .collect()
-                } else {
-                    pairs
-                        .iter()
-                        .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, left))
-                        .collect::<Vec<_>>()
+            let optimal_pairs: Vec<Screw> = if too_many_rects {
+                log::warn!("Too many rectangles per vertebra");
+                // find optimal assignment
+                let cost_func = |i_rect: usize, i_vert: usize| {
+                    let (x, y): (f64, f64) = pairs[i_rect].c_rect;
+                    let vc = vertebra_centroids.index_axis(Axis(0), i_vert);
+                    ((x - vc[0]).powi(2) + (y - vc[1]).powi(2)).sqrt()
                 };
+
+                let optimal_assignments = ordered_assignment(n_vertebrae, pairs.len(), cost_func);
+
+                pairs
+                    .iter()
+                    .zip(optimal_assignments.assignments.iter())
+                    .map(|(sv, &i_vert)| {
+                        Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, left)
+                    })
+                    .collect()
+            } else {
+                pairs
+                    .iter()
+                    .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, left))
+                    .collect::<Vec<_>>()
+            };
             optimal_pair_list.push(optimal_pairs);
         }
 
@@ -591,54 +505,77 @@ pub mod detectron2 {
                 .collect()
         }
     }
-
-    // impl From<&Instances> for Vec<Box> {
-    //     fn from(instance: &Instances) -> Self {
-    //         instance
-    //             .pred_boxes
-    //             .iter()
-    //             .zip(instance.scores.iter())
-    //             .zip(instance.pred_classes.iter())
-    //             .map(|((coords, &score), &class)| Box {
-    //                 coords: *coords,
-    //                 score,
-    //                 class,
-    //             })
-    //             .collect()
-    //     }
-    // }
 }
 
-pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Screw> {
-    let max_allowed_distance = 1.0 * crate::draw::mean_plate_length(spine);
+#[derive(Debug, Clone)]
+struct ScrewVertebra {
+    i_rect: usize,
+    c_rect: (f64, f64),
+    i_vert: usize,
+    dist: f64,
+    /// displacement of the rectangle center from the vertebra center along the x-axis
+    dx: f64,
+}
+
+/// Define a trait to use [pair_to_closest] with both [Rectangle] and [DetectedBox]
+trait CalculateCentroid {
+    fn centroid(&self) -> (f64, f64);
+}
+
+impl CalculateCentroid for Rectangle {
+    fn centroid(&self) -> (f64, f64) {
+        ((self.tl.0 + self.br.0) / 2.0, (self.tl.1 + self.br.1) / 2.0)
+    }
+}
+
+impl CalculateCentroid for DetectedBox {
+    fn centroid(&self) -> (f64, f64) {
+        (
+            (self.coords.0 + self.coords.2) / 2.0,
+            (self.coords.1 + self.coords.3) / 2.0,
+        )
+    }
+}
+
+/// Pair rectangles to the closest vertebrae
+///
+/// Returns two lists of ScrewVertebra: left and right
+/// The left and right lists are sorted by the y-coordinate of the rectangle centroid
+fn pair_to_closest<T: CalculateCentroid>(
+    rectangles: &[T],
+    spine: &Spine,
+) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
+    let max_allowed_distance = ALLOWED_DIST_FACTOR * crate::draw::mean_plate_length(spine);
     log::debug!("max_allowed_distance: {}", max_allowed_distance);
     let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
-    let screw_centroids = screws
+    let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
+    let rectangle_centroids = rectangles
         .iter()
-        .map(|screw| {
-            (
-                (screw.coords.0 + screw.coords.2) / 2.0,
-                (screw.coords.1 + screw.coords.3) / 2.0,
-            )
-        })
+        .map(|rectangle| rectangle.centroid())
         .collect::<Vec<_>>();
-    // pair each screw with the closest vertebra
-    // one vertebra can be paired with at most two screws
-    // optimal pairing minimizes the sum of distances between paired screws and vertebrae
-    let potential_vertebrae_per_screw: Vec<_> = screw_centroids
+
+    // list of potential vertebrae for each rectangle
+    let potential_vertebrae_per_rect: Vec<_> = rectangle_centroids
         .iter()
         .enumerate()
-        .map(|(i_screw, (x, y))| {
+        .map(|(i_rect, (x, y))| {
             let potential_vertebrae: Vec<_> = vertebrae
                 .axis_iter(Axis(0))
                 .enumerate()
-                .filter_map(|(i, vertebra)| {
+                .filter_map(|(i_vert, vertebra)| {
                     let distances = vertebra.map_axis(Axis(1), |xy| {
                         ((x - xy[0]).powi(2) + (y - xy[1]).powi(2)).sqrt()
                     });
                     let min_distance = distances.iter().cloned().fold(f64::INFINITY, f64::min);
                     if min_distance < max_allowed_distance {
-                        Some((screws[i_screw].clone(), i, min_distance))
+                        let dx = x - vertebra_centroids.index_axis(Axis(0), i_vert)[0];
+                        Some(ScrewVertebra {
+                            i_rect,
+                            c_rect: (*x, *y),
+                            i_vert,
+                            dist: min_distance,
+                            dx,
+                        })
                     } else {
                         None
                     }
@@ -648,77 +585,108 @@ pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Scre
         })
         .collect();
     log::debug!(
-        "number of potential vertebrae per screw: {:?}",
-        potential_vertebrae_per_screw
+        "number of potential vertebrae per rect: {:?}",
+        potential_vertebrae_per_rect
             .iter()
             .map(|v| v.len())
             .collect::<Vec<_>>()
     );
-    // try simple pairs with closest vertebrae first
-    let pairs: Vec<_> = potential_vertebrae_per_screw
+
+    // simple pairing with closest vertebrae
+    let mut pairs: Vec<_> = potential_vertebrae_per_rect
         .iter()
         .filter_map(|potential_vertebrae| {
             let closest_vertebrae = potential_vertebrae
                 .iter()
-                .min_by(|(_, _, dist1), (_, _, dist2)| dist1.partial_cmp(dist2).unwrap())
+                .min_by(|sv1, sv2| sv1.dist.partial_cmp(&sv2.dist).unwrap())
                 .map(|x| x.to_owned());
             closest_vertebrae
         })
         .collect();
-    let mut screw_count_per_vertebra: Vec<u8> = vec![0; vertebrae.len_of(Axis(0))];
-    pairs.iter().for_each(|(_, i, _)| {
-        screw_count_per_vertebra[*i] += 1;
-    });
-    log::debug!("screw_count_per_vertebra: {:?}", screw_count_per_vertebra);
-    let too_many_screw_per_vertebra = screw_count_per_vertebra.iter().any(|&count| count > 2);
-    if !too_many_screw_per_vertebra {
-        return pairs
-            .into_iter()
-            .map(|(screw, i, _)| {
-                Screw::new(
-                    Rectangle {
-                        tl: (screw.coords.0, screw.coords.1),
-                        br: (screw.coords.2, screw.coords.3),
-                    },
-                    i,
-                )
-            })
-            .collect();
+
+    // sort pairs by dx
+    pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
+
+    // split pairs into two groups: left and right groups
+    // split minimize the sum of standard deviations of dx in each group
+    let mut sum_stds = Vec::new();
+    for i in 1..pairs.len() - 1 {
+        let (left, right) = pairs.split_at(i);
+        let left_dx = left.iter().map(|sv| sv.dx).collect::<Vec<_>>();
+        let right_dx = right.iter().map(|sv| sv.dx).collect::<Vec<_>>();
+        let left_std = left_dx.std();
+        let right_std = right_dx.std();
+        sum_stds.push(left_std + right_std);
     }
-    log::debug!("Too many screws per vertebra");
-    let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); vertebrae.len_of(Axis(0))];
-    for pair in pairs {
-        screws_per_vertebra[pair.1].push(pair.0);
-    }
-    let refined_screws_per_vertebra: Vec<_> = screws_per_vertebra
-        .into_iter()
-        .map(|mut screws| {
-            if screws.len() < 3 {
-                return screws;
-            };
-            screws.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
-            screws.truncate(2);
-            screws
-        })
-        .collect();
-    refined_screws_per_vertebra
-        .into_iter()
-        .enumerate()
-        .flat_map(|(i, screws)| {
-            screws
+    let min_sum_std = sum_stds.iter().cloned().fold(f64::INFINITY, f64::min);
+    let i_split = sum_stds.iter().position(|&x| x == min_sum_std).unwrap();
+    let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
+    left_pairs.sort_by_y();
+    right_pairs.sort_by_y();
+    (left_pairs.to_vec(), right_pairs.to_vec())
+}
+
+pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Screw> {
+    let (left_pairs, right_pairs) = pair_to_closest(screws, spine);
+    log::debug!(
+        "number of left and right pairs: {} {}",
+        left_pairs.len(),
+        right_pairs.len()
+    );
+    let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
+
+    let n_vertebrae = vertebrae.len_of(Axis(0));
+
+    let mut refined_pairs: Vec<Screw> = Vec::new();
+    for (left, mut pairs) in [(true, left_pairs), (false, right_pairs)].into_iter() {
+        let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
+        log::debug!("rect_count_per_vertebra: {:?}", rect_count_per_vertebra);
+        let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
+        if too_many_rects {
+            log::warn!("Too many rectangles per vertebra for side: {}", left);
+            let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); vertebrae.len_of(Axis(0))];
+            for pair in pairs {
+                screws_per_vertebra[pair.i_vert].push(pair.i_rect);
+            }
+            let refined_screws_per_vertebra: Vec<_> = screws_per_vertebra
                 .into_iter()
-                .map(|screw| {
-                    Screw::new(
-                        Rectangle {
+                .map(|mut screws_in_vert| {
+                    if screws_in_vert.len() < 2 {
+                        return screws_in_vert;
+                    };
+                    screws_in_vert
+                        .sort_by(|a, b| screws[*a].score.partial_cmp(&screws[*b].score).unwrap());
+                    screws_in_vert.truncate(1);
+                    screws_in_vert
+                })
+                .collect();
+            let refined_screws_per_vertebra: Vec<_> = refined_screws_per_vertebra
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, i_rects)| {
+                    i_rects.into_iter().map(move |i_rect| {
+                        let screw = &screws[i_rect];
+                        let rect = Rectangle {
                             tl: (screw.coords.0, screw.coords.1),
                             br: (screw.coords.2, screw.coords.3),
-                        },
-                        i,
-                    )
+                        };
+                        Screw::with_pos(rect, i, left)
+                    })
                 })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+                .collect();
+            refined_pairs.extend(refined_screws_per_vertebra);
+        } else {
+            refined_pairs.extend(pairs.iter().map(|pair| {
+                let screw = &screws[pair.i_rect];
+                let rect = Rectangle {
+                    tl: (screw.coords.0, screw.coords.1),
+                    br: (screw.coords.2, screw.coords.3),
+                };
+                Screw::with_pos(rect, pair.i_vert, left)
+            }));
+        }
+    }
+    refined_pairs
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
