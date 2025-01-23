@@ -347,7 +347,20 @@ impl DrawComponent for Screws<'_> {
         _line_colors: &mut crate::draw::ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let spine = &self.0.spine;
-        let mut g = self.default_group().set("fill", "none");
+
+        let style = r#".screw {fill:transparent}
+        .screw:hover ~ .screw-vertebra {animation: pulse 0.6s ease-in infinite;}
+        .screw:hover {fill:white;fill-opacity:0.5;}
+        .screw-vertebra {transform-origin: 50% 50%;transform-box: fill-box;}
+        @keyframes pulse{
+          25%  {transform: scale(0.8);}
+          75%  {transform: scale(1.2);}
+        }"#;
+
+        let mut g = self
+            .default_group()
+            .set("fill", "none")
+            .add(element::Style::new(style));
 
         let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); spine.v_c7tl.0.len_of(Axis(0))];
 
@@ -361,22 +374,22 @@ impl DrawComponent for Screws<'_> {
                 continue;
             }
             let mut g_screw_vertebra = element::Group::new().set("stroke", line_color);
-            let mut corners = spine.v_c7tl.0.index_axis(Axis(0), i + 1).to_owned(); // vertebra + 1 to skip C7
-
-            // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
-            corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
-            corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
-
-            let vertebra = painter.polygon(corners).set("stroke-dasharray", "5,5");
-            g_screw_vertebra = g_screw_vertebra.add(vertebra);
-
             for screw in screws {
                 let rect = Array::from_shape_vec(
                     (2, 2),
                     vec![screw.bb.tl.0, screw.bb.tl.1, screw.bb.br.0, screw.bb.br.1],
                 )
                 .unwrap();
-                let bbox = painter.rectangle(rect);
+                let title = if i < 12 {
+                    format!("T{}", i + 1)
+                } else {
+                    format!("L{}", i - 11)
+                };
+                let bbox = painter
+                    .rectangle(rect)
+                    .set("class", "screw")
+                    .add(painter.title(title.as_str()));
+
                 g_screw_vertebra = g_screw_vertebra.add(bbox);
                 if let Some(left) = screw.left {
                     let point_pos: Array1<f64> = if left {
@@ -390,61 +403,19 @@ impl DrawComponent for Screws<'_> {
                     g_screw_vertebra = g_screw_vertebra.add(point);
                 }
             }
-            g = g.add(g_screw_vertebra);
-        }
-        Ok(g)
-    }
-}
-
-/// Screws and vertebrae with hover effect
-#[derive(Named)]
-#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
-pub struct HoverScrews<'a>(&'a ScrewSpine);
-impl ImplantComponent for HoverScrews<'_> {}
-impl DrawComponent for HoverScrews<'_> {
-    fn draw(
-        &self,
-        painter: &mut Painter,
-        _label_colors: &mut crate::draw::ColorPalette,
-        line_colors: &mut crate::draw::ColorPalette,
-    ) -> Result<element::Group, DrawError> {
-        let spine = &self.0.spine;
-        let mut style = ".hidden {opacity:0;transition:opacity 0.3s ease;}\n".to_string();
-        let screw_color = line_colors.get_or_new("Screw");
-        style.push_str(format!(".screw {{stroke:{screw_color};fill:transparent}}\n").as_str());
-        let vertebra_color = line_colors.get_or_new("ScrewVertebra");
-        style.push_str(format!(".screw-vertebra {{stroke:{vertebra_color};fill:none}}\n").as_str());
-        for i in 0..self.0.screws.len() {
-            let hover = format!(".screw{i}:hover ~ .screw{i}-vertebra {{opacity:1}}\n");
-            style.push_str(&hover);
-        }
-        let mut g = self.default_group().add(element::Style::new(style));
-
-        for (i, screw) in self.0.screws.iter().enumerate() {
-            let rect = Array::from_shape_vec(
-                (2, 2),
-                vec![screw.bb.tl.0, screw.bb.tl.1, screw.bb.br.0, screw.bb.br.1],
-            )
-            .unwrap();
-            let bbox = painter
-                .rectangle(rect)
-                .set("class", format!("screw screw{}", i));
-            g = g.add(bbox);
-            let mut corners = spine
-                .v_c7tl
-                .0
-                .index_axis(Axis(0), screw.vertebra + 1)
-                .to_owned(); // vertebra + 1 to skip C7
+            let mut corners = spine.v_c7tl.0.index_axis(Axis(0), i + 1).to_owned(); // vertebra + 1 to skip C7
 
             // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
             corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
             corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
 
-            let vertebra = painter.polygon(corners).set(
-                "class",
-                format!("hidden screw-vertebra screw{}-vertebra", i),
-            );
-            g = g.add(vertebra);
+            let vertebra = painter
+                .polygon(corners)
+                .set("stroke-dasharray", "5,5")
+                .set("class", "screw-vertebra");
+            g_screw_vertebra = g_screw_vertebra.add(vertebra);
+
+            g = g.add(g_screw_vertebra);
         }
         Ok(g)
     }
