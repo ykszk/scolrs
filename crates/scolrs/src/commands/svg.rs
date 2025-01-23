@@ -64,12 +64,6 @@ impl FsWrite for TarWriter {
     }
 }
 
-impl Drop for TarWriter {
-    fn drop(&mut self) {
-        self.builder.finish().unwrap();
-    }
-}
-
 impl FsWrite for Box<dyn FsWrite> {
     fn write(&mut self, path: &Path, content: String) -> Result<()> {
         self.as_mut().write(path, content)

@@ -303,7 +303,7 @@ pub struct ListArgs {
 
 #[derive(Parser, Debug)]
 pub struct CatalogArgs {
-    /// Input svg (or html) file path or svg containing directory
+    /// Input svg (or html) file path or svg containing directory. Specify '-' for stdin with tar format
     #[arg(value_hint = ValueHint::AnyPath, required = true)]
     pub input: Vec<PathBuf>,
     /// Output html file

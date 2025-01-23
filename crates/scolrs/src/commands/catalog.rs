@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufWriter, Write},
+    io::{BufWriter, Read, Write},
 };
 
 use crate::cli::CatalogArgs;
@@ -17,6 +17,26 @@ trait WriteString {
 impl WriteString for BufWriter<File> {
     fn ws(&mut self, s: &str) -> std::io::Result<()> {
         self.write_all(s.as_bytes())
+    }
+}
+
+/// A trait for getting the path and content of a file
+///
+/// Abstracts over reading from a file or stdin in tar format
+trait PathAndContent: Send + Sync {
+    fn get(self: Box<Self>) -> (std::path::PathBuf, String);
+}
+
+impl PathAndContent for std::path::PathBuf {
+    fn get(self: Box<Self>) -> (std::path::PathBuf, String) {
+        let content = std::fs::read_to_string(self.as_ref()).unwrap();
+        (*self, content)
+    }
+}
+
+impl PathAndContent for (std::path::PathBuf, String) {
+    fn get(self: Box<Self>) -> (std::path::PathBuf, String) {
+        *self
     }
 }
 
@@ -81,16 +101,29 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         }
     };
 
-    let mut paths = Vec::new();
+    let mut paths: Vec<Box<dyn PathAndContent>> = Vec::new();
     for input in args.input {
         if input.is_dir() {
             let glob_pattern = input.join("*.svg");
             let mut svgs: Vec<_> =
                 glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
             svgs.sort();
-            paths.append(&mut svgs);
+            paths.append(
+                svgs.into_iter()
+                    .map(|p| Box::new(p) as _)
+                    .collect::<Vec<_>>()
+                    .as_mut(),
+            );
         } else if input.is_file() {
-            paths.push(input);
+            paths.push(Box::new(input));
+        } else if input.as_os_str() == "-" {
+            let mut archive = tar::Archive::new(std::io::stdin());
+            for entry in archive.entries()? {
+                let mut entry = entry?;
+                let mut content = String::new();
+                entry.read_to_string(&mut content)?;
+                paths.push(Box::new((entry.path()?.to_path_buf(), content)));
+            }
         } else {
             bail!("Invalid input file: {:?}", input)
         }
@@ -99,10 +132,9 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     let divs: Result<Vec<_>> = paths
         .into_par_iter()
         .map(|path| -> Result<String> {
+            let (path, content) = path.get();
             let svg = if path.extension().unwrap_or_default() == "html" {
-                let html = std::fs::read_to_string(&path)
-                    .with_context(|| format!("Reading {:?}", path))?;
-                let document = Html::parse_document(&html);
+                let document = Html::parse_document(&content);
 
                 document
                     .select(&Selector::parse("svg").unwrap())
@@ -110,7 +142,7 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
                     .context("No `svg` element found")?
                     .html()
             } else {
-                std::fs::read_to_string(&path).with_context(|| format!("Reading {:?}", path))?
+                content
             };
             let filename = path.file_stem().unwrap().to_string_lossy();
             let document = Html::parse_document(&svg);
