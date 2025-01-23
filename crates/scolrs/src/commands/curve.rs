@@ -36,8 +36,7 @@ impl TryFrom<(&LabelMeData, &CurveSetAlgorithm)> for CurveInfoAll {
         (data, algorithm): (&LabelMeData, &CurveSetAlgorithm),
     ) -> Result<Self, Self::Error> {
         let mut coronal_points = CoronalPoints::try_from(data)?;
-        coronal_points.spine.verticalize();
-        coronal_points.c_coefs = coronal_points.spine.fit_poly().unwrap();
+        coronal_points.verticalize_spine()?;
 
         // let info = coronal_points.identify_curves();
         let info = coronal_points.identify_curves_with_algorithm(algorithm);

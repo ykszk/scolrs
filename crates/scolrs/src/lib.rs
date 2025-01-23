@@ -836,6 +836,12 @@ impl CoronalPoints {
         polynomial(xs, self.c_coefs.view())
     }
 
+    pub fn verticalize_spine(&mut self) -> Result<(), ScolError> {
+        self.spine.verticalize();
+        self.c_coefs = self.spine.fit_poly()?;
+        Ok(())
+    }
+
     fn find_largest_curve(&self) -> Option<(Curve, f64)> {
         let n = self.spine.tl_corners().0.len_of(ndarray::Axis(0));
         let mut curves = Vec::new();
@@ -1095,10 +1101,8 @@ impl CoronalPoints {
 
     pub fn identify_curves_with_algorithm(&self, algorithm: &CurveSetAlgorithm) -> CurveDesc {
         let mut cloned = self.clone();
-        cloned.spine.verticalize();
-        cloned.c_coefs = cloned.spine.fit_poly().unwrap();
+        cloned.verticalize_spine().unwrap();
 
-        cloned.spine.fit_poly().unwrap();
         match algorithm {
             CurveSetAlgorithm::Score(weights) => cloned.identify_curves_score(weights),
             CurveSetAlgorithm::Apex => cloned.identify_curves_apex(),
