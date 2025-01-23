@@ -377,4 +377,7 @@ pub struct ImplantArgs {
     /// Include vertebrae in the output
     #[clap(long)]
     pub vertebrae: bool,
+    /// Print paired screw count per vertebra instead of pairing data
+    #[clap(short, long)]
+    pub count: bool,
 }
