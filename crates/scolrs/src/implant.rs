@@ -625,8 +625,9 @@ pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Scre
                     if screws_in_vert.len() < 2 {
                         return screws_in_vert;
                     };
-                    screws_in_vert
-                        .sort_by(|a, b| screws[*a].score.partial_cmp(&screws[*b].score).unwrap());
+                    screws_in_vert.sort_by(|a, b| {
+                        (-screws[*a].score).partial_cmp(&-screws[*b].score).unwrap()
+                    });
                     screws_in_vert.truncate(1);
                     screws_in_vert
                 })
