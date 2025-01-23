@@ -172,7 +172,7 @@ pub struct SvgArgs {
     /// Input labelme json filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
-    /// Output svg filename
+    /// Output svg filename. Specify '-' for stdout
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
     #[clap(flatten)]
@@ -184,7 +184,7 @@ pub struct SvgNdjsonArgs {
     /// Input labelme json or ndjson filename
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
-    /// Output directory
+    /// Output directory. Specify '-' for stdout in tar format (to pipe to `catalog` command)
     #[arg(value_hint = ValueHint::DirPath)]
     pub output: PathBuf,
     /// Maximum number of jobs to run in parallel

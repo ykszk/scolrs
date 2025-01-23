@@ -1,5 +1,7 @@
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Stdout},
     path::Path,
 };
 
@@ -10,6 +12,7 @@ use labelme_rs::{
     LabelMeData, LabelMeDataWImage, ResizeParam,
 };
 use log::debug;
+
 use rayon::prelude::*;
 use scolrs::{
     draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
@@ -21,6 +24,63 @@ use scolrs::{
 };
 use serde::Deserialize;
 use svg::node::element;
+use tar;
+
+trait FsWrite: Send + Sync {
+    fn write(&mut self, path: &Path, content: String) -> Result<()>;
+}
+
+struct FsWriter;
+
+impl FsWrite for FsWriter {
+    fn write(&mut self, path: &Path, content: String) -> Result<()> {
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+}
+
+struct StdoutWriter;
+
+impl FsWrite for StdoutWriter {
+    fn write(&mut self, _path: &Path, content: String) -> Result<()> {
+        println!("{}", content);
+        Ok(())
+    }
+}
+
+struct TarWriter {
+    builder: Box<tar::Builder<Stdout>>,
+}
+
+impl FsWrite for TarWriter {
+    fn write(&mut self, path: &Path, content: String) -> Result<()> {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        self.builder
+            .append_data(&mut header, path, content.as_bytes())?;
+        Ok(())
+    }
+}
+
+impl Drop for TarWriter {
+    fn drop(&mut self) {
+        self.builder.finish().unwrap();
+    }
+}
+
+impl FsWrite for Box<dyn FsWrite> {
+    fn write(&mut self, path: &Path, content: String) -> Result<()> {
+        self.as_mut().write(path, content)
+    }
+}
+
+impl FsWrite for Arc<Mutex<Box<dyn FsWrite>>> {
+    fn write(&mut self, path: &Path, content: String) -> Result<()> {
+        self.lock().unwrap().write(path, content)
+    }
+}
 
 trait AssociatedMeasureAndDraw {
     type Draw;
@@ -131,12 +191,13 @@ impl AssociatedMeasureAndDraw for LateralPoints {
     }
 }
 
-fn process_one<T>(
+fn process_one<T, S: FsWrite>(
     svg_common: ReadSvgArgCommon,
     point_with_image: PointDataWithImage<T>,
     draws: &[T::Draw],
     hide: &[T::Draw],
     output: &std::path::Path,
+    mut writer: S,
 ) -> Result<()>
 where
     T: AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
@@ -179,7 +240,7 @@ where
 
     debug!("Save to {:?}", output);
 
-    std::fs::write(output, document.to_string())?;
+    writer.write(output, document.to_string())?;
     Ok(())
 }
 
@@ -242,6 +303,11 @@ where
 
 pub fn cmd(args: SvgArgs) -> Result<()> {
     let (svg_common, subcommand) = load_svg_common(args.svg_args)?;
+    let writer = if args.output.as_os_str() == "-" {
+        Box::new(StdoutWriter) as Box<dyn FsWrite>
+    } else {
+        Box::new(FsWriter) as Box<dyn FsWrite>
+    };
     match subcommand {
         SvgSubCommands::Coronal(svg_sub_coronal_args) => {
             let data: PointDataWithImage<CoronalPointsAndCurve> = load_native_or_lableme_json_file(
@@ -256,7 +322,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             for group in svg_sub_coronal_args.hide_group {
                 hide.append(&mut (&group).into());
             }
-            process_one(svg_common, data, &draws, &hide, &args.output)?;
+            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
         }
         SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
             let data: PointDataWithImage<SagittalPoints> = load_native_or_lableme_json_file(
@@ -268,7 +334,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(SagittalDraw::all);
             let hide = svg_sub_sagittall_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output)?;
+            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
         }
         SvgSubCommands::Neck(svg_sub_neck_args) => {
             let data: PointDataWithImage<LateralPoints> = load_native_or_lableme_json_file(
@@ -280,7 +346,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(NeckLateralDraw::all);
             let hide = svg_sub_neck_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output)?;
+            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
         }
         SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
             let data: LabelMeOptionalDetectron2 =
@@ -294,7 +360,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(ImplantDraw::all);
             let hide = svg_sub_implant_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output)?;
+            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
         }
     };
     Ok(())
@@ -394,8 +460,22 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     } else {
         Box::new(BufReader::new(std::fs::File::open(&args.input)?))
     };
+    let (writer, output_dir) = if args.output.as_os_str() == "-" {
+        let output_dir = PathBuf::default();
+        let builder = tar::Builder::new(std::io::stdout());
+        (
+            Box::new(TarWriter {
+                builder: Box::new(builder),
+            }) as Box<dyn FsWrite>,
+            output_dir,
+        )
+    } else {
+        (Box::new(FsWriter) as Box<dyn FsWrite>, args.output)
+    };
+    let writer = Arc::new(Mutex::new(writer));
     let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
     lines.into_par_iter().try_for_each(|line| -> Result<()> {
+        let writer = writer.clone();
         match subcommand.clone() {
             SvgSubCommands::Coronal(svg_sub_coronal_args) => {
                 let (data, filename) =
@@ -408,7 +488,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     hide.append(&mut (&group).into());
                 }
 
-                let output = args.output.join(
+                let output = output_dir.join(
                     Path::new(filename.as_str())
                         .file_stem()
                         .unwrap()
@@ -416,7 +496,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                         .to_string()
                         + ".svg",
                 );
-                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
                 let (data, filename) =
@@ -426,7 +506,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(SagittalDraw::all);
                 let hide = svg_sub_sagittall_args.hide;
 
-                let output = args.output.join(
+                let output = output_dir.join(
                     Path::new(filename.as_str())
                         .file_stem()
                         .unwrap()
@@ -434,7 +514,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                         .to_string()
                         + ".svg",
                 );
-                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::Neck(svg_sub_neck_args) => {
                 let (data, filename) =
@@ -444,7 +524,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(NeckLateralDraw::all);
                 let hide = svg_sub_neck_args.hide;
 
-                let output = args.output.join(
+                let output = output_dir.join(
                     Path::new(filename.as_str())
                         .file_stem()
                         .unwrap()
@@ -452,7 +532,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                         .to_string()
                         + ".svg",
                 );
-                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
                 let data_line: LabelMeOptionalDetectron2Line = serde_json::from_str(line.as_str())?;
@@ -468,7 +548,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(ImplantDraw::all);
                 let hide = svg_sub_implant_args.hide;
 
-                let output = args.output.join(
+                let output = output_dir.join(
                     Path::new(data_line.filename.as_str())
                         .file_stem()
                         .unwrap()
@@ -476,7 +556,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                         .to_string()
                         + ".svg",
                 );
-                process_one(svg_common.clone(), data, &draws, &hide, &output)?;
+                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
         };
         Ok(())
