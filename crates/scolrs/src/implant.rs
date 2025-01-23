@@ -742,13 +742,49 @@ impl LabelMeOptionalDetectron2 {
                 image_metadata,
             })
         } else {
-            let implant = ImplantSpine::try_from(&self.labelme)?;
-            let screws = implant.pair_screw();
-            Ok(ScrewSpine {
-                spine: implant.spine,
-                screws,
-                image_metadata: ImageMetadata::from(self.labelme.clone()),
-            })
+            // check if `Screw` with group_id exists
+            let group_id_exists = self
+                .labelme
+                .shapes
+                .iter()
+                .any(|shape| shape.label == "Screw" && shape.group_id.is_some());
+
+            let image_metadata = ImageMetadata::from(self.labelme.clone());
+            if group_id_exists {
+                log::debug!("Use group_id to pair screws");
+                let mut screws = Vec::new();
+                for shape in &self.labelme.shapes {
+                    if shape.label == "Screw" {
+                        match shape.group_id {
+                            Some(group_id) => {
+                                // group_id is 1-indexed
+                                let vertebra = group_id - 1;
+                                let rect = Rectangle {
+                                    tl: shape.points[0],
+                                    br: shape.points[1],
+                                };
+                                screws.push(Screw::new(rect, vertebra));
+                            }
+                            None => panic!("Screw without group_id found"),
+                        }
+                    }
+                }
+                let spine = Spine::try_from(&self.labelme)?;
+                Ok(ScrewSpine {
+                    spine,
+                    screws,
+                    image_metadata,
+                })
+            } else {
+                log::debug!("Use pairing algorithm to pair screws");
+                let implant = ImplantSpine::try_from(&self.labelme)?;
+                let screws = implant.pair_screw();
+                Ok(ScrewSpine {
+                    spine: implant.spine,
+                    screws,
+                    image_metadata,
+                })
+            }
         }
     }
 }
