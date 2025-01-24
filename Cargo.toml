@@ -1,11 +1,12 @@
 [workspace]
 members = [
     "crates/scolrs",
+    "crates/commands",
     "crates/pyscol",
     "crates/devsc",
     "crates/named_derive",
 ]
-default-members = ["crates/scolrs"]
+default-members = ["crates/scolrs", "crates/commands"]
 resolver = "2"
 
 [workspace.package]
@@ -13,10 +14,11 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Yuki SUZUKI <y-suzuki@radiol.med.osaka-u.ac.jp>"]
 repository = "https://github.com/ykszk/scolrs"
-description = "Adolescent Idiopathic Scoliosis"
+description = "Analyze spinal deformity in radiographs"
 
 [workspace.dependencies]
 anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
 env_logger = "0.11.5"
 log = "0.4.22"
 ndarray = "0.15"
@@ -25,3 +27,8 @@ pretty_assertions = "1.4.1"
 serde = "1.0.213"
 svg = "0.18.0"
 thiserror = "2.0"
+labelme-rs = { git = "https://github.com/ykszk/labelme-rs.git", tag = "v0.13.0" }
+scraper = { version = "0.22.0", default-features = false }
+tera = { version = "1.20", default-features = false }
+indexmap = "2.7"
+serde_json = "1.0.132"

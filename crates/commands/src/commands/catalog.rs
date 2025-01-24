@@ -56,7 +56,7 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     if let Some(title) = args.title {
         writer.ws(&format!("<title>{}</title>\n", title))?;
     }
-    let style = include_str!("../templates/catalog.css");
+    let style = include_str!("../../../scolrs/src/templates/catalog.css");
     writer.ws("<style>\n")?;
     writer.ws(style)?;
     writer.ws("</style>\n")?;
@@ -64,9 +64,9 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     writer.ws("<body>\n")?;
 
     writer.ws("<script>\n")?;
-    let javascript = include_str!("../templates/catalog.js");
+    let javascript = include_str!("../../../scolrs/src/templates/catalog.js");
     writer.ws(javascript)?;
-    let javascript = include_str!("../templates/capture.js");
+    let javascript = include_str!("../../../scolrs/src/templates/capture.js");
     writer.ws(javascript)?;
     writer.ws("</script>\n")?;
 
@@ -75,15 +75,15 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     templates.add_raw_templates(vec![
         (
             "image_container.jinja",
-            include_str!("../templates/catalog_image_container.jinja"),
+            include_str!("../../../scolrs/src/templates/catalog_image_container.jinja"),
         ),
         (
             "checkbox.jinja",
-            include_str!("../templates/checkbox.jinja"),
+            include_str!("../../../scolrs/src/templates/checkbox.jinja"),
         ),
         (
             "catalog_popup.jinja",
-            include_str!("../templates/catalog_popup.jinja"),
+            include_str!("../../../scolrs/src/templates/catalog_popup.jinja"),
         ),
     ])?;
 
@@ -194,7 +194,7 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     );
     context.insert(
         "save_module",
-        &include_str!("../templates/save_module.html"),
+        &include_str!("../../../scolrs/src/templates/save_module.html"),
     );
     let div_popup = templates.render("catalog_popup.jinja", &context)?;
     writer.ws(&div_popup)?;

@@ -1456,27 +1456,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "labelme-rs"
-version = "0.13.0"
-source = "git+https://github.com/ykszk/labelme-rs.git#bb74f362e90768ae9afb8cb83b82319321acdfa0"
-dependencies = [
- "base64",
- "dicom-dictionary-std",
- "dicom-object",
- "dicom-pixeldata",
- "image 0.25.5",
- "indexmap 2.7.1",
- "lazy_static",
- "mozjpeg",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "svg",
- "thiserror 2.0.11",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2179,7 +2158,7 @@ dependencies = [
  "clahe",
  "devsc",
  "env_logger",
- "labelme-rs 0.13.0 (git+https://github.com/ykszk/labelme-rs.git)",
+ "labelme-rs",
  "log",
  "numpy",
  "pyo3",
@@ -2428,23 +2407,19 @@ dependencies = [
  "anyhow",
  "base64",
  "clap",
- "clap_complete",
  "csv",
  "dicom-core",
  "dicom-dictionary-std",
  "dicom-object",
  "env_logger",
- "float-cmp",
- "glob",
  "indexmap 2.7.1",
- "labelme-rs 0.13.0 (git+https://github.com/ykszk/labelme-rs.git?tag=v0.13.0)",
+ "labelme-rs",
  "log",
  "lyon_geom",
  "named_derive",
  "ndarray",
  "ndarray-stats",
  "pretty_assertions",
- "rayon",
  "regex",
  "rulinalg",
  "scraper",
@@ -2453,11 +2428,37 @@ dependencies = [
  "serde_repr",
  "strum",
  "svg",
+ "tera",
+ "thiserror 2.0.11",
+ "webp",
+]
+
+[[package]]
+name = "scolrs-commands"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "env_logger",
+ "float-cmp",
+ "glob",
+ "indexmap 2.7.1",
+ "labelme-rs",
+ "log",
+ "named_derive",
+ "ndarray",
+ "ndarray-stats",
+ "rayon",
+ "scolrs",
+ "scraper",
+ "serde",
+ "serde_json",
+ "svg",
  "tar",
  "tera",
  "thiserror 2.0.11",
  "toml",
- "webp",
 ]
 
 [[package]]
