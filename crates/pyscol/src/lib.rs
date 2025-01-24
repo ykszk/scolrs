@@ -16,7 +16,7 @@ use scolrs::{
         Painter,
     },
     CoronalDraw, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
-    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable, UpdatePoints,
+    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable,
 };
 use svg::node::element;
 
@@ -306,7 +306,7 @@ fn draw_generic<T, S>(
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError>
 where
-    T: Clone + UpdatePoints,
+    T: Clone,
     for<'de> T: serde::Deserialize<'de>,
     LabelMeData: From<T>,
     S: MeasureAndDraw + FromStr,
