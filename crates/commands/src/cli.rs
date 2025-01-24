@@ -27,8 +27,6 @@ pub enum Command {
     Curve(CurveArgs),
     /// Lenke classification
     Lenke(LenkeArgs),
-    /// List available measurements
-    List(ListArgs),
     /// Compile SVGs into a catalog HTML
     Catalog(CatalogArgs),
     /// Convert SVGs to HTML
@@ -292,13 +290,6 @@ pub struct LenkeArgs {
     /// left bend
     #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub left: Option<PathBuf>,
-}
-
-#[derive(Parser, Debug)]
-pub struct ListArgs {
-    /// List all drawable components instead of measurements
-    #[clap(long)]
-    pub drawable: bool,
 }
 
 #[derive(Parser, Debug)]

@@ -7,7 +7,7 @@ mod cli;
 use cli::Cli;
 use cli::Command;
 mod commands;
-use commands::{curve, lenke, list, measure, svg};
+use commands::{curve, lenke, measure, svg};
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut clap::Command) {
     generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
@@ -27,7 +27,6 @@ fn main() -> Result<()> {
         Command::Measure(args) => measure::cmd(args),
         Command::Curve(args) => curve::cmd(args),
         Command::Lenke(args) => lenke::cmd(args),
-        Command::List(args) => list::cmd(args),
         Command::Catalog(args) => commands::catalog::cmd(args),
         Command::Html(args) => commands::html::cmd(args),
         Command::Conv(args) => commands::conv::cmd(args),
