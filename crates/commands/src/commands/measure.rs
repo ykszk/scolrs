@@ -285,6 +285,7 @@ pub fn cmd(args: MeasureArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::path::PathBuf;
 
     fn test_data_directory() -> std::path::PathBuf {
@@ -311,20 +312,21 @@ mod tests {
         Ok(devnull)
     }
 
-    fn _test_case(case_dir: &str, labelme: bool) -> Result<()> {
+    #[rstest]
+    #[case::c1("case1", true)]
+    #[case::c2("case2", true)]
+    #[case::c2_native("case2", false)]
+    #[case::c3("case3", true)]
+    #[case::c4("case4", true)]
+    fn measure_case(#[case] case_dir: &str, #[case] labelme: bool) -> Result<()> {
         // Just test if the command runs without errors
         let data_dir = test_data_directory();
-        let (input, output) = if labelme {
-            (
-                data_dir.join(case_dir).join("lateral.json"),
-                output_path(&format!("{}_lateral.json", case_dir))?,
-            )
-        } else {
-            (
-                data_dir.join(case_dir).join("lateral_native.json"),
-                output_path(&format!("{}_lateral_native.json", case_dir))?,
-            )
-        };
+        let suffix = if labelme { "" } else { "_native" };
+
+        let input = data_dir
+            .join(case_dir)
+            .join(format!("lateral{suffix}.json"));
+        let output = output_path(&format!("{case_dir}_lateral{suffix}.json"))?;
         let subcommand = MeasureSubCommands::Sagittal(MeasureSubSagittallArgs::default());
         let args = MeasureArgs {
             input,
@@ -335,18 +337,10 @@ mod tests {
         cmd(args)?;
 
         // TODO: Test correct measurements
-
-        let (input, output) = if labelme {
-            (
-                data_dir.join(case_dir).join("frontal.json"),
-                output_path(&format!("{}_frontal.json", case_dir))?,
-            )
-        } else {
-            (
-                data_dir.join(case_dir).join("frontal_native.json"),
-                output_path(&format!("{}_frontal_native.json", case_dir))?,
-            )
-        };
+        let input = data_dir
+            .join(case_dir)
+            .join(format!("frontal{suffix}.json"));
+        let output = output_path(&format!("{case_dir}_frontal{suffix}.json"))?;
         let subcommand = MeasureSubCommands::Coronal(MeasureSubCoronalArgs::default());
         let args = MeasureArgs {
             input,
@@ -360,25 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_case1() -> Result<()> {
-        _test_case("case1", true)
-    }
-    #[test]
-    fn test_case2() -> Result<()> {
-        _test_case("case2", true)?;
-        _test_case("case2", false)
-    }
-    #[test]
-    fn test_case3() -> Result<()> {
-        _test_case("case3", true)
-    }
-    #[test]
-    fn test_case4() -> Result<()> {
-        _test_case("case4", true)
-    }
-
-    #[test]
-    fn test_measure_cmd_neck_case1() -> Result<()> {
+    fn neck_case1() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
         let input = data_dir.join("neck_case1/lateral_lateral_points.json");
@@ -393,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn test_measure_cmd_neck_case2() -> Result<()> {
+    fn neck_case2() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
         let input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");

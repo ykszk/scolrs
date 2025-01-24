@@ -564,6 +564,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
+    use rstest::rstest;
     use std::path::PathBuf;
 
     fn output_path(name: &str) -> Result<PathBuf> {
@@ -601,29 +602,26 @@ mod tests {
         }
     }
 
-    fn _test_case(case: &str, native: bool) -> Result<()> {
+    #[rstest]
+    #[case::c2("case2", true)]
+    #[case::c2_native("case2", false)]
+    #[case::c2_cropped("case2_cropped", true)]
+    #[case::c3("case3", true)]
+    #[case::c4("case4", true)]
+    fn generate_svg(#[case] case: &str, #[case] labelme: bool) -> Result<()> {
         let mut svg_args = gen_svg_args();
-
+        let suffix = if labelme { "" } else { "_native" };
         let data_dir = PathBuf::from("../../tests/data/");
-        if native {
-            svg_args.input = data_dir.join(case).join("frontal_native.json");
-            svg_args.output = output_path(&format!("scoliosis/{}_frontal_native.svg", case))?;
-        } else {
-            svg_args.input = data_dir.join(case).join("frontal.json");
-            svg_args.output = output_path(&format!("scoliosis/{}_frontal.svg", case))?;
-        }
-        svg_args.svg_args.labelme = !native;
+
+        svg_args.input = data_dir.join(case).join(format!("frontal{suffix}.json"));
+        svg_args.output = output_path(&format!("scoliosis/{case}_frontal{suffix}.svg"))?;
+        svg_args.svg_args.labelme = labelme;
         svg_args.svg_args.subcommand = SvgSubCommands::Coronal(Default::default());
         cmd(svg_args.clone())?;
 
-        if native {
-            svg_args.input = data_dir.join(case).join("lateral_native.json");
-            svg_args.output = output_path(&format!("scoliosis/{}_lateral_native.svg", case))?;
-        } else {
-            svg_args.input = data_dir.join(case).join("lateral.json");
-            svg_args.output = output_path(&format!("scoliosis/{}_lateral.svg", case))?;
-        }
-        svg_args.svg_args.labelme = !native;
+        svg_args.input = data_dir.join(case).join(format!("lateral{suffix}.json"));
+        svg_args.output = output_path(&format!("scoliosis/{case}_lateral{suffix}.svg"))?;
+
         svg_args.svg_args.subcommand = SvgSubCommands::Sagittal(Default::default());
         cmd(svg_args)?;
 
@@ -632,9 +630,7 @@ mod tests {
 
     /// Entry point for debugging
     #[test]
-    fn svg_cmd_scol_case1() -> Result<()> {
-        _test_case("case1", false)?;
-
+    fn case1_bend() -> Result<()> {
         // test bending
         let mut svg_args = gen_svg_args();
         let data_dir = PathBuf::from("../../tests/data/");
@@ -650,24 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn svg_cmd_scol_case2() -> Result<()> {
-        _test_case("case2", false)?;
-        _test_case("case2_cropped", false)?;
-        _test_case("case2", true)
-    }
-
-    #[test]
-    fn svg_cmd_scol_case3() -> Result<()> {
-        _test_case("case3", false)
-    }
-
-    #[test]
-    fn svg_cmd_scol_case4() -> Result<()> {
-        _test_case("case4", false)
-    }
-
-    #[test]
-    fn svg_cmd_scol_case5() -> Result<()> {
+    fn case5_postop() -> Result<()> {
         // test bending
         let mut svg_args = gen_svg_args();
         svg_args.svg_args.subcommand = SvgSubCommands::CoronalImplant(Default::default());
@@ -682,7 +661,7 @@ mod tests {
 
     // neck
     #[test]
-    fn test_svg_cmd_neck_case1() -> Result<()> {
+    fn neck_case1() -> Result<()> {
         let mut svg_args = gen_svg_args();
         svg_args.svg_args.subcommand = SvgSubCommands::Neck(Default::default());
 
@@ -708,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn test_svg_cmd_neck_case2() -> Result<()> {
+    fn neck_case2() -> Result<()> {
         let mut svg_args = gen_svg_args();
         svg_args.svg_args.resize = Some("768x768".to_string());
         svg_args.svg_args.subcommand = SvgSubCommands::Neck(Default::default());

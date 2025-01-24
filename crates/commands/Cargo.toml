@@ -42,3 +42,4 @@ serde_json.workspace = true
 
 [dev-dependencies]
 float-cmp = "0.10.0"
+rstest = "0.24.0"
