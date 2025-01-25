@@ -41,5 +41,6 @@ tera.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+assert_cmd = "2.0.16"
 float-cmp = "0.10.0"
 rstest = "0.24.0"
