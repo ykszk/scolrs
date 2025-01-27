@@ -353,11 +353,18 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn neck_case1() -> Result<()> {
+    #[rstest]
+    fn neck(
+        #[values(
+            "neck_case1/lateral_lateral_points.json",
+            "neck_case2/extension_lateral_lateral_points.json",
+            "neck_case2/flexion_lateral_lateral_points.json"
+        )]
+        filename: &str,
+    ) -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
-        let input = data_dir.join("neck_case1/lateral_lateral_points.json");
+        let input = data_dir.join(filename);
         let subcommand = MeasureSubCommands::Neck(MeasureSubNeckArgs::default());
         let args = MeasureArgs {
             input,
@@ -369,33 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn neck_case2() -> Result<()> {
-        let data_dir = PathBuf::from("../../tests/data/");
-
-        let input = data_dir.join("neck_case2/extension_lateral_lateral_points.json");
-        let subcommand = MeasureSubCommands::Neck(MeasureSubNeckArgs::default());
-        let args = MeasureArgs {
-            input,
-            output: Some(null_device()),
-            subcommand,
-            ..Default::default()
-        };
-        cmd(args)?;
-
-        let input = data_dir.join("neck_case2/flexion_lateral_lateral_points.json");
-        let subcommand = MeasureSubCommands::Neck(MeasureSubNeckArgs::default());
-        let args = MeasureArgs {
-            input,
-            output: Some(null_device()),
-            subcommand,
-            ..Default::default()
-        };
-
-        cmd(args)
-    }
-
-    #[test]
-    fn _test_neck_scaled_measurements() -> Result<()> {
+    fn neck_scaled_measurements() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
 
         let input = data_dir.join("neck_case1/lateral_lateral_points.json");
