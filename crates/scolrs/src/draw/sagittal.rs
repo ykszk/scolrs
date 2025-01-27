@@ -1,6 +1,7 @@
 use crate::draw::Named;
 use crate::{
-    Curve, SagittalDraw, SagittalMeasure, SagittalPoints, Spine, ValidateLength, VertebralIndex,
+    Curve, SagittalDraw, SagittalMeasure, SagittalPoints, ScaledType, Spine, ValidateLength,
+    VertebralIndex,
 };
 use ndarray::{stack, Array2, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
@@ -559,8 +560,13 @@ impl MeasureComponent for PelvicRadiusAngle<'_> {
     }
 }
 
-impl<'a, 'b> From<(&'b SagittalDraw, &'a SagittalPoints)> for Box<dyn DrawComponent + 'a> {
-    fn from((measure, sagittal_points): (&'b SagittalDraw, &'a SagittalPoints)) -> Self {
+impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
+    for Box<dyn DrawComponent + 'a>
+{
+    fn from(
+        (measure, sagittal_points): (&'b SagittalDraw, &'a ScaledType<SagittalPoints>),
+    ) -> Self {
+        let sagittal_points = &sagittal_points.0;
         match measure {
             SagittalDraw::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
             SagittalDraw::ThoracicKyphosisT1 => Box::new(T1ThoracicKyphosis(sagittal_points)),
@@ -589,8 +595,13 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a SagittalPoints)> for Box<dyn DrawCompon
     }
 }
 
-impl<'a, 'b> From<(&'b SagittalMeasure, &'a SagittalPoints)> for Box<dyn MeasureComponent + 'a> {
-    fn from((measure, sagittal_points): (&'b SagittalMeasure, &'a SagittalPoints)) -> Self {
+impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
+    for Box<dyn MeasureComponent + 'a>
+{
+    fn from(
+        (measure, sagittal_points): (&'b SagittalMeasure, &'a ScaledType<SagittalPoints>),
+    ) -> Self {
+        let sagittal_points = &sagittal_points.0;
         match measure {
             SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
             SagittalMeasure::T1ThoracicKyphosis => Box::new(T1ThoracicKyphosis(sagittal_points)),

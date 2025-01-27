@@ -10,7 +10,7 @@ use crate::{
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
-    ScolError, ValidateLength, CORNER_LABELS,
+    ScaledType, ScolError, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -122,11 +122,7 @@ impl<'de> Deserialize<'de> for LateralPoints {
 
 impl Scalable for LateralPoints {
     type Error = Infallible;
-    // Scale point coordinates using image_data.spacing_xy
-    fn scale(&mut self) -> Result<(), Self::Error> {
-        if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return Ok(());
-        }
+    fn _impl_scale(&mut self) -> Result<(), Self::Error> {
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
             self.image_metadata.spacing_xy.1
@@ -1043,9 +1039,12 @@ impl NeckLateralMeasure {
     }
 }
 
-impl<'a> From<(&NeckLateralMeasure, &'a LateralPoints)> for Box<dyn NeckMeasureComponent + 'a> {
-    fn from(value: (&NeckLateralMeasure, &'a LateralPoints)) -> Self {
+impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
+    for Box<dyn NeckMeasureComponent + 'a>
+{
+    fn from(value: (&NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
         let (measure, lateral_points) = value;
+        let lateral_points = &lateral_points.0;
         match measure {
             NeckLateralMeasure::Adi => Box::new(Adi(lateral_points)),
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
@@ -1082,9 +1081,10 @@ impl NeckLateralDraw {
     }
 }
 
-impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn DrawComponent + 'a> {
-    fn from(value: (&NeckLateralDraw, &'a LateralPoints)) -> Self {
+impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn DrawComponent + 'a> {
+    fn from(value: (&NeckLateralDraw, &'a ScaledType<LateralPoints>)) -> Self {
         let (draw, lateral_points) = value;
+        let lateral_points = &lateral_points.0;
         match draw {
             NeckLateralDraw::CervicalPoints => Box::new(CervicalPoints(lateral_points)),
             NeckLateralDraw::VertebralLabels => Box::new(VertebralLabels(lateral_points)),

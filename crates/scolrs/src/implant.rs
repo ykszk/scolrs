@@ -1,4 +1,4 @@
-use crate::ContentFilename;
+use crate::{ContentFilename, ScaledType};
 use crate::{HasImageMetadata, ImplantDraw, Scalable};
 use detectron2::DetectedBox;
 use indexmap::IndexMap;
@@ -240,7 +240,7 @@ impl TryFrom<&LabelMeData> for ScrewSpine {
 impl Scalable for ScrewSpine {
     type Error = std::convert::Infallible;
 
-    fn scale(&mut self) -> Result<(), Self::Error> {
+    fn _impl_scale(&mut self) -> Result<(), Self::Error> {
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
             self.image_metadata.spacing_xy.1
@@ -421,8 +421,9 @@ impl DrawComponent for Screws<'_> {
     }
 }
 
-impl<'a, 'b> From<(&'b ImplantDraw, &'a ScrewSpine)> for Box<dyn DrawComponent + 'a> {
-    fn from((draw, screw_spine): (&'b ImplantDraw, &'a ScrewSpine)) -> Self {
+impl<'a, 'b> From<(&'b ImplantDraw, &'a ScaledType<ScrewSpine>)> for Box<dyn DrawComponent + 'a> {
+    fn from((draw, screw_spine): (&'b ImplantDraw, &'a ScaledType<ScrewSpine>)) -> Self {
+        let screw_spine = &screw_spine.0;
         match draw {
             ImplantDraw::Screws => Box::new(Screws(screw_spine)),
             ImplantDraw::VertebralLabels => Box::new(VertebralLabels(&screw_spine.spine)),

@@ -16,7 +16,7 @@ use scolrs::{
         Painter,
     },
     CoronalDraw, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
-    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable,
+    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable, ScaledType,
 };
 use svg::node::element;
 
@@ -202,7 +202,7 @@ fn draw_on_image<'a, T, S>(
     point_sets: Option<Vec<(String, Array2<f64>)>>,
 ) -> Result<String, PyScolError>
 where
-    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
+    for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
@@ -311,7 +311,7 @@ where
     LabelMeData: From<T>,
     S: MeasureAndDraw + FromStr,
     <S as std::str::FromStr>::Err: std::fmt::Display,
-    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
+    for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,

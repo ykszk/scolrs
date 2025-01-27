@@ -17,7 +17,7 @@ use scolrs::{
     draw::{MeasureComponent, MeasureError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
     CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, HasImageMetadata,
-    MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
+    MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable, ScaledType,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -59,15 +59,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
     for line in reader.lines() {
         match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {
-                let mut data_line = load_labelme_or_native::<
-                    CoronalPointsAndCurveLine,
-                    LabelMeDataLine,
-                >(args.labelme, &args.input, &line?)?;
-                if data_line.content.coronal_points.image_metadata.spacing_xy.0 != 1.0
-                    || data_line.content.coronal_points.image_metadata.spacing_xy.1 != 1.0
-                {
-                    data_line.content.coronal_points.scale()?;
-                }
+                let data_line = load_labelme_or_native::<CoronalPointsAndCurveLine, LabelMeDataLine>(
+                    args.labelme,
+                    &args.input,
+                    &line?,
+                )?;
                 let results = measure_coronal(data_line.content, subcommand)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
@@ -76,16 +72,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                 writeln!(writer, "{}", serde_json::to_string(&line)?)?;
             }
             MeasureSubCommands::Sagittal(subcommand) => {
-                let mut data_line = load_labelme_or_native::<SagittalPointsLine, LabelMeDataLine>(
+                let data_line = load_labelme_or_native::<SagittalPointsLine, LabelMeDataLine>(
                     args.labelme,
                     &args.input,
                     &line?,
                 )?;
-                if data_line.content.image_metadata.spacing_xy.0 != 1.0
-                    || data_line.content.image_metadata.spacing_xy.1 != 1.0
-                {
-                    data_line.content.scale()?;
-                }
                 let results = measure_sagittal(data_line.content, subcommand)?;
                 let line = SagittalMeasureLine {
                     filename: data_line.filename,
@@ -94,16 +85,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                 writeln!(writer, "{}", serde_json::to_string(&line)?)?;
             }
             MeasureSubCommands::Neck(measure_sub_neck_args) => {
-                let mut data_line = load_labelme_or_native::<LateralPointsLine, LabelMeDataLine>(
+                let data_line = load_labelme_or_native::<LateralPointsLine, LabelMeDataLine>(
                     args.labelme,
                     &args.input,
                     &line?,
                 )?;
-                if data_line.content.image_metadata.spacing_xy.0 != 1.0
-                    || data_line.content.image_metadata.spacing_xy.1 != 1.0
-                {
-                    data_line.content.scale()?;
-                }
                 let results = measure_neck(data_line.content, measure_sub_neck_args)?;
                 let line = MeasureLine {
                     filename: data_line.filename,
@@ -151,40 +137,29 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     };
     match args.subcommand {
         MeasureSubCommands::Coronal(subcommand) => {
-            let mut data = load_labelme_or_native::<CoronalPointsAndCurve, LabelMeData>(
+            let data = load_labelme_or_native::<CoronalPointsAndCurve, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            if data.coronal_points.image_metadata.spacing_xy.0 != 1.0
-                || data.coronal_points.image_metadata.spacing_xy.1 != 1.0
-            {
-                data.coronal_points.scale()?;
-            }
             let results = measure_coronal(data, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Sagittal(subcommand) => {
-            let mut data = load_labelme_or_native::<SagittalPoints, LabelMeData>(
+            let data = load_labelme_or_native::<SagittalPoints, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            if data.image_metadata.spacing_xy.0 != 1.0 || data.image_metadata.spacing_xy.1 != 1.0 {
-                data.scale()?;
-            }
             let results = measure_sagittal(data, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Neck(measure_sub_neck_args) => {
-            let mut data = load_labelme_or_native::<LateralPoints, LabelMeData>(
+            let data = load_labelme_or_native::<LateralPoints, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            if data.image_metadata.spacing_xy.0 != 1.0 || data.image_metadata.spacing_xy.1 != 1.0 {
-                data.scale()?;
-            }
             let results = measure_neck(data, measure_sub_neck_args)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
@@ -193,11 +168,11 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     Ok(())
 }
 
-fn measure_x<T, U>(data: T, measures: Vec<U>) -> Result<MeasureResult<U, f64>>
+fn measure_x<T, U>(data: ScaledType<T>, measures: Vec<U>) -> Result<MeasureResult<U, f64>>
 where
-    T: HasImageMetadata,
+    T: HasImageMetadata + Scalable,
     U: std::hash::Hash + Eq + std::cmp::Ord,
-    for<'a, 'b> (&'a U, &'b T): Into<Box<dyn MeasureComponent + 'b>>,
+    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn MeasureComponent + 'b>>,
 {
     let mut measurements: IndexMap<U, Measurement> = Default::default();
     for measure in measures {
@@ -206,7 +181,7 @@ where
     }
     let result = MeasureResult {
         measurements,
-        unit_of_length: data.image_metadata().unit.clone(),
+        unit_of_length: data.0.image_metadata().unit.clone(),
     };
     Ok(result)
 }
@@ -215,16 +190,18 @@ fn measure_sagittal(
     sagittal_points: SagittalPoints,
     subcommand: MeasureSubSagittallArgs,
 ) -> Result<MeasureResult<SagittalMeasure, f64>> {
+    let scaled_data = sagittal_points.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
-    measure_x(sagittal_points, measures)
+    measure_x(scaled_data, measures)
 }
 
 fn measure_coronal(
     data: CoronalPointsAndCurve,
     subcommand: MeasureSubCoronalArgs,
 ) -> Result<MeasureResult<CoronalMeasure, f64>, anyhow::Error> {
+    let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
-    measure_x(data, measures)
+    measure_x(scaled_data, measures)
 }
 
 fn measure_all(
@@ -247,20 +224,13 @@ fn process_neck(
     lateral_points: LateralPoints,
     measures: &[NeckLateralMeasure],
 ) -> Result<NeckMeasurements> {
-    let mut lateral_points = lateral_points;
-    if lateral_points.image_metadata.spacing_xy.0 != 1.0
-        || lateral_points.image_metadata.spacing_xy.1 != 1.0
-    {
-        lateral_points.scale()?;
-    }
-    let measures: Vec<Box<dyn NeckMeasureComponent>> = measures
-        .iter()
-        .map(|m| (m, &lateral_points).into())
-        .collect();
+    let scaled_data = lateral_points.into_scaled()?;
+    let measures: Vec<Box<dyn NeckMeasureComponent>> =
+        measures.iter().map(|m| (m, &scaled_data).into()).collect();
     let measures = measure_all(measures)?;
     Ok(NeckMeasurements {
         measurements: measures,
-        unit_of_length: lateral_points.image_metadata.unit.clone(),
+        unit_of_length: scaled_data.0.image_metadata.unit.clone(),
     })
 }
 
@@ -268,6 +238,7 @@ fn measure_neck(
     lateral_points: LateralPoints,
     subcommand: MeasureSubNeckArgs,
 ) -> Result<NeckMeasurements> {
+    // perform scaling in [process_neck]
     let measures = subcommand.measures.unwrap_or_else(NeckLateralMeasure::all);
     process_neck(lateral_points, &measures)
 }

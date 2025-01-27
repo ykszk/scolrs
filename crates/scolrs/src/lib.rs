@@ -69,10 +69,34 @@ pub trait HasImageMetadata {
     fn image_metadata_mut(&mut self) -> &mut ImageMetadata;
 }
 
+/// Marker type for scaled types
+pub struct ScaledType<T: Scalable>(pub T);
+
 /// Scale the points by internal spacing data
-pub trait Scalable {
+pub trait Scalable: HasImageMetadata {
     type Error;
-    fn scale(&mut self) -> Result<(), Self::Error>;
+    /// Scale the points by the spacing data
+    ///
+    /// If the spacing is already 1.0, do nothing
+    fn _scale(&mut self) -> Result<(), Self::Error> {
+        if self.image_metadata().spacing_xy == (1.0, 1.0) {
+            return Ok(());
+        }
+        self._impl_scale()
+    }
+
+    /// Implement the scaling
+    /// Do not call this directly
+    fn _impl_scale(&mut self) -> Result<(), Self::Error>;
+
+    fn into_scaled(self) -> Result<ScaledType<Self>, Self::Error>
+    where
+        Self: Sized,
+    {
+        let mut this = self;
+        this._scale()?;
+        Ok(ScaledType(this))
+    }
 }
 
 impl Default for ImageMetadata {
@@ -483,10 +507,7 @@ impl<'de> Deserialize<'de> for CoronalPoints {
 impl Scalable for CoronalPoints {
     type Error = ScolError;
     /// Scale all points by `scale_xy` and refit the polynomial curve
-    fn scale(&mut self) -> Result<(), ScolError> {
-        if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return Ok(());
-        }
+    fn _impl_scale(&mut self) -> Result<(), ScolError> {
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
             self.image_metadata.spacing_xy.1
@@ -1161,10 +1182,7 @@ impl<'de> Deserialize<'de> for SagittalPoints {
 
 impl Scalable for SagittalPoints {
     type Error = Infallible;
-    fn scale(&mut self) -> Result<(), Self::Error> {
-        if self.image_metadata.spacing_xy == (1.0, 1.0) {
-            return Ok(());
-        }
+    fn _impl_scale(&mut self) -> Result<(), Self::Error> {
         let scale_xy = ndarray::array![
             self.image_metadata.spacing_xy.0,
             self.image_metadata.spacing_xy.1
@@ -1439,8 +1457,8 @@ impl CoronalPointsAndCurve {
 
 impl Scalable for CoronalPointsAndCurve {
     type Error = ScolError;
-    fn scale(&mut self) -> Result<(), Self::Error> {
-        self.coronal_points.scale()
+    fn _impl_scale(&mut self) -> Result<(), Self::Error> {
+        self.coronal_points._impl_scale()
     }
 }
 

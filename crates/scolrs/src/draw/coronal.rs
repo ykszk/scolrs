@@ -1,5 +1,5 @@
 use crate::draw::Named;
-use crate::{ApexSet, Curve, Spine};
+use crate::{ApexSet, Curve, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
 use ndarray::{s, stack, Array2, Axis};
 use ndarray_stats::DeviationExt;
@@ -445,9 +445,12 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
     }
 }
 
-impl<'a, 'b> From<(&'b CoronalDraw, &'a CoronalPointsAndCurve)> for Box<dyn DrawComponent + 'a> {
-    fn from(value: (&'b CoronalDraw, &'a CoronalPointsAndCurve)) -> Self {
+impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
+    for Box<dyn DrawComponent + 'a>
+{
+    fn from(value: (&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
         let (measure, coronal_set) = value;
+        let coronal_set = &coronal_set.0;
         let coronal_points = &coronal_set.coronal_points;
         let curve_set = &coronal_set.curves.curves;
         let apex_set = &coronal_set.curves.apices;
@@ -474,11 +477,12 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a CoronalPointsAndCurve)> for Box<dyn Draw
     }
 }
 
-impl<'a, 'b> From<(&'b CoronalMeasure, &'a CoronalPointsAndCurve)>
+impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
     for Box<dyn MeasureComponent + 'a>
 {
-    fn from(value: (&'b CoronalMeasure, &'a CoronalPointsAndCurve)) -> Self {
+    fn from(value: (&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
         let (measure, coronal_points_and_curve) = value;
+        let coronal_points_and_curve = &coronal_points_and_curve.0;
         let coronal_points = &coronal_points_and_curve.coronal_points;
         let curve_set = &coronal_points_and_curve.curves.curves;
         match measure {

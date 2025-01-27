@@ -1,7 +1,8 @@
 use crate::implant::ScrewSpine;
 use crate::{
     angle_from_lines, CoronalDraw, CoronalPointsAndCurve, HasCornerPoints, HasImageMetadata,
-    ImplantDraw, L2Norm, SagittalDraw, SagittalPoints, Scalable, ValidateLength, CORNER_LABELS,
+    ImplantDraw, L2Norm, SagittalDraw, SagittalPoints, Scalable, ScaledType, ValidateLength,
+    CORNER_LABELS,
 };
 use crate::{Curve, DrawParam, Spine, VERTEBRAL_LABELS};
 use base64::Engine;
@@ -1327,13 +1328,13 @@ pub fn draw_components<'a, T, S>(
     palettes: ColorPalettes,
 ) -> Result<Vec<Box<dyn Node>>, DrawError>
 where
-    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
+    for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
-    let mut data = data;
-    data.scale()
+    let scaled_data = data
+        .into_scaled()
         .map_err(|e| MeasureError::UnableToMeasure(format!("Failed to scale: {:?}", e)))?;
     let ColorPalettes {
         mut label_colors,
@@ -1341,7 +1342,7 @@ where
     } = palettes;
     let mut groups = Vec::with_capacity(draws.len());
     for measure in draws {
-        let draw_component: Box<dyn DrawComponent> = (measure, &data).into();
+        let draw_component: Box<dyn DrawComponent> = (measure, &scaled_data).into();
         match draw_component.draw(painter, &mut label_colors, &mut line_colors) {
             Ok(g) => {
                 let visibility = if hide.contains(measure) {
@@ -1356,10 +1357,12 @@ where
         }
     }
 
+    let image_metadata = scaled_data.0.image_metadata();
+
     // revert the scaling to the original and rescale to the svg size
-    let spacing = data.image_metadata().spacing_xy;
-    let svg_to_image_ratio_x = painter.size.0 as f64 / data.image_metadata().width as f64;
-    let svg_to_image_ratio_y = painter.size.1 as f64 / data.image_metadata().height as f64;
+    let spacing = image_metadata.spacing_xy;
+    let svg_to_image_ratio_x = painter.size.0 as f64 / image_metadata.width as f64;
+    let svg_to_image_ratio_y = painter.size.1 as f64 / image_metadata.height as f64;
     let scale = (
         1.0 / spacing.0 * svg_to_image_ratio_x,
         1.0 / spacing.1 * svg_to_image_ratio_y,
@@ -1387,7 +1390,7 @@ pub struct DrawArguments<'a, T, S> {
 /// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
 pub fn draw_on_image<'a, T, S>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
 where
-    for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
+    for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
