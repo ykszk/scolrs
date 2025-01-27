@@ -537,6 +537,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case::c1("case1", true)]
     #[case::c2("case2", true)]
     #[case::c2_native("case2", false)]
     #[case::c2_cropped("case2_cropped", true)]

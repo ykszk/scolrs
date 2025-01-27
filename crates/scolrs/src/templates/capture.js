@@ -7,7 +7,7 @@ function svgToImage(svgElement, format, scale, name_stem, quality = 0.85) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    const svgRect = svgElement.getBoundingClientRect();
+    const svgRect = svgElement.getBoundingClientRect(); // TODO: Returned value is slightly bigger than actual size when used in `catalog` command?
     canvas.width = svgRect.width * scale * dpr;
     canvas.height = svgRect.height * scale * dpr;
     ctx.scale(dpr * scale, dpr * scale);
