@@ -4,9 +4,9 @@ use crate::{
     angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
     draw::{
         angle_between, distanced_pair3, draw_incidence_angle, femoral_incidence_angle, points2line,
-        CobbAux, ColorPalette, DrawComponent, DrawCorners, DrawError, MeasureError, Named, Painter,
-        CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT,
-        CLASS_TEXT,
+        CobbAux, ColorPalette, DrawArguments, DrawComponent, DrawCorners, DrawError, MeasureError,
+        Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+        CLASS_POINT, CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
@@ -1099,13 +1099,21 @@ impl<'a> From<(&NeckLateralDraw, &'a LateralPoints)> for Box<dyn DrawComponent +
     }
 }
 
+pub type NeckLateralDrawArguments<'a> = DrawArguments<'a, LateralPoints, NeckLateralDraw>;
+
+pub fn draw_neck(
+    args: DrawArguments<LateralPoints, NeckLateralDraw>,
+) -> Result<element::SVG, DrawError> {
+    crate::draw::draw_on_image(args)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use anyhow::Result;
     use labelme_rs::LabelMeDataLine;
     use pretty_assertions::assert_eq;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use crate::draw::{CLASS_LINE, CLASS_MEASURE};
     use crate::{CoronalPointsLine, SagittalPointsLine};
@@ -1129,8 +1137,28 @@ pub(crate) mod tests {
         );
     }
 
+    /// Test round trip conversion between LabelMeDataLine and T
+    fn test_conversion<T>(data_dir: &Path, filename: &str) -> Result<()>
+    where
+        T: TryConvertContentFilename<LabelMeDataLine> + Clone + PartialEq + std::fmt::Debug,
+        <T as TryConvertContentFilename<labelme_rs::LabelMeDataLine>>::Error:
+            std::error::Error + std::marker::Send + std::marker::Sync + std::fmt::Debug + 'static,
+        LabelMeData: std::convert::From<<T as ContentFilename>::ContentType>,
+    {
+        let json = std::fs::read_to_string(data_dir.join(filename))?;
+        let original_data = LabelMeData::try_from(json.as_str())?;
+        let original_data_line = LabelMeDataLine::new(original_data.clone(), filename.to_string());
+        let lateral_points_line = T::try_convert_from(original_data_line.clone())?;
+        let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
+        let lateral_point_line2 = T::try_convert_from(data_line2.clone())?;
+        assert_eq!(lateral_points_line, lateral_point_line2);
+        let data_line3 = LabelMeDataLine::try_convert_from(lateral_point_line2.clone())?;
+        assert_eq!(data_line2, data_line3);
+        Ok(())
+    }
+
     #[test]
-    fn test_conversion_neck() -> Result<()> {
+    fn conversion_neck() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
         for filename in [
             "neck_case1/lateral.json",
@@ -1139,23 +1167,13 @@ pub(crate) mod tests {
         ]
         .iter()
         {
-            let json = std::fs::read_to_string(data_dir.join(filename))?;
-            let original_data = LabelMeData::try_from(json.as_str())?;
-            let original_data_line =
-                LabelMeDataLine::new(original_data.clone(), filename.to_string());
-            let lateral_points_line =
-                LateralPointsLine::try_convert_from(original_data_line.clone())?;
-            let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
-            let lateral_point_line2 = LateralPointsLine::try_convert_from(data_line2.clone())?;
-            assert_eq!(lateral_points_line, lateral_point_line2);
-            let data_line3 = LabelMeDataLine::try_convert_from(lateral_point_line2.clone())?;
-            assert_eq!(data_line2, data_line3);
+            test_conversion::<LateralPointsLine>(&data_dir, filename)?;
         }
         Ok(())
     }
 
     #[test]
-    fn test_conversion_scoliosis_frontal() -> Result<()> {
+    fn conversion_scoliosis_frontal() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
         for filename in [
             "case1/frontal.json",
@@ -1165,23 +1183,13 @@ pub(crate) mod tests {
         ]
         .iter()
         {
-            let json = std::fs::read_to_string(data_dir.join(filename))?;
-            let original_data = LabelMeData::try_from(json.as_str())?;
-            let original_data_line =
-                LabelMeDataLine::new(original_data.clone(), filename.to_string());
-            let coronal_points_line =
-                CoronalPointsLine::try_convert_from(original_data_line.clone())?;
-            let data_line2 = LabelMeDataLine::try_convert_from(coronal_points_line.clone())?;
-            let coronal_poins_line2 = CoronalPointsLine::try_convert_from(data_line2.clone())?;
-            assert_eq!(coronal_points_line, coronal_poins_line2);
-            let data_line3 = LabelMeDataLine::try_convert_from(coronal_poins_line2.clone())?;
-            assert_eq!(data_line2, data_line3);
+            test_conversion::<CoronalPointsLine>(&data_dir, filename)?;
         }
         Ok(())
     }
 
     #[test]
-    fn test_conversion_scoliosis_sagittal() -> Result<()> {
+    fn conversion_scoliosis_sagittal() -> Result<()> {
         let data_dir = PathBuf::from("../../tests/data/");
         for filename in [
             "case1/lateral.json",
@@ -1191,17 +1199,7 @@ pub(crate) mod tests {
         ]
         .iter()
         {
-            let json = std::fs::read_to_string(data_dir.join(filename))?;
-            let original_data = LabelMeData::try_from(json.as_str())?;
-            let original_data_line =
-                LabelMeDataLine::new(original_data.clone(), filename.to_string());
-            let lateral_points_line =
-                SagittalPointsLine::try_convert_from(original_data_line.clone())?;
-            let data_line2 = LabelMeDataLine::try_convert_from(lateral_points_line.clone())?;
-            let lateral_poins_line2 = SagittalPointsLine::try_convert_from(data_line2.clone())?;
-            assert_eq!(lateral_points_line, lateral_poins_line2);
-            let data_line3 = LabelMeDataLine::try_convert_from(lateral_poins_line2.clone())?;
-            assert_eq!(data_line2, data_line3);
+            test_conversion::<SagittalPointsLine>(&data_dir, filename)?;
         }
         Ok(())
     }

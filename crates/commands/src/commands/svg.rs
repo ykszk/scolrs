@@ -8,13 +8,12 @@ use std::{
 
 use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
-use labelme_rs::{
-    image::{DynamicImage, GenericImageView},
-    LabelMeData, LabelMeDataWImage, ResizeParam,
-};
+use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage, ResizeParam};
 use log::debug;
 
 use rayon::prelude::*;
+use scolrs::draw::DrawArguments;
+use scolrs::head_neck::draw_neck;
 use scolrs::{
     draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
@@ -78,112 +77,40 @@ impl FsWrite for Arc<Mutex<Box<dyn FsWrite>>> {
     }
 }
 
-trait AssociatedMeasureAndDraw {
+trait AssociatedMeasureAndDraw: Sized {
     type Draw;
-    fn draw(
-        image: DynamicImage,
-        sagittal_points: Self,
-        draws_hide: (&[Self::Draw], &[Self::Draw]),
-        draw_param: DrawParam,
-        resize_param: Option<ResizeParam>,
-        svg_size: (usize, usize),
-        palettes: ColorPalettes,
-    ) -> Result<element::SVG, DrawError>;
+    fn draw(args: DrawArguments<Self, Self::Draw>) -> Result<element::SVG, DrawError>;
 }
 
 impl AssociatedMeasureAndDraw for CoronalPointsAndCurve {
     type Draw = CoronalDraw;
 
-    fn draw(
-        image: DynamicImage,
-        sagittal_points: Self,
-        draws_hide: (&[Self::Draw], &[Self::Draw]),
-        draw_param: DrawParam,
-        resize_param: Option<ResizeParam>,
-        svg_size: (usize, usize),
-        palettes: ColorPalettes,
-    ) -> Result<element::SVG, DrawError> {
-        draw_coronal(
-            image,
-            sagittal_points,
-            draws_hide,
-            draw_param,
-            resize_param,
-            svg_size,
-            palettes,
-        )
+    fn draw(args: DrawArguments<Self, Self::Draw>) -> Result<element::SVG, DrawError> {
+        draw_coronal(args)
     }
 }
 
 impl AssociatedMeasureAndDraw for ScrewSpine {
     type Draw = ImplantDraw;
 
-    fn draw(
-        image: DynamicImage,
-        screw_spine: Self,
-        draws_hide: (&[Self::Draw], &[Self::Draw]),
-        draw_param: DrawParam,
-        resize_param: Option<ResizeParam>,
-        svg_size: (usize, usize),
-        palettes: ColorPalettes,
-    ) -> Result<element::SVG, DrawError> {
-        draw_implant(
-            image,
-            screw_spine,
-            draws_hide,
-            draw_param,
-            resize_param,
-            svg_size,
-            palettes,
-        )
+    fn draw(args: DrawArguments<Self, Self::Draw>) -> Result<element::SVG, DrawError> {
+        draw_implant(args)
     }
 }
 
 impl AssociatedMeasureAndDraw for SagittalPoints {
     type Draw = SagittalDraw;
 
-    fn draw(
-        image: DynamicImage,
-        sagittal_points: Self,
-        draws_hide: (&[Self::Draw], &[Self::Draw]),
-        draw_param: DrawParam,
-        resize_param: Option<ResizeParam>,
-        svg_size: (usize, usize),
-        palettes: ColorPalettes,
-    ) -> Result<element::SVG, DrawError> {
-        draw_sagittal(
-            image,
-            sagittal_points,
-            draws_hide,
-            draw_param,
-            resize_param,
-            svg_size,
-            palettes,
-        )
+    fn draw(args: DrawArguments<Self, Self::Draw>) -> Result<element::SVG, DrawError> {
+        draw_sagittal(args)
     }
 }
 
 impl AssociatedMeasureAndDraw for LateralPoints {
     type Draw = NeckLateralDraw;
 
-    fn draw(
-        image: DynamicImage,
-        sagittal_points: Self,
-        draws_hide: (&[Self::Draw], &[Self::Draw]),
-        draw_param: DrawParam,
-        resize_param: Option<ResizeParam>,
-        svg_size: (usize, usize),
-        palettes: ColorPalettes,
-    ) -> Result<element::SVG, DrawError> {
-        scolrs::draw::draw_on_image(
-            image,
-            sagittal_points,
-            draws_hide,
-            draw_param,
-            resize_param,
-            svg_size,
-            palettes,
-        )
+    fn draw(args: DrawArguments<Self, Self::Draw>) -> Result<element::SVG, DrawError> {
+        draw_neck(args)
     }
 }
 
@@ -221,15 +148,18 @@ where
     };
     let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
 
-    let document = T::draw(
-        point_with_image.data_image.image,
-        point_with_image.data,
-        (draws, hide),
-        svg_common.draw_param,
-        svg_common.resize_param,
+    let draw_args = DrawArguments {
+        image: point_with_image.data_image.image,
+        data: point_with_image.data,
+        draw_param: svg_common.draw_param,
+        resize_param: svg_common.resize_param,
         svg_size,
-        svg_common.palettes,
-    )?;
+        palettes: svg_common.palettes,
+        draw: draws,
+        hide,
+    };
+
+    let document = T::draw(draw_args)?;
 
     debug!("Save to {:?}", output);
 
@@ -490,6 +420,16 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     };
     let writer = Arc::new(Mutex::new(writer));
     let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
+    let derive_svg_output = |filename: String| -> PathBuf {
+        output_dir.join(
+            Path::new(filename.as_str())
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+                + ".svg",
+        )
+    };
     lines.into_par_iter().try_for_each(|line| -> Result<()> {
         let writer = writer.clone();
         match subcommand.clone() {
@@ -504,14 +444,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     hide.append(&mut (&group).into());
                 }
 
-                let output = output_dir.join(
-                    Path::new(filename.as_str())
-                        .file_stem()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
-                        + ".svg",
-                );
+                let output = derive_svg_output(filename);
                 process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
@@ -522,14 +455,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(SagittalDraw::all);
                 let hide = svg_sub_sagittall_args.hide;
 
-                let output = output_dir.join(
-                    Path::new(filename.as_str())
-                        .file_stem()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
-                        + ".svg",
-                );
+                let output = derive_svg_output(filename);
                 process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::Neck(svg_sub_neck_args) => {
@@ -540,14 +466,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(NeckLateralDraw::all);
                 let hide = svg_sub_neck_args.hide;
 
-                let output = output_dir.join(
-                    Path::new(filename.as_str())
-                        .file_stem()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
-                        + ".svg",
-                );
+                let output = derive_svg_output(filename);
                 process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
             SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
@@ -564,14 +483,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                     .unwrap_or_else(ImplantDraw::all);
                 let hide = svg_sub_implant_args.hide;
 
-                let output = output_dir.join(
-                    Path::new(data_line.filename.as_str())
-                        .file_stem()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
-                        + ".svg",
-                );
+                let output = derive_svg_output(data_line.filename);
                 process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
             }
         };

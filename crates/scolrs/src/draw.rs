@@ -1371,25 +1371,37 @@ where
     Ok(groups)
 }
 
+pub struct DrawArguments<'a, T, S> {
+    pub image: DynamicImage,
+    pub data: T,
+    pub draw: &'a [S],
+    pub hide: &'a [S],
+    pub draw_param: DrawParam,
+    pub resize_param: Option<ResizeParam>,
+    pub svg_size: (usize, usize),
+    pub palettes: ColorPalettes,
+}
+
 /// Draw the given components on the image.
 ///
 /// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
-pub fn draw_on_image<'a, T, S>(
-    image: DynamicImage,
-    data: T,
-    draw_hide: (&[S], &[S]),
-    draw_param: DrawParam,
-    resize_param: Option<ResizeParam>,
-    svg_size: (usize, usize),
-    palettes: ColorPalettes,
-) -> Result<element::SVG, DrawError>
+pub fn draw_on_image<'a, T, S>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
 where
     for<'b> (&'b S, &'b T): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
-    let (draw, hide) = draw_hide;
+    let DrawArguments {
+        image,
+        data,
+        draw,
+        hide,
+        draw_param,
+        resize_param,
+        svg_size,
+        palettes,
+    } = args;
     let style = element::Style::new(draw_param.style());
     let mut painter = Painter::new(draw_param, svg_size);
     let image: Cow<DynamicImage> = match resize_param {
@@ -1410,64 +1422,20 @@ where
     Ok(document)
 }
 
-pub fn draw_sagittal(
-    image: DynamicImage,
-    sagittal_points: SagittalPoints,
-    draws_hide: (&[SagittalDraw], &[SagittalDraw]),
-    draw_param: DrawParam,
-    resize_param: Option<ResizeParam>,
-    svg_size: (usize, usize),
-    palettes: ColorPalettes,
-) -> Result<element::SVG, DrawError> {
-    draw_on_image(
-        image,
-        sagittal_points,
-        draws_hide,
-        draw_param,
-        resize_param,
-        svg_size,
-        palettes,
-    )
+pub type SagittalDrawArguments<'a> = DrawArguments<'a, SagittalPoints, SagittalDraw>;
+pub type CoronalDrawArguments<'a> = DrawArguments<'a, CoronalPointsAndCurve, CoronalDraw>;
+pub type ImplantDrawArguments<'a> = DrawArguments<'a, ScrewSpine, ImplantDraw>;
+
+pub fn draw_sagittal(args: SagittalDrawArguments) -> Result<element::SVG, DrawError> {
+    draw_on_image(args)
 }
 
-pub fn draw_coronal(
-    image: DynamicImage,
-    coronal_set: CoronalPointsAndCurve,
-    draws_hide: (&[CoronalDraw], &[CoronalDraw]),
-    draw_param: DrawParam,
-    resize_param: Option<ResizeParam>,
-    svg_size: (usize, usize),
-    palettes: ColorPalettes,
-) -> Result<element::SVG, DrawError> {
-    draw_on_image(
-        image,
-        coronal_set,
-        draws_hide,
-        draw_param,
-        resize_param,
-        svg_size,
-        palettes,
-    )
+pub fn draw_coronal(args: CoronalDrawArguments) -> Result<element::SVG, DrawError> {
+    draw_on_image(args)
 }
 
-pub fn draw_implant(
-    image: DynamicImage,
-    implant_spine: ScrewSpine,
-    draws_hide: (&[ImplantDraw], &[ImplantDraw]),
-    draw_param: DrawParam,
-    resize_param: Option<ResizeParam>,
-    svg_size: (usize, usize),
-    palettes: ColorPalettes,
-) -> Result<element::SVG, DrawError> {
-    draw_on_image(
-        image,
-        implant_spine,
-        draws_hide,
-        draw_param,
-        resize_param,
-        svg_size,
-        palettes,
-    )
+pub fn draw_implant(args: ImplantDrawArguments) -> Result<element::SVG, DrawError> {
+    draw_on_image(args)
 }
 
 #[derive(thiserror::Error, Debug)]
