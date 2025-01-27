@@ -27,6 +27,7 @@ use serde::Deserialize;
 use svg::node::element;
 use tar;
 
+/// Trait for writing to file system, stdout, or tar
 trait FsWrite: Send + Sync {
     fn write(&mut self, path: &Path, content: String) -> Result<()>;
 }
@@ -473,6 +474,18 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
             output_dir,
         )
     } else {
+        if args.output.is_file() {
+            return Err(anyhow::anyhow!(
+                "Specified output \"{}\" is a file",
+                args.output.display()
+            ));
+        }
+        if !args.output.exists() {
+            return Err(anyhow::anyhow!(
+                "Specified output \"{}\" does not exist",
+                args.output.display()
+            ));
+        }
         (Box::new(FsWriter) as Box<dyn FsWrite>, args.output)
     };
     let writer = Arc::new(Mutex::new(writer));
