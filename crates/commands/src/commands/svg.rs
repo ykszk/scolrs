@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{
@@ -197,9 +198,6 @@ where
     T: AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
     <T as AssociatedMeasureAndDraw>::Draw: Clone + Copy + PartialEq,
 {
-    // if let Some(resize_param) = svg_common.resize_param {
-    //     point_with_image.resize(&resize_param);
-    // }
     let svg_size = if let Some(svg_size_param) = svg_common.svg_size_param {
         match svg_size_param {
             ResizeParam::Percentage(_) => panic!("Percentage is not supported for svg size"),
@@ -242,12 +240,15 @@ fn load_from_native_json_file<T>(path: &Path) -> Result<PointDataWithImage<T>>
 where
     T: HasImageMetadata + Clone,
     for<'de> T: Deserialize<'de>,
-
-    // <T as TryFromJson>::Error: std::marker::Sync + std::marker::Send + std::error::Error + 'static,
     LabelMeData: From<T>,
 {
-    let json = std::fs::read_to_string(path)?;
-    // let cp = T::try_from_native_json(&json).with_context(|| format!("Load {:?}", path))?;
+    let json = if path.as_os_str() == "-" {
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        std::fs::read_to_string(path)?
+    };
     let cp: T = serde_json::from_str(&json)?;
     let data = LabelMeData::from(cp.clone());
     let data_w_image = LabelMeDataWImage::try_from_data_and_path(data, path)?;
@@ -262,9 +263,14 @@ where
     for<'a> <T as TryFrom<&'a LabelMeData>>::Error:
         std::marker::Sync + std::marker::Send + std::error::Error + 'static,
 {
-    let data_image: LabelMeDataWImage = path
-        .try_into()
-        .with_context(|| format!("Load LabelMeData from {:?}", path))?;
+    let data_image: LabelMeDataWImage = if path.as_os_str() == "-" {
+        let data: LabelMeData = serde_json::from_reader(std::io::stdin())?;
+        data.try_into()
+            .with_context(|| "Load LabelMeData from stdin".to_string())?
+    } else {
+        path.try_into()
+            .with_context(|| format!("Load LabelMeData from {:?}", path))?
+    };
 
     let mut cp = T::try_from(&data_image.data)?;
     if pull_spacing {
@@ -343,8 +349,11 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
         }
         SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
-            let data: LabelMeOptionalDetectron2 =
-                serde_json::from_str(&std::fs::read_to_string(&args.input)?)?;
+            let data: LabelMeOptionalDetectron2 = if args.input.as_os_str() == "-" {
+                serde_json::from_reader(std::io::stdin())?
+            } else {
+                serde_json::from_str(&std::fs::read_to_string(&args.input)?)?
+            };
             let screw_spine = data.screw_spine()?;
             let data_w_image =
                 LabelMeDataWImage::try_from_data_and_path(data.labelme, &args.input)?;

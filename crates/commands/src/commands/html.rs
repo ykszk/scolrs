@@ -18,7 +18,8 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
         || {
             args.input
                 .file_stem()
-                .map_or(String::from("neckrs html"), |stem| {
+                .filter(|stem| *stem != "-")
+                .map_or(String::from("scolrs html"), |stem| {
                     stem.to_string_lossy().into_owned()
                 })
         },

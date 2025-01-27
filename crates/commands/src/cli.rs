@@ -167,7 +167,7 @@ pub struct SvgArgsCommon {
 
 #[derive(Parser, Debug, Clone, Default)]
 pub struct SvgArgs {
-    /// Input labelme json filename
+    /// Input labelme json filename. Specify '-' for stdin
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
     /// Output svg filename. Specify '-' for stdout
