@@ -1,14 +1,14 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+use crate::cli::{self, CurveArgs};
+use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use scolrs::{
     CoronalPoints, Curve, CurveDesc, CurveScoreSet, CurveSet, CurveSetAlgorithm, VertebraDiscIndex,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::cli::{self, CurveArgs};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoLine {
@@ -108,12 +108,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
             CurveSetAlgorithm::Score(weights)
         }
     };
-    if args.input.as_os_str() == "-"
-        || args
-            .input
-            .extension()
-            .map_or(false, |e| e == "ndjson" || e == "jsonl")
-    {
+    if args.input.as_os_str() == "-" || args.input.is_ndjson() {
         // ndjson IO
         let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
             Box::new(BufReader::new(std::io::stdin()))

@@ -8,6 +8,7 @@ use cli::Cli;
 use cli::Command;
 mod commands;
 use commands::{curve, lenke, measure, svg};
+mod utils;
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut clap::Command) {
     generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());

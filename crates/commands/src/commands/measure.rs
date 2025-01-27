@@ -8,6 +8,7 @@ use crate::cli::{
     MeasureArgs, MeasureSubCommands, MeasureSubCoronalArgs, MeasureSubNeckArgs,
     MeasureSubSagittallArgs,
 };
+use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
@@ -272,10 +273,7 @@ fn measure_neck(
 }
 
 pub fn cmd(args: MeasureArgs) -> Result<()> {
-    if args.input.as_os_str() == "-"
-        || args.input.extension().unwrap_or_default() == "ndjson"
-        || args.input.extension().unwrap_or_default() == "jsonl"
-    {
+    if args.input.as_os_str() == "-" || args.input.is_ndjson() {
         process_ndjson(args)
     } else {
         process_json(args)

@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader};
 
 use crate::cli::ImplantArgs;
+use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::LabelMeDataLine;
@@ -30,7 +31,7 @@ fn label_counts(counts: Vec<usize>) -> IndexMap<String, usize> {
 }
 
 pub fn cmd(args: ImplantArgs) -> Result<()> {
-    if args.input.extension().unwrap_or_default() == "ndjson" || args.input.as_os_str() == "-" {
+    if args.input.as_os_str() == "-" || args.input.is_ndjson() {
         let reader: Box<dyn BufRead> = if args.input.as_os_str() != "-" {
             Box::new(BufReader::new(std::fs::File::open(args.input)?))
         } else {

@@ -6,7 +6,6 @@ authors.workspace = true
 repository.workspace = true
 description.workspace = true
 
-
 [[bin]]
 name = "scolrs"
 path = "src/main.rs"
