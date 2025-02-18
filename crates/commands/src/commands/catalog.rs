@@ -118,12 +118,15 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
             paths.push(Box::new(input));
         } else if input.as_os_str() == "-" {
             let mut archive = tar::Archive::new(std::io::stdin());
+            let mut path_and_content: Vec<Box<_>> = Vec::new();
             for entry in archive.entries()? {
                 let mut entry = entry?;
                 let mut content = String::new();
                 entry.read_to_string(&mut content)?;
-                paths.push(Box::new((entry.path()?.to_path_buf(), content)));
+                path_and_content.push(Box::new((entry.path()?.to_path_buf(), content)));
             }
+            path_and_content.sort_by(|a, b| a.0.cmp(&b.0));
+            paths.extend(path_and_content.into_iter().map(|p| Box::new(*p) as _));
         } else {
             bail!("Invalid input file: {:?}", input)
         }
