@@ -6,10 +6,11 @@ use ndarray_stats::DeviationExt;
 use svg::node::element;
 
 use super::{
-    draw_difference_in_x, draw_difference_in_y, draw_t1_angle, draw_tilt_angle, mean_plate_length,
-    points2line, tilt_angle, Centroids, CobbAux, ColorPalette, CommonComponent, DrawComponent,
-    DrawError, MeasureComponent, MeasureError, Painter, VertebralLabels, VertebralPoints,
-    CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POLYGON,
+    angle_between, draw_difference_in_x, draw_difference_in_y, draw_t1_angle, draw_tilt_angle,
+    mean_plate_length, points2line, tilt_angle, Centroids, CobbAux, ColorPalette, CommonComponent,
+    DrawComponent, DrawError, MeasureComponent, MeasureError, Painter, VertebralLabels,
+    VertebralPoints, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+    CLASS_POLYGON,
 };
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
@@ -357,6 +358,24 @@ impl MeasureComponent for PelvicObliquity<'_> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct SacralObliquity<'a>(&'a CoronalPoints);
 impl CoronalComponent for SacralObliquity<'_> {}
+impl SacralObliquity<'_> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
+        let coronal_points = self.0;
+        coronal_points
+            .femoral_head
+            .0
+            .validate_label_length("FemoralHead", 2)?;
+        let femoral_head = &coronal_points.femoral_head.0;
+        let sac_line = points2line(coronal_points.spine.sacral_sup_plate());
+        let line_eqn = sac_line.equation();
+        let mut sac_seg = femoral_head.clone();
+        sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
+        sac_seg[[1, 1]] = line_eqn.solve_y_for_x(femoral_head[[1, 0]]).unwrap();
+        let mut hor_line = sac_seg.clone();
+        hor_line[[1, 1]] = hor_line[[0, 1]];
+        Ok((hor_line, sac_seg))
+    }
+}
 impl DrawComponent for SacralObliquity<'_> {
     fn draw(
         &self,
@@ -364,27 +383,17 @@ impl DrawComponent for SacralObliquity<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        let coronal_points = self.0;
-        coronal_points
-            .femoral_head
-            .0
-            .validate_label_length("FemoralHead", 2)?;
+        let (hor_line, sac_seg) = self.prep()?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
-        let femoral_head = &coronal_points.femoral_head.0;
+        let femoral_head = &self.0.femoral_head.0;
         for c in femoral_head.axis_iter(Axis(0)) {
             g = g.add(painter.point(c));
         }
+
         g = g.add(painter.line(femoral_head.view()));
-        let sac_line = points2line(coronal_points.spine.sacral_sup_plate());
-        let line_eqn = sac_line.equation();
-        let mut sac_seg = femoral_head.clone();
-        sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
-        sac_seg[[1, 1]] = line_eqn.solve_y_for_x(femoral_head[[1, 0]]).unwrap();
         g = g.add(painter.line(sac_seg.view()));
-        let mut hor_line = sac_seg.clone();
-        hor_line[[1, 1]] = hor_line[[0, 1]];
 
         g = painter
             .angle_between(
@@ -404,7 +413,9 @@ impl DrawComponent for SacralObliquity<'_> {
 }
 impl MeasureComponent for SacralObliquity<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        tilt_angle("FemoralHead", self.0.femoral_head.0.view())
+        let (hor_line, sac_seg) = self.prep()?;
+        let angle = angle_between(hor_line.view(), sac_seg.view()).to_degrees();
+        Ok(angle)
     }
 }
 
