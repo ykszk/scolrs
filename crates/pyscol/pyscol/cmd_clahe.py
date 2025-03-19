@@ -5,7 +5,8 @@ from pathlib import Path
 def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("input", help="Input DICOM directory")
     parser.add_argument("output", help="Output directory")
-    parser.add_argument("--ext", help="Output file extension. default: %(default)s", default="jpg")
+    parser.add_argument("--input_extension", help="Input file extension. default: %(default)s", default=".dcm")
+    parser.add_argument("--ext", help="Output file extension. default: %(default)s", default=".jpg")
     parser.add_argument("--trim", action="store_true", help="Trimming")
     parser.add_argument("--compress", action="store_true", help="Compress dicom with RLELossless")
     parser.add_argument("--u8", action="store_true", help="Output as uint8")
@@ -28,9 +29,15 @@ def main(args: argparse.Namespace):
     from PIL import Image
     from szkmipy import boundingbox as bb
 
-    for filename in sorted(Path(args.input).glob("*.dcm")):
+    for filename in sorted(Path(args.input).glob(f"*{args.input_extension}")):
+        if filename.is_dir():
+            continue
         logger.debug("%s", filename)
-        dcm = pydicom.dcmread(filename)
+        try:
+            dcm = pydicom.dcmread(filename)
+        except Exception as e:
+            logger.error("Error in %s: %s", filename, e)
+            continue
         arr = dcm.pixel_array
         if dcm.PhotometricInterpretation == "MONOCHROME1":
             arr = 2**dcm.BitsStored - 1 - arr
@@ -41,13 +48,15 @@ def main(args: argparse.Namespace):
             arr = bb.crop(arr, box)
         if arr.dtype == "int16":
             arr = (arr - arr.min()).astype("uint16")
+        if args.ext == '.jpg':
+            args.u8 = True
         if False:  ##args.minmax:
             result = pyscol.ada_minmax(arr, args.tile_width, args.tile_height, args.tile_sample)
         else:
             result = pyscol.clahe(arr, args.tile_width, args.tile_height, args.clip_limit, args.tile_sample, args.u8)
         outdir = Path(args.output)
         outdir.mkdir(parents=True, exist_ok=True)
-        outpath = outdir / (filename.stem + "." + args.ext)
+        outpath = outdir / (filename.stem + args.ext)
         logger.debug(f"save: {outpath}")
         if args.ext == 'dcm':
             if result.dtype == 'uint16':
