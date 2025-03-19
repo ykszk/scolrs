@@ -25,7 +25,7 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
         },
         |s| s,
     );
-    let html = wrap_in_html(svg, args.selector, title)?;
+    let html = wrap_in_html(svg, &args.selector, title)?;
     let mut writer = BufWriter::new(File::create(
         args.output
             .unwrap_or_else(|| args.input.with_extension("html")),

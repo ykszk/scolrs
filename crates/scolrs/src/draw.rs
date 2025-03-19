@@ -1381,7 +1381,7 @@ pub struct DrawArguments<'a, T, S> {
     pub hide: &'a [S],
     pub draw_param: DrawParam,
     pub resize_param: Option<ResizeParam>,
-    pub svg_size: (usize, usize),
+    pub svg_size: Option<(usize, usize)>,
     pub palettes: ColorPalettes,
 }
 
@@ -1406,11 +1406,12 @@ where
         palettes,
     } = args;
     let style = element::Style::new(draw_param.style());
-    let mut painter = Painter::new(draw_param, svg_size);
     let image: Cow<DynamicImage> = match resize_param {
         Some(resize_param) => Cow::Owned(resize_param.resize(&image)),
         None => Cow::Borrowed(&image),
     };
+    let svg_size = svg_size.unwrap_or_else(|| (image.width() as usize, image.height() as usize));
+    let mut painter = Painter::new(draw_param, svg_size);
 
     // draw first to update the internal bounding box
     let groups = draw_components(data, draw, hide, &mut painter, palettes)?;
@@ -1452,7 +1453,7 @@ pub enum HtmlWrapError {
 /// Wrap the SVG in HTML with visibility toggles
 pub fn wrap_in_html(
     svg: String,
-    selector: Vec<String>,
+    selector: &[String],
     title: String,
 ) -> Result<String, HtmlWrapError> {
     let document = scraper::Html::parse_document(&svg);
@@ -1468,7 +1469,7 @@ pub fn wrap_in_html(
     let javascript = include_str!("templates/capture.js");
     let mut elements: Vec<_> = Vec::new();
     for selector in selector {
-        let selector = scraper::Selector::parse(&selector).unwrap_or_else(|_| {
+        let selector = scraper::Selector::parse(selector).unwrap_or_else(|_| {
             panic!("Failed to parse selector: {}", &selector);
         });
         elements.extend(document.select(&selector));

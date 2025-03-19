@@ -429,7 +429,7 @@ fn py_wrap_in_html(
     selector: Option<Vec<String>>,
 ) -> Result<String, PyScolError> {
     let selector = selector.unwrap_or_else(|| vec!["g.Component".to_string()]);
-    Ok(scolrs::draw::wrap_in_html(svg, selector, title)?)
+    Ok(scolrs::draw::wrap_in_html(svg, &selector, title)?)
 }
 
 #[pyfunction]

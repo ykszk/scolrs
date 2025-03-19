@@ -188,6 +188,9 @@ pub struct SvgNdjsonArgs {
     /// Maximum number of jobs to run in parallel
     #[clap(short, long)]
     pub jobs: Option<usize>,
+    /// Generate HTMLs instead of SVGs
+    #[clap(long)]
+    pub html: bool,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
 }

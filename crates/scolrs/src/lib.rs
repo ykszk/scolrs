@@ -1398,8 +1398,10 @@ impl<'de> Deserialize<'de> for CoronalPointsAndCurve {
     {
         let ir: CoronalPointsAndCurveIR = CoronalPointsAndCurveIR::deserialize(deserializer)?;
         if let Some(curves) = ir.curves {
+            log::debug!("Using provided curves");
             Ok(CoronalPointsAndCurve::new(ir.coronal_points, curves))
         } else {
+            log::debug!("Identifying curves from coronal points");
             let curves = ir.coronal_points.identify_curves();
             Ok(CoronalPointsAndCurve::new(ir.coronal_points, curves))
         }
@@ -1411,6 +1413,7 @@ impl<'de> Deserialize<'de> for CoronalPointsAndCurve {
 pub struct CoronalPointsAndCurveIR {
     #[serde(flatten)]
     pub coronal_points: CoronalPoints,
+    #[serde(flatten)]
     pub curves: Option<CurveDesc>,
 }
 

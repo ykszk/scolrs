@@ -8,11 +8,11 @@ use std::{
 
 use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
 use anyhow::{Context, Result};
-use labelme_rs::{image::GenericImageView, LabelMeData, LabelMeDataWImage, ResizeParam};
+use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use log::debug;
 
 use rayon::prelude::*;
-use scolrs::draw::DrawArguments;
+use scolrs::draw::{wrap_in_html, DrawArguments};
 use scolrs::head_neck::draw_neck;
 use scolrs::{
     draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
@@ -126,27 +126,25 @@ where
     T: AssociatedMeasureAndDraw + HasImageMetadata + Clone + Scalable,
     <T as AssociatedMeasureAndDraw>::Draw: Clone + Copy + PartialEq,
 {
-    let svg_size = if let Some(svg_size_param) = svg_common.svg_size_param {
-        match svg_size_param {
+    log::info!("Processing {:?}", output);
+    let svg_size = svg_common
+        .svg_size_param
+        .map(|svg_size_param| match svg_size_param {
             ResizeParam::Percentage(_) => panic!("Percentage is not supported for svg size"),
             ResizeParam::Size(w, h) => {
                 if w > h {
                     let image_aspect_ratio = point_with_image.data_image.image.width() as f64
                         / point_with_image.data_image.image.height() as f64;
-                    let adjusted_height = (w as f64 / image_aspect_ratio) as u32;
-                    (w, adjusted_height)
+                    let adjusted_height = (w as f64 / image_aspect_ratio) as usize;
+                    (w as usize, adjusted_height)
                 } else {
                     let image_aspect_ratio = point_with_image.data_image.image.height() as f64
                         / point_with_image.data_image.image.width() as f64;
-                    let adjusted_width = (h as f64 / image_aspect_ratio) as u32;
-                    (adjusted_width, h)
+                    let adjusted_width = (h as f64 / image_aspect_ratio) as usize;
+                    (adjusted_width, h as usize)
                 }
             }
-        }
-    } else {
-        point_with_image.data_image.image.dimensions()
-    };
-    let svg_size = (svg_size.0 as usize, svg_size.1 as usize);
+        });
 
     let draw_args = DrawArguments {
         image: point_with_image.data_image.image,
@@ -163,7 +161,19 @@ where
 
     debug!("Save to {:?}", output);
 
-    writer.write(output, document.to_string())?;
+    if output.extension().unwrap_or_default() == "html" {
+        let svg = document.to_string();
+        let title = output
+            .file_stem()
+            .filter(|stem| *stem != "-")
+            .map_or(String::from("scolrs html"), |stem| {
+                stem.to_string_lossy().into_owned()
+            });
+        let html = wrap_in_html(svg, &["g.Component".to_string()], title)?;
+        writer.write(output, html)?;
+    } else {
+        writer.write(output, document.to_string())?;
+    }
     Ok(())
 }
 
@@ -427,7 +437,7 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 .unwrap()
                 .to_string_lossy()
                 .to_string()
-                + ".svg",
+                + if args.html { ".html" } else { ".svg" },
         )
     };
     lines.into_par_iter().try_for_each(|line| -> Result<()> {
