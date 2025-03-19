@@ -104,16 +104,18 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     let mut paths: Vec<Box<dyn PathAndContent>> = Vec::new();
     for input in args.input {
         if input.is_dir() {
-            let glob_pattern = input.join("*.svg");
-            let mut svgs: Vec<_> =
-                glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
-            svgs.sort();
-            paths.append(
-                svgs.into_iter()
-                    .map(|p| Box::new(p) as _)
-                    .collect::<Vec<_>>()
-                    .as_mut(),
-            );
+            for ext in ["*.svg", "*.html"].iter() {
+                let glob_pattern = input.join(ext);
+                let mut svgs: Vec<_> =
+                    glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
+                svgs.sort();
+                paths.append(
+                    svgs.into_iter()
+                        .map(|p| Box::new(p) as _)
+                        .collect::<Vec<_>>()
+                        .as_mut(),
+                );
+            }
         } else if input.is_file() {
             paths.push(Box::new(input));
         } else if input.as_os_str() == "-" {
@@ -130,6 +132,10 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         } else {
             bail!("Invalid input file: {:?}", input)
         }
+    }
+
+    if paths.is_empty() {
+        bail!("No files found");
     }
 
     let divs: Result<Vec<_>> = paths
