@@ -1305,6 +1305,15 @@ pub struct CurveSet {
     pub tll: Option<(Curve, f64)>,
 }
 
+/// [`CurveSet`] with optional angles used for [`CoronalPointsAndCurveIR`]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
+pub struct CurveSetOptionalAngles {
+    pub pt: Option<(Curve, Option<f64>)>,
+    pub mt: Option<(Curve, Option<f64>)>,
+    pub tll: Option<(Curve, Option<f64>)>,
+}
+
 impl CurveSet {
     fn apices(&self, coronal_points: &CoronalPoints) -> ApexSet {
         ApexSet {
@@ -1365,6 +1374,34 @@ impl CurveDesc {
     }
 }
 
+/// [`CurveDesc`] with optional angles used for [`CoronalPointsAndCurveIR`]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CurveDescOptionalAngles {
+    pub curves: CurveSetOptionalAngles,
+    pub apices: ApexSet,
+    pub major_curve: Option<MajorCurve>,
+}
+
+impl CurveDescOptionalAngles {
+    pub fn resolve_angles(self, spine: &Spine) -> CurveDesc {
+        let curves = CurveSet {
+            pt: self.curves.pt.map(|(c, a)| {
+                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                (c.clone(), angle)
+            }),
+            mt: self.curves.mt.map(|(c, a)| {
+                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                (c, angle)
+            }),
+            tll: self.curves.tll.map(|(c, a)| {
+                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                (c, angle)
+            }),
+        };
+        CurveDesc::new(curves, self.apices, self.major_curve)
+    }
+}
+
 impl TryFrom<(&LabelMeData, &CurveSetAlgorithm)> for CurveDesc {
     type Error = ScolError;
 
@@ -1399,6 +1436,7 @@ impl<'de> Deserialize<'de> for CoronalPointsAndCurve {
         let ir: CoronalPointsAndCurveIR = CoronalPointsAndCurveIR::deserialize(deserializer)?;
         if let Some(curves) = ir.curves {
             log::debug!("Using provided curves");
+            let curves = curves.resolve_angles(&ir.coronal_points.spine);
             Ok(CoronalPointsAndCurve::new(ir.coronal_points, curves))
         } else {
             log::debug!("Identifying curves from coronal points");
@@ -1414,7 +1452,7 @@ pub struct CoronalPointsAndCurveIR {
     #[serde(flatten)]
     pub coronal_points: CoronalPoints,
     #[serde(flatten)]
-    pub curves: Option<CurveDesc>,
+    pub curves: Option<CurveDescOptionalAngles>,
 }
 
 /// Maintain redundant point data in sync with scaling and resizing

@@ -34,7 +34,7 @@ pub const KYOPHOSIS_CURVE_TLL: Curve = T10L2_CURVE;
 
 /// Major curve in Lenke classification
 /// PT can't be the major curve
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MajorCurve {
     MT,
     TLL,
