@@ -28,6 +28,21 @@ pub mod head_neck;
 pub mod implant;
 pub mod lenke;
 use head_neck::Scale2DPoints;
+use shadow_rs::shadow;
+
+shadow!(build);
+pub const VERSION: &str = shadow_rs::concatcp!(
+    build::PKG_VERSION,
+    " ",
+    build::SHORT_COMMIT,
+    " ",
+    build::BUILD_TIME,
+    if build::GIT_CLEAN {
+        ""
+    } else {
+        " (dirty)"
+    }
+);
 
 pub type Point2d = (f64, f64);
 

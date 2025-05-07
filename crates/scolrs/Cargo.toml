@@ -27,6 +27,7 @@ strum = { version = "0.26.2", features = ["derive"] }
 regex = "1.11.1"
 base64 = "0.22.1"
 webp = "0.3.0"
+shadow-rs = "1.1.1"
 
 clap.workspace = true
 env_logger.workspace = true
@@ -45,3 +46,6 @@ tera.workspace = true
 [dev-dependencies]
 anyhow.workspace = true
 pretty_assertions.workspace = true
+
+[build-dependencies]
+shadow-rs = "1.1.1"

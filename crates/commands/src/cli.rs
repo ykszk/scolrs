@@ -7,7 +7,7 @@ use scolrs::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[clap(name=env!("CARGO_BIN_NAME"), author, version, about, long_about = None)]
+#[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Command,
