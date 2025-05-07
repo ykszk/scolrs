@@ -216,7 +216,7 @@ impl SagittalBalance<'_> {
         let c_c7 = sagittal_points.spine.c_c7tl.index_axis(Axis(0), 0);
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let pos_sac = sac_sup.index_axis(Axis(0), 1);
-        stack![Axis(0), c_c7, pos_sac]
+        stack![Axis(0), pos_sac, c_c7]
     }
 }
 impl SagittalComponent for SagittalBalance<'_> {}
