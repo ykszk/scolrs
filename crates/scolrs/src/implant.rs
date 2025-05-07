@@ -115,6 +115,8 @@ impl TryFrom<&LabelMeData> for ImplantSpine {
     }
 }
 
+/// The allowed distance factor is used to determine the maximum distance between a rectangle and a vertebra
+/// to be considered a valid pairing. This factor is multiplied by the mean plate length of the spine.
 const ALLOWED_DIST_FACTOR: f64 = 1.0;
 
 trait ScrewVertebraUtils {
@@ -535,6 +537,7 @@ fn pair_to_closest<T: CalculateCentroid>(
                 .axis_iter(Axis(0))
                 .enumerate()
                 .filter_map(|(i_vert, vertebra)| {
+                    // distances from the rectangle centroid to the corner points of the vertebra
                     let distances = vertebra.map_axis(Axis(1), |xy| {
                         ((x - xy[0]).powi(2) + (y - xy[1]).powi(2)).sqrt()
                     });

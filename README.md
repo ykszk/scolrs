@@ -11,6 +11,11 @@ maturin develop --release
 RUST_LOG=info python3 -m unittest discover tests/
 ```
 
+## Fish Complesion
+```console
+scolrs complete fish > ~/.config/fish/completions/scolrs.fish
+```
+
 # Development
 
 ## Test

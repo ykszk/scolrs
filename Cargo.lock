@@ -1508,8 +1508,8 @@ dependencies = [
 
 [[package]]
 name = "labelme-rs"
-version = "0.13.0"
-source = "git+https://github.com/ykszk/labelme-rs.git?tag=v0.13.0#bb74f362e90768ae9afb8cb83b82319321acdfa0"
+version = "0.13.3"
+source = "git+https://github.com/ykszk/labelme-rs.git?tag=v0.13.3#51fcb62715e5a2874f7115dbe8dd9227dc849956"
 dependencies = [
  "base64",
  "dicom-dictionary-std",
