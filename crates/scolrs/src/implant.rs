@@ -579,6 +579,10 @@ fn pair_to_closest<T: CalculateCentroid>(
         })
         .collect();
 
+    if pairs.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
     // sort pairs by dx
     pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
 
