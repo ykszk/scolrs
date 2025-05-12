@@ -671,6 +671,7 @@ mod tests {
             output: output_path("neck_case2_catalog.html")?,
             title: Some("Neck Case 2".to_string()),
             selector: vec!["g.Component".to_string()],
+            sort: false,
             jobs: None,
         };
         crate::commands::catalog::cmd(catalog_args)?;
@@ -684,6 +685,7 @@ mod tests {
             output: output_path("neck_cases_catalog.html")?,
             title: Some("Neck Cases".to_string()),
             selector: vec!["g.Component".to_string()],
+            sort: false,
             jobs: None,
         };
         crate::commands::catalog::cmd(catalog_args)?;
@@ -697,6 +699,7 @@ mod tests {
             output: output_path("neck_catalog_from_html.html")?,
             title: Some("Neck Case 2 from HTML".to_string()),
             selector: vec!["g.Component".to_string()],
+            sort: false,
             jobs: None,
         };
         crate::commands::catalog::cmd(catalog_args)?;

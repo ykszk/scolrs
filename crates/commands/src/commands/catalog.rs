@@ -108,7 +108,9 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
                 let glob_pattern = input.join(ext);
                 let mut svgs: Vec<_> =
                     glob::glob(glob_pattern.to_str().unwrap())?.collect::<Result<_, _>>()?;
-                svgs.sort();
+                if args.sort {
+                    svgs.sort();
+                }
                 paths.append(
                     svgs.into_iter()
                         .map(|p| Box::new(p) as _)
@@ -127,7 +129,9 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
                 entry.read_to_string(&mut content)?;
                 path_and_content.push(Box::new((entry.path()?.to_path_buf(), content)));
             }
-            path_and_content.sort_by(|a, b| a.0.cmp(&b.0));
+            if args.sort {
+                path_and_content.sort_by(|a, b| a.0.cmp(&b.0));
+            }
             paths.extend(path_and_content.into_iter().map(|p| Box::new(*p) as _));
         } else {
             bail!("Invalid input file: {:?}", input)

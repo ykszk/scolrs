@@ -309,6 +309,9 @@ pub struct CatalogArgs {
     /// Selector(s) for the svg elements
     #[clap(long, value_delimiter = ',', default_value = "g.Component", value_hint = ValueHint::Other)]
     pub selector: Vec<String>,
+    /// Sort by filename within input not globally (across all inputs)
+    #[clap(long)]
+    pub sort: bool,
     /// Maximum number of jobs to run in parallel
     #[clap(short, long)]
     pub jobs: Option<usize>,
