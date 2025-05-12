@@ -141,65 +141,68 @@ impl ScrewVertebraUtils for &mut [ScrewVertebra] {
     }
 }
 
+
+fn _refine_pairing(rectangles: &[Rectangle], mut pairs: Vec<ScrewVertebra>, vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>, is_left: bool) -> Vec<Screw> {
+    let n_vertebrae = vertebra_centroids.len_of(Axis(0));
+    let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
+    let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
+
+    let optimal_pairs: Vec<Screw> = if too_many_rects {
+        log::warn!("Too many rectangles per vertebra");
+        // find optimal assignment
+        let cost_func = |i_rect: usize, i_vert: usize| {
+            let (x, y): (f64, f64) = pairs[i_rect].c_rect;
+            let vc = vertebra_centroids.index_axis(Axis(0), i_vert);
+            ((x - vc[0]).powi(2) + (y - vc[1]).powi(2)).sqrt()
+        };
+
+        let optimal_assignments = ordered_assignment(n_vertebrae, pairs.len(), cost_func);
+
+        pairs
+            .iter()
+            .zip(optimal_assignments.assignments.iter())
+            .map(|(sv, &i_vert)| {
+                Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left)
+            })
+            .collect()
+    } else {
+        pairs
+            .iter()
+            .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, is_left))
+            .collect::<Vec<_>>()
+    };
+    optimal_pairs
+}
+
+fn refine_pairings(rectangles: &[Rectangle], left_pairs: Vec<ScrewVertebra>, right_pairs: Vec<ScrewVertebra>, vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>) -> Vec<Screw> {
+    let left_refined = _refine_pairing(rectangles, left_pairs, vertebra_centroids, true);
+    let right_refined = _refine_pairing(rectangles, right_pairs, vertebra_centroids, false);
+    let mut both_pairs = left_refined;
+    both_pairs.extend(right_refined);
+    both_pairs
+}
+
 impl ImplantSpine {
     fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<Screw> {
         let (left_pairs, right_pairs) = pair_to_closest(rectangles, &self.spine);
 
-        let vertebrae = self.spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
         let vertebra_centroids = self.spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
 
-        let n_vertebrae = vertebrae.len_of(Axis(0));
-
-        let mut optimal_pair_list: Vec<Vec<Screw>> = Vec::with_capacity(2);
-
-        for (i_pair, mut pairs) in [left_pairs, right_pairs].into_iter().enumerate() {
-            let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
-            let left = i_pair == 0;
-            let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
-
-            let optimal_pairs: Vec<Screw> = if too_many_rects {
-                log::warn!("Too many rectangles per vertebra");
-                // find optimal assignment
-                let cost_func = |i_rect: usize, i_vert: usize| {
-                    let (x, y): (f64, f64) = pairs[i_rect].c_rect;
-                    let vc = vertebra_centroids.index_axis(Axis(0), i_vert);
-                    ((x - vc[0]).powi(2) + (y - vc[1]).powi(2)).sqrt()
-                };
-
-                let optimal_assignments = ordered_assignment(n_vertebrae, pairs.len(), cost_func);
-
-                pairs
-                    .iter()
-                    .zip(optimal_assignments.assignments.iter())
-                    .map(|(sv, &i_vert)| {
-                        Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, left)
-                    })
-                    .collect()
-            } else {
-                pairs
-                    .iter()
-                    .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, left))
-                    .collect::<Vec<_>>()
-            };
-            optimal_pair_list.push(optimal_pairs);
-        }
-
-        let right_pairs = optimal_pair_list.pop().unwrap();
-        let mut left_pairs = optimal_pair_list.pop().unwrap();
-
-        left_pairs.extend(
-            right_pairs
-                .iter()
-                .map(|x| Screw::with_pos(x.bb.clone(), x.vertebra, false)),
+        let refined_pairs = refine_pairings(
+            rectangles,
+            left_pairs,
+            right_pairs,
+            vertebra_centroids,
         );
-        if left_pairs.len() != rectangles.len() {
+
+        if refined_pairs.len() != rectangles.len() {
             log::warn!(
                 "Number of screws does not match number of rectangles. {} != {}",
-                left_pairs.len(),
+                refined_pairs.len(),
                 rectangles.len()
             );
         }
-        left_pairs
+        refined_pairs
     }
 
     pub fn pair_screw(&self) -> Vec<Screw> {
@@ -612,61 +615,32 @@ pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Scre
         left_pairs.len(),
         right_pairs.len()
     );
-    let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
 
-    let n_vertebrae = vertebrae.len_of(Axis(0));
+    let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
+    let rectangles = screws
+        .iter()
+        .map(|screw| Rectangle {
+            tl: (screw.coords.0, screw.coords.1),
+            br: (screw.coords.2, screw.coords.3),
+        })
+        .collect::<Vec<_>>();
 
-    let mut refined_pairs: Vec<Screw> = Vec::new();
-    for (left, mut pairs) in [(true, left_pairs), (false, right_pairs)].into_iter() {
-        let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
-        log::debug!("rect_count_per_vertebra: {:?}", rect_count_per_vertebra);
-        let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
-        if too_many_rects {
-            log::warn!("Too many rectangles per vertebra for side: {}", left);
-            let mut screws_per_vertebra: Vec<Vec<_>> = vec![Vec::new(); vertebrae.len_of(Axis(0))];
-            for pair in pairs {
-                screws_per_vertebra[pair.i_vert].push(pair.i_rect);
-            }
-            let refined_screws_per_vertebra: Vec<_> = screws_per_vertebra
-                .into_iter()
-                .map(|mut screws_in_vert| {
-                    if screws_in_vert.len() < 2 {
-                        return screws_in_vert;
-                    };
-                    screws_in_vert.sort_by(|a, b| {
-                        (-screws[*a].score).partial_cmp(&-screws[*b].score).unwrap()
-                    });
-                    screws_in_vert.truncate(1);
-                    screws_in_vert
-                })
-                .collect();
-            let refined_screws_per_vertebra: Vec<_> = refined_screws_per_vertebra
-                .into_iter()
-                .enumerate()
-                .flat_map(|(i, i_rects)| {
-                    i_rects.into_iter().map(move |i_rect| {
-                        let screw = &screws[i_rect];
-                        let rect = Rectangle {
-                            tl: (screw.coords.0, screw.coords.1),
-                            br: (screw.coords.2, screw.coords.3),
-                        };
-                        Screw::with_pos(rect, i, left)
-                    })
-                })
-                .collect();
-            refined_pairs.extend(refined_screws_per_vertebra);
-        } else {
-            refined_pairs.extend(pairs.iter().map(|pair| {
-                let screw = &screws[pair.i_rect];
-                let rect = Rectangle {
-                    tl: (screw.coords.0, screw.coords.1),
-                    br: (screw.coords.2, screw.coords.3),
-                };
-                Screw::with_pos(rect, pair.i_vert, left)
-            }));
-        }
+    let refined_pairs = refine_pairings(
+        &rectangles,
+        left_pairs,
+        right_pairs,
+        vertebra_centroids,
+    );
+
+    if refined_pairs.len() != rectangles.len() {
+        log::warn!(
+            "Number of screws does not match number of rectangles. {} != {}",
+            refined_pairs.len(),
+            rectangles.len()
+        );
     }
-    refined_pairs
+    refined_pairs    
+
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
