@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use labelme_rs::LabelMeData;
 use ndarray::{Array, Array1, Axis, Slice};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{ImageMetadata, ScolError, Spine};
 
@@ -730,7 +731,7 @@ impl LabelMeOptionalDetectron2 {
                     image_metadata,
                 })
             } else {
-                log::debug!("Use pairing algorithm to pair screws");
+                log::debug!("Use pairing algorithm to pair screws because no group_id found");
                 let implant = ImplantSpine::try_from(&self.labelme)?;
                 let screws = implant.pair_screw();
                 Ok(ScrewSpine {
@@ -748,8 +749,6 @@ pub struct LabelMeOptionalDetectron2Line {
     pub content: LabelMeOptionalDetectron2,
     pub filename: String,
 }
-
-use std::collections::HashMap;
 
 /// Represents a dynamic programming state key
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -859,6 +858,9 @@ where
     );
 
     log::debug!("min_cost: {}", min_cost);
+    if min_cost == f64::INFINITY {
+        panic!("No valid assignment found");
+    }   
 
     // Reconstruct the solution
     let mut assignments = Vec::new();

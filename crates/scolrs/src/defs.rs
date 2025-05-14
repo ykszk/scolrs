@@ -185,7 +185,7 @@ impl DrawParam {
     }
     pub fn line_style(&self) -> String {
         format!(
-            "line, polyline, polygon, path {{stroke-width: {}; fill: none}}",
+            "line, polyline, polygon, rect, path {{stroke-width: {}; fill: none}}",
             self.line_width
         )
     }

@@ -40,6 +40,7 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
         for line in reader.lines() {
             let line = line?;
             let data_line = serde_json::from_str::<LabelMeOptionalDetectron2Line>(&line)?;
+            log::debug!("Processing line: {:?}", data_line);
             let screw_spine = data_line.content.screw_spine()?;
             if args.count {
                 let count = label_counts(screw_spine.count_screws());
