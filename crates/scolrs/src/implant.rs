@@ -142,8 +142,12 @@ impl ScrewVertebraUtils for &mut [ScrewVertebra] {
     }
 }
 
-
-fn _refine_pairing(rectangles: &[Rectangle], mut pairs: Vec<ScrewVertebra>, vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>, is_left: bool) -> Vec<Screw> {
+fn _refine_pairing_two_sided(
+    rectangles: &[Rectangle],
+    mut pairs: Vec<ScrewVertebra>,
+    vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>,
+    is_left: bool,
+) -> Vec<Screw> {
     let n_vertebrae = vertebra_centroids.len_of(Axis(0));
     let rect_count_per_vertebra = pairs.as_mut_slice().count_rect_per_vertebra(n_vertebrae);
     let too_many_rects = rect_count_per_vertebra.iter().any(|&count| count > 1);
@@ -162,9 +166,7 @@ fn _refine_pairing(rectangles: &[Rectangle], mut pairs: Vec<ScrewVertebra>, vert
         pairs
             .iter()
             .zip(optimal_assignments.assignments.iter())
-            .map(|(sv, &i_vert)| {
-                Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left)
-            })
+            .map(|(sv, &i_vert)| Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left))
             .collect()
     } else {
         pairs
@@ -175,32 +177,67 @@ fn _refine_pairing(rectangles: &[Rectangle], mut pairs: Vec<ScrewVertebra>, vert
     optimal_pairs
 }
 
-fn refine_pairings(rectangles: &[Rectangle], left_pairs: Vec<ScrewVertebra>, right_pairs: Vec<ScrewVertebra>, vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>) -> Vec<Screw> {
-    let left_refined = _refine_pairing(rectangles, left_pairs, vertebra_centroids, true);
-    let right_refined = _refine_pairing(rectangles, right_pairs, vertebra_centroids, false);
+fn refine_two_sided_pairings(
+    rectangles: &[Rectangle],
+    left_pairs: Vec<ScrewVertebra>,
+    right_pairs: Vec<ScrewVertebra>,
+    vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>,
+) -> Vec<Screw> {
+    let left_refined = _refine_pairing_two_sided(rectangles, left_pairs, vertebra_centroids, true);
+    let right_refined =
+        _refine_pairing_two_sided(rectangles, right_pairs, vertebra_centroids, false);
     let mut both_pairs = left_refined;
     both_pairs.extend(right_refined);
     both_pairs
 }
 
+fn refine_one_sided_pairings(
+    rectangles: &[Rectangle],
+    pairs: Vec<ScrewVertebra>,
+    vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>,
+    is_left: bool,
+) -> Vec<Screw> {
+    // choose the closest two screws to the vertebrae
+    let mut chosen_pairs: Vec<Screw> = Vec::new();
+    for i_vert in 0..vertebra_centroids.len_of(Axis(0)) {
+        let mut closest = pairs
+            .iter()
+            .filter(|sv| sv.i_vert == i_vert)
+            .collect::<Vec<_>>();
+        closest.sort_by(|a, b| a.dist.partial_cmp(&b.dist).unwrap());
+        closest.truncate(2);
+        chosen_pairs.extend(
+            closest
+                .iter()
+                .map(|sv| Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left)),
+        );
+    }
+    chosen_pairs
+}
+
 impl ImplantSpine {
-    fn pair_impl(&self, rectangles: &[Rectangle]) -> Vec<Screw> {
-        let (left_pairs, right_pairs) = pair_to_closest(rectangles, &self.spine);
+    fn pair_impl(&self, screw_rects: &[Rectangle]) -> Vec<Screw> {
+        let (left_pairs, right_pairs) = pair_to_closest(screw_rects, &self.spine);
 
         let vertebra_centroids = self.spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
 
-        let refined_pairs = refine_pairings(
-            rectangles,
-            left_pairs,
-            right_pairs,
-            vertebra_centroids,
-        );
+        let one_sided = left_pairs.is_empty() || right_pairs.is_empty();
+        let refined_pairs = if one_sided {
+            let (pairs, is_left) = if left_pairs.is_empty() {
+                (right_pairs, false)
+            } else {
+                (left_pairs, true)
+            };
+            refine_one_sided_pairings(screw_rects, pairs, vertebra_centroids, is_left)
+        } else {
+            refine_two_sided_pairings(screw_rects, left_pairs, right_pairs, vertebra_centroids)
+        };
 
-        if refined_pairs.len() != rectangles.len() {
+        if refined_pairs.len() != screw_rects.len() {
             log::warn!(
                 "Number of screws does not match number of rectangles. {} != {}",
                 refined_pairs.len(),
-                rectangles.len()
+                screw_rects.len()
             );
         }
         refined_pairs
@@ -491,7 +528,7 @@ struct ScrewVertebra {
     c_rect: (f64, f64),
     i_vert: usize,
     dist: f64,
-    /// displacement of the rectangle center from the vertebra center along the x-axis
+    /// displacement of the rectangle (screw) center from the vertebra center along the x-axis
     dx: f64,
 }
 
@@ -513,6 +550,41 @@ impl CalculateCentroid for DetectedBox {
             (self.coords.1 + self.coords.3) / 2.0,
         )
     }
+}
+
+// Helper function to determine if the screws are all on one side
+fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
+    // Only need to check if we have enough pairs
+    if pairs.len() <= 2 {
+        return false;
+    }
+
+    // Sample a subset of pairs to check their relative displacements
+    for reference_pair in pairs.iter() {
+        let reference_y = reference_pair.c_rect.1;
+
+        // Calculate displacement vectors to other pairs
+        let displacements: Vec<_> = pairs
+            .iter()
+            .map(|sv| {
+                let dx = sv.dx;
+                let dy = sv.c_rect.1 - reference_y;
+                (dx, dy, (dx.powi(2) + dy.powi(2)).sqrt())
+            })
+            .collect();
+
+        // Sort by distance and take the closest 3
+        let mut closest = displacements;
+        closest.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        closest.truncate(3);
+
+        // If any displacement has |dx| > |dy|, it suggests a one-sided configuration
+        if closest.iter().any(|(dx, dy, _)| dx.abs() > dy.abs()) {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Pair rectangles to the closest vertebrae
@@ -590,6 +662,19 @@ fn pair_to_closest<T: CalculateCentroid>(
     // sort pairs by dx
     pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
 
+    // check if it's one-sided
+    let is_one_sided = detect_one_sided_configuration(&pairs);
+    if is_one_sided {
+        let mean_dx = pairs.iter().map(|sv| sv.dx).collect::<Vec<_>>().mean();
+        if mean_dx > 0.0 {
+            log::debug!("all screws are on the right side");
+            return (Vec::new(), pairs);
+        } else {
+            log::debug!("all screws are on the left side");
+            return (pairs, Vec::new());
+        }
+    }
+
     // split pairs into two groups: left and right groups
     // split minimize the sum of standard deviations of dx in each group
     let mut sum_stds = Vec::new();
@@ -606,16 +691,17 @@ fn pair_to_closest<T: CalculateCentroid>(
     let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
     left_pairs.sort_by_y();
     right_pairs.sort_by_y();
-    (left_pairs.to_vec(), right_pairs.to_vec())
-}
-
-pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Screw> {
-    let (left_pairs, right_pairs) = pair_to_closest(screws, spine);
     log::debug!(
         "number of left and right pairs: {} {}",
         left_pairs.len(),
         right_pairs.len()
     );
+
+    (left_pairs.to_vec(), right_pairs.to_vec())
+}
+
+pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Screw> {
+    let (left_pairs, right_pairs) = pair_to_closest(screws, spine);
 
     let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
     let rectangles = screws
@@ -626,12 +712,8 @@ pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Scre
         })
         .collect::<Vec<_>>();
 
-    let refined_pairs = refine_pairings(
-        &rectangles,
-        left_pairs,
-        right_pairs,
-        vertebra_centroids,
-    );
+    let refined_pairs =
+        refine_two_sided_pairings(&rectangles, left_pairs, right_pairs, vertebra_centroids);
 
     if refined_pairs.len() != rectangles.len() {
         log::warn!(
@@ -640,8 +722,7 @@ pub fn pair_screw(screws: &[detectron2::DetectedBox], spine: &Spine) -> Vec<Scre
             rectangles.len()
         );
     }
-    refined_pairs    
-
+    refined_pairs
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -860,7 +941,7 @@ where
     log::debug!("min_cost: {}", min_cost);
     if min_cost == f64::INFINITY {
         panic!("No valid assignment found");
-    }   
+    }
 
     // Reconstruct the solution
     let mut assignments = Vec::new();
