@@ -90,7 +90,7 @@ pub struct ImplantSpine {
     pub implant: Implant,
 }
 
-trait VecStats {
+pub trait VecStats {
     fn mean(&self) -> f64;
     fn std(&self) -> f64;
 }
@@ -139,6 +139,19 @@ impl ScrewVertebraUtils for &mut [ScrewVertebra] {
             count[*i_vert] += 1;
         });
         count
+    }
+}
+
+impl ScrewVertebraUtils for Vec<&ScrewVertebra> {
+    fn sort_by_y(&mut self) {
+        self.sort_by(|a, b| {
+            let (_x1, y1) = a.c_rect;
+            let (_x2, y2) = b.c_rect;
+            y1.partial_cmp(&y2).unwrap()
+        });
+    }
+    fn count_rect_per_vertebra(&self, _n_vertebrae: usize) -> Vec<u8> {
+        unimplemented!()
     }
 }
 
@@ -641,7 +654,7 @@ fn pair_to_closest<T: CalculateCentroid>(
     );
 
     // simple pairing with closest vertebrae
-    let mut pairs: Vec<_> = potential_vertebrae_per_rect
+    let pairs: Vec<_> = potential_vertebrae_per_rect
         .iter()
         .filter_map(|potential_vertebrae| {
             let closest_vertebrae = potential_vertebrae
@@ -669,6 +682,64 @@ fn pair_to_closest<T: CalculateCentroid>(
         }
     }
 
+    split_pairs_brute_force(pairs)
+}
+
+fn split_pairs_brute_force(
+    mut pairs: Vec<ScrewVertebra>,
+) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
+    // sort pairs by y
+    pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
+    // split pairs into two groups: left and right groups
+    // calculate the sum of differences of x-coordinates of the adjacent pairs
+    let mut min_sum_diff = f64::INFINITY;
+
+    if pairs.len() > 64 {
+        panic!("Too many pairs to split");
+    }
+    // encode split as a bitmask
+    let mut best_left_pairs = Vec::new();
+    let mut best_right_pairs = Vec::new();
+    let mut left_pairs = Vec::new();
+    let mut right_pairs = Vec::new();
+    for bitmask in 0u64..(1 << pairs.len()) {
+        for (i, pair) in pairs.iter().enumerate() {
+            if (bitmask & (1 << i)) != 0 {
+                left_pairs.push(pair);
+            } else {
+                right_pairs.push(pair);
+            }
+        }
+        if left_pairs.is_empty() || right_pairs.is_empty() {
+            continue;
+        }
+        // calculate the sum of differences of x-coordinates of the adjacent pairs
+        let mut sum_diff = 0.0;
+        for i in 0..left_pairs.len() - 1 {
+            sum_diff += (left_pairs[i].dx - left_pairs[i + 1].dx).abs();
+        }
+        for i in 0..right_pairs.len() - 1 {
+            sum_diff += (right_pairs[i].dx - right_pairs[i + 1].dx).abs();
+        }
+        if sum_diff < min_sum_diff {
+            min_sum_diff = sum_diff;
+            best_left_pairs = left_pairs.clone();
+            best_right_pairs = right_pairs.clone();
+        }
+        left_pairs.clear();
+        right_pairs.clear();
+    }
+    best_left_pairs.sort_by_y();
+    best_right_pairs.sort_by_y();
+    (
+        best_left_pairs.iter().cloned().cloned().collect(),
+        best_right_pairs.iter().cloned().cloned().collect(),
+    )
+}
+
+/// Split pairs into left and right groups
+/// The split is done by minimizing the sum of standard deviations of dx in each group
+fn _split_pairs_min_dx(mut pairs: Vec<ScrewVertebra>) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     // sort pairs by dx
     pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
 
@@ -688,17 +759,17 @@ fn pair_to_closest<T: CalculateCentroid>(
     let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
     left_pairs.sort_by_y();
     right_pairs.sort_by_y();
-    log::debug!(
-        "number of left and right pairs: {} {}",
-        left_pairs.len(),
-        right_pairs.len()
-    );
-
     (left_pairs.to_vec(), right_pairs.to_vec())
 }
 
 pub fn pair_screw_rects(screw_rects: &[Rectangle], spine: &Spine) -> Vec<Screw> {
     let (left_pairs, right_pairs) = pair_to_closest(screw_rects, spine);
+
+    log::debug!(
+        "left pairs: {:?}, right pairs: {:?}",
+        left_pairs.len(),
+        right_pairs.len()
+    );
 
     let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
 
