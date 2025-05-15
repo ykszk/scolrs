@@ -598,15 +598,15 @@ fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
 ///
 /// Returns two lists of ScrewVertebra: left and right
 /// The left and right lists are sorted by the y-coordinate of the rectangle centroid
-fn pair_to_closest<T: CalculateCentroid>(
-    rectangles: &[T],
+fn pair_to_closest(
+    screws: &[Rectangle],
     spine: &Spine,
 ) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     let max_allowed_distance = ALLOWED_DIST_FACTOR * crate::draw::mean_plate_length(spine);
     log::debug!("max_allowed_distance: {}", max_allowed_distance);
     let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
     let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
-    let rectangle_centroids = rectangles
+    let rectangle_centroids = screws
         .iter()
         .map(|rectangle| rectangle.centroid())
         .collect::<Vec<_>>();
@@ -679,11 +679,13 @@ fn pair_to_closest<T: CalculateCentroid>(
         }
     }
 
-    split_pairs_brute_force(pairs)
+    split_pairs(screws, pairs)
+    // split_pairs_k_means(pairs)
 }
 
-fn split_pairs_brute_force(
-    mut pairs: Vec<ScrewVertebra>,
+fn split_pairs(
+    screws: &[Rectangle],
+    pairs: Vec<ScrewVertebra>,
 ) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     // Early return for small inputs
     if pairs.len() <= 1 {
@@ -694,20 +696,82 @@ fn split_pairs_brute_force(
         }
     }
 
-    // Limit on problem size for brute force approach
-    // It should be unlikely to have more than 32 screws in a single image
-    if pairs.len() > 32 {
-        panic!("Too many pairs to split using brute force");
-    }
+    split_pairs_brute_force(screws, pairs)
+}
 
+fn split_pairs_brute_force(
+    screws: &[Rectangle],
+    mut pairs: Vec<ScrewVertebra>,
+) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     // sort by y-coordinate
     pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
+
+    // pre split obvious screws
+    let mut hard_left = Vec::new();
+    let mut hard_right = Vec::new();
+    for (i_pair, ref_pair) in pairs.iter().enumerate() {
+        // find horizontally aligned screws
+        let ref_screw = &screws[ref_pair.i_rect];
+        let ref_width = (ref_screw.tl.0 - ref_screw.br.0).abs();
+        let ref_height = (ref_screw.tl.1 - ref_screw.br.1).abs();
+        for pair in pairs.iter() {
+            if pair.i_rect == ref_pair.i_rect {
+                continue;
+            }
+            let screw = &screws[pair.i_rect];
+            let width = (screw.tl.0 - screw.br.0).abs();
+            let mean_width = (width + ref_width) / 2.0;
+            let dx = (pair.c_rect.0 - ref_pair.c_rect.0).abs();
+            if dx < 0.5 * mean_width {
+                continue;
+            }
+            let height = (screw.tl.1 - screw.br.1).abs();
+            let mean_height = (height + ref_height) / 2.0;
+            let dy = (pair.c_rect.1 - ref_pair.c_rect.1).abs();
+            if dy < 0.5 * mean_height {
+                let dx = pair.c_rect.0 - ref_pair.c_rect.0;
+                if dx > 0.0 {
+                    hard_left.push(i_pair);
+                } else {
+                    hard_right.push(i_pair);
+                }
+                break;
+            }
+        }
+    }
+    // Find unsorted pairs - those not in hard_left or hard_right
+    let mut unsorted_indices = Vec::new();
+    for i in 0..pairs.len() {
+        if !hard_left.contains(&i) && !hard_right.contains(&i) {
+            unsorted_indices.push(i);
+        }
+    }
+
+    log::debug!(
+        "hard_left: {:?}, hard_right: {:?}, unsorted_indices: {:?}",
+        hard_left,
+        hard_right,
+        unsorted_indices
+    );
 
     let mut min_sum_diff = f64::INFINITY;
     let mut best_split = 0u64;
 
-    // Try all possible splits using bitmask
-    for bitmask in 1u64..(1 << (pairs.len() - 1)) {
+    // Try all possible splits for unsorted pairs
+    for unsorted_bitmask in 0u64..(1 << unsorted_indices.len()) {
+        let mut bitmask = 0u64;
+        // Apply hard constraints
+        for &idx in &hard_left {
+            bitmask |= 1 << idx; // Set left pairs
+        }
+
+        // Apply unsorted pairs
+        for (i, &idx) in unsorted_indices.iter().enumerate() {
+            if unsorted_bitmask & (1 << i) != 0 {
+                bitmask |= 1 << idx;
+            }
+        }
+
         let mut sum_diff = 0.0;
         let mut prev_left_x: Option<f64> = None;
         let mut prev_right_x: Option<f64> = None;
