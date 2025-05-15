@@ -142,7 +142,7 @@ impl ScrewVertebraUtils for &mut [ScrewVertebra] {
     }
 }
 
-impl ScrewVertebraUtils for Vec<&ScrewVertebra> {
+impl ScrewVertebraUtils for Vec<ScrewVertebra> {
     fn sort_by_y(&mut self) {
         self.sort_by(|a, b| {
             let (_x1, y1) = a.c_rect;
@@ -574,14 +574,18 @@ fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
 
         // Check if a displacement vector is horizontal (less than 30 degrees)
         if displacements.any(|(dx, dy)| {
-            if dy.abs() == 0.0 {
-                return false;
+            // Handle edge cases properly
+            if dx.abs() < 1e-6 {
+                return false; // Vertical vector, definitely not horizontal
             }
-            let tan = dy.abs() / dx.abs();
-            let angle = tan.atan();
-            let angle_deg = angle.to_degrees();
-            let max_deg = 30.0;
-            angle_deg < max_deg
+
+            // Calculate angle from horizontal
+            let angle_rad = (dy / dx).abs().atan();
+            let angle_deg = angle_rad.to_degrees();
+
+            // Consider horizontal if angle is less than threshold
+            const MAX_ANGLE_DEG: f64 = 30.0;
+            angle_deg < MAX_ANGLE_DEG
         }) {
             return false;
         }
@@ -681,66 +685,91 @@ fn pair_to_closest<T: CalculateCentroid>(
 fn split_pairs_brute_force(
     mut pairs: Vec<ScrewVertebra>,
 ) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
-    // sort pairs by y
-    pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
-    // split pairs into two groups: left and right groups
-    // calculate the sum of differences of x-coordinates of the adjacent pairs
-    let mut min_sum_diff = f64::INFINITY;
-
-    if pairs.len() > 64 {
-        panic!("Too many pairs to split");
+    // Early return for small inputs
+    if pairs.len() <= 1 {
+        if pairs[0].dx > 0.0 {
+            return (Vec::new(), pairs);
+        } else {
+            return (pairs, Vec::new());
+        }
     }
-    // encode split as a bitmask
-    let mut best_left_pairs = Vec::new();
-    let mut best_right_pairs = Vec::new();
-    let mut left_pairs = Vec::new();
-    let mut right_pairs = Vec::new();
-    for bitmask in 0u64..(1 << pairs.len()) {
+
+    // Limit on problem size for brute force approach
+    // It should be unlikely to have more than 32 screws in a single image
+    if pairs.len() > 32 {
+        panic!("Too many pairs to split using brute force");
+    }
+
+    // sort by y-coordinate
+    pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
+
+    let mut min_sum_diff = f64::INFINITY;
+    let mut best_split = 0u64;
+
+    // Try all possible splits using bitmask
+    for bitmask in 1u64..(1 << (pairs.len() - 1)) {
+        let mut sum_diff = 0.0;
+        let mut prev_left_x: Option<f64> = None;
+        let mut prev_right_x: Option<f64> = None;
+
+        // Calculate sum of differences for both groups
         for (i, pair) in pairs.iter().enumerate() {
-            if (bitmask & (1 << i)) != 0 {
-                left_pairs.push(pair);
+            let is_left = (bitmask & (1 << i)) != 0;
+            let x = pair.c_rect.0;
+
+            if is_left {
+                if let Some(prev_x) = prev_left_x {
+                    sum_diff += (x - prev_x).abs();
+                }
+                prev_left_x = Some(x);
             } else {
-                right_pairs.push(pair);
+                if let Some(prev_x) = prev_right_x {
+                    sum_diff += (x - prev_x).abs();
+                }
+                prev_right_x = Some(x);
             }
         }
-        if left_pairs.is_empty() || right_pairs.is_empty() {
-            continue;
-        }
-        // calculate the sum of differences of x-coordinates of the adjacent pairs
-        let mut sum_diff = 0.0;
-        for i in 0..left_pairs.len() - 1 {
-            sum_diff += (left_pairs[i].c_rect.0 - left_pairs[i + 1].c_rect.0).abs();
-        }
-        for i in 0..right_pairs.len() - 1 {
-            sum_diff += (right_pairs[i].c_rect.0 - right_pairs[i + 1].c_rect.0).abs();
-        }
+
+        // Update if this split is better
         if sum_diff < min_sum_diff {
             min_sum_diff = sum_diff;
-            best_left_pairs = left_pairs.clone();
-            best_right_pairs = right_pairs.clone();
+            best_split = bitmask;
         }
-        left_pairs.clear();
-        right_pairs.clear();
     }
-    best_left_pairs.sort_by_y();
-    best_right_pairs.sort_by_y();
-    let left_mean_x = best_left_pairs
+
+    // Divide pairs according to the best split found
+    let mut left_pairs = Vec::with_capacity(pairs.len() / 2 + 1);
+    let mut right_pairs = Vec::with_capacity(pairs.len() / 2 + 1);
+
+    for (i, pair) in pairs.iter().enumerate() {
+        if (best_split & (1 << i)) != 0 {
+            left_pairs.push(pair.clone());
+        } else {
+            right_pairs.push(pair.clone());
+        }
+    }
+
+    // Sort results by y-coordinate
+    left_pairs.sort_by_y();
+    right_pairs.sort_by_y();
+
+    // Make sure left is actually on the left side
+    let left_mean_x = left_pairs
         .iter()
         .map(|sv| sv.c_rect.0)
         .collect::<Vec<_>>()
         .mean();
-    let right_mean_x = best_right_pairs
+    let right_mean_x = right_pairs
         .iter()
         .map(|sv| sv.c_rect.0)
         .collect::<Vec<_>>()
         .mean();
+
     if left_mean_x > right_mean_x {
-        std::mem::swap(&mut best_left_pairs, &mut best_right_pairs);
+        std::mem::swap(&mut left_pairs, &mut right_pairs);
     }
-    (
-        best_left_pairs.iter().cloned().cloned().collect(),
-        best_right_pairs.iter().cloned().cloned().collect(),
-    )
+
+    (left_pairs, right_pairs)
 }
 
 /// Split pairs into left and right groups
