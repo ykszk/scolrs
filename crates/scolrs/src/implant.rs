@@ -716,10 +716,10 @@ fn split_pairs_brute_force(
         // calculate the sum of differences of x-coordinates of the adjacent pairs
         let mut sum_diff = 0.0;
         for i in 0..left_pairs.len() - 1 {
-            sum_diff += (left_pairs[i].dx - left_pairs[i + 1].dx).abs();
+            sum_diff += (left_pairs[i].c_rect.0 - left_pairs[i + 1].c_rect.0).abs();
         }
         for i in 0..right_pairs.len() - 1 {
-            sum_diff += (right_pairs[i].dx - right_pairs[i + 1].dx).abs();
+            sum_diff += (right_pairs[i].c_rect.0 - right_pairs[i + 1].c_rect.0).abs();
         }
         if sum_diff < min_sum_diff {
             min_sum_diff = sum_diff;
@@ -731,6 +731,19 @@ fn split_pairs_brute_force(
     }
     best_left_pairs.sort_by_y();
     best_right_pairs.sort_by_y();
+    let left_mean_x = best_left_pairs
+        .iter()
+        .map(|sv| sv.c_rect.0)
+        .collect::<Vec<_>>()
+        .mean();
+    let right_mean_x = best_right_pairs
+        .iter()
+        .map(|sv| sv.c_rect.0)
+        .collect::<Vec<_>>()
+        .mean();
+    if left_mean_x > right_mean_x {
+        std::mem::swap(&mut best_left_pairs, &mut best_right_pairs);
+    }
     (
         best_left_pairs.iter().cloned().cloned().collect(),
         best_right_pairs.iter().cloned().cloned().collect(),
