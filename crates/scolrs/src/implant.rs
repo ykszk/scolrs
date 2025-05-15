@@ -566,30 +566,23 @@ fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
         });
         closest.truncate(3);
 
-        // Check if any of the closest pairs have a displacement vector with |dx| > |dy|
-        let sqrt_of_3 = 1.732;
-        let displacements = closest
-            .iter()
-            .map(|sv| {
-                let dx = sv.dx;
-                let dy = sv.c_rect.1 - reference_y;
-                log::debug!(
-                    "dx: {}, dy: {}, sqrt(3)*dy: {}, one_sided: {}",
-                    dx,
-                    dy,
-                    sqrt_of_3 * dy,
-                    dx.abs() > sqrt_of_3 * dy.abs()
-                );
-                (dx, dy)
-            })
-            .collect::<Vec<_>>();
+        let mut displacements = closest.iter().map(|sv| {
+            let dx = sv.c_rect.0 - reference_pair.c_rect.0;
+            let dy = sv.c_rect.1 - reference_y;
+            (dx, dy)
+        });
 
-        // Check if a displacement vector is horizontal
-        // If any displacement has |dx| > sqrt(3) * |dy| (angle is smaller than 30 degrees), it's not one-sided
-        if displacements
-            .iter()
-            .any(|(dx, dy)| dx.abs() > sqrt_of_3 * dy.abs())
-        {
+        // Check if a displacement vector is horizontal (less than 30 degrees)
+        if displacements.any(|(dx, dy)| {
+            if dy.abs() == 0.0 {
+                return false;
+            }
+            let tan = dy.abs() / dx.abs();
+            let angle = tan.atan();
+            let angle_deg = angle.to_degrees();
+            let max_deg = 30.0;
+            angle_deg < max_deg
+        }) {
             return false;
         }
     }
