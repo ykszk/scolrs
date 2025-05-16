@@ -538,7 +538,8 @@ impl CalculateCentroid for DetectedBox {
     }
 }
 
-// Helper function to determine if the screws are all on one side
+/// Helper function to determine if the screws are all on one side
+/// If there are two or more screws that are vertically aligned, pairs are not one-sided
 fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
     // Only need to check if we have enough pairs
     if pairs.len() <= 2 {
@@ -680,7 +681,6 @@ fn pair_to_closest(
     }
 
     split_pairs(screws, pairs)
-    // split_pairs_k_means(pairs)
 }
 
 fn split_pairs(
@@ -699,6 +699,9 @@ fn split_pairs(
     split_pairs_brute_force(screws, pairs)
 }
 
+/// Split pairs into left and right groups
+/// The split is done by minimizing the sum of differences of dx in each group
+/// For efficiency, some obvious screws are pre-split into hard_left and hard_right
 fn split_pairs_brute_force(
     screws: &[Rectangle],
     mut pairs: Vec<ScrewVertebra>,
@@ -707,10 +710,11 @@ fn split_pairs_brute_force(
     pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
 
     // pre split obvious screws
+    // Find vertically aligned screws and split them into hard_left and hard_right
     let mut hard_left = Vec::new();
     let mut hard_right = Vec::new();
     for (i_pair, ref_pair) in pairs.iter().enumerate() {
-        // find horizontally aligned screws
+        // find vertically aligned screws
         let ref_screw = &screws[ref_pair.i_rect];
         let ref_width = (ref_screw.tl.0 - ref_screw.br.0).abs();
         let ref_height = (ref_screw.tl.1 - ref_screw.br.1).abs();
@@ -723,12 +727,14 @@ fn split_pairs_brute_force(
             let mean_width = (width + ref_width) / 2.0;
             let dx = (pair.c_rect.0 - ref_pair.c_rect.0).abs();
             if dx < 0.5 * mean_width {
+                // Too close horizontally
                 continue;
             }
             let height = (screw.tl.1 - screw.br.1).abs();
             let mean_height = (height + ref_height) / 2.0;
             let dy = (pair.c_rect.1 - ref_pair.c_rect.1).abs();
             if dy < 0.5 * mean_height {
+                // Close enough vertically
                 let dx = pair.c_rect.0 - ref_pair.c_rect.0;
                 if dx > 0.0 {
                     hard_left.push(i_pair);
@@ -739,13 +745,11 @@ fn split_pairs_brute_force(
             }
         }
     }
-    // Find unsorted pairs - those not in hard_left or hard_right
-    let mut unsorted_indices = Vec::new();
-    for i in 0..pairs.len() {
-        if !hard_left.contains(&i) && !hard_right.contains(&i) {
-            unsorted_indices.push(i);
-        }
-    }
+
+    // Find indices that are not in either hard_left or hard_right
+    let unsorted_indices: Vec<_> = (0..pairs.len())
+        .filter(|i| !hard_left.contains(i) && !hard_right.contains(i))
+        .collect();
 
     log::debug!(
         "hard_left: {:?}, hard_right: {:?}, unsorted_indices: {:?}",
@@ -757,13 +761,13 @@ fn split_pairs_brute_force(
     let mut min_sum_diff = f64::INFINITY;
     let mut best_split = 0u64;
 
+    let bitmask_hard_left = hard_left.iter().fold(0u64, |acc, &idx| acc | (1 << idx));
+
     // Try all possible splits for unsorted pairs
     for unsorted_bitmask in 0u64..(1 << unsorted_indices.len()) {
-        let mut bitmask = 0u64;
-        // Apply hard constraints
-        for &idx in &hard_left {
-            bitmask |= 1 << idx; // Set left pairs
-        }
+        // Create a bitmask for the current split
+        // Start with the hard left bitmask
+        let mut bitmask = bitmask_hard_left;
 
         // Apply unsorted pairs
         for (i, &idx) in unsorted_indices.iter().enumerate() {
@@ -772,11 +776,11 @@ fn split_pairs_brute_force(
             }
         }
 
+        // Calculate sum of differences for both groups
         let mut sum_diff = 0.0;
         let mut prev_left_x: Option<f64> = None;
         let mut prev_right_x: Option<f64> = None;
 
-        // Calculate sum of differences for both groups
         for (i, pair) in pairs.iter().enumerate() {
             let is_left = (bitmask & (1 << i)) != 0;
             let x = pair.c_rect.0;
@@ -802,14 +806,17 @@ fn split_pairs_brute_force(
     }
 
     // Divide pairs according to the best split found
-    let mut left_pairs = Vec::with_capacity(pairs.len() / 2 + 1);
-    let mut right_pairs = Vec::with_capacity(pairs.len() / 2 + 1);
+    let n_left_pairs = (0..pairs.len())
+        .filter(|i| (best_split & (1 << i)) != 0)
+        .count();
+    let mut left_pairs = Vec::with_capacity(n_left_pairs);
+    let mut right_pairs = Vec::with_capacity(pairs.len() - n_left_pairs);
 
-    for (i, pair) in pairs.iter().enumerate() {
+    for (i, pair) in pairs.into_iter().enumerate() {
         if (best_split & (1 << i)) != 0 {
-            left_pairs.push(pair.clone());
+            left_pairs.push(pair);
         } else {
-            right_pairs.push(pair.clone());
+            right_pairs.push(pair);
         }
     }
 
@@ -818,19 +825,15 @@ fn split_pairs_brute_force(
     right_pairs.sort_by_y();
 
     // Make sure left is actually on the left side
-    let left_mean_x = left_pairs
-        .iter()
-        .map(|sv| sv.c_rect.0)
-        .collect::<Vec<_>>()
-        .mean();
-    let right_mean_x = right_pairs
-        .iter()
-        .map(|sv| sv.c_rect.0)
-        .collect::<Vec<_>>()
-        .mean();
+    if !left_pairs.is_empty() && !right_pairs.is_empty() {
+        let left_mean_x =
+            left_pairs.iter().map(|sv| sv.c_rect.0).sum::<f64>() / left_pairs.len() as f64;
+        let right_mean_x =
+            right_pairs.iter().map(|sv| sv.c_rect.0).sum::<f64>() / right_pairs.len() as f64;
 
-    if left_mean_x > right_mean_x {
-        std::mem::swap(&mut left_pairs, &mut right_pairs);
+        if left_mean_x > right_mean_x {
+            std::mem::swap(&mut left_pairs, &mut right_pairs);
+        }
     }
 
     (left_pairs, right_pairs)
