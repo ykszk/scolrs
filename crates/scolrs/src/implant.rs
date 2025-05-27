@@ -510,9 +510,13 @@ pub mod detectron2 {
 
 #[derive(Debug, Clone)]
 struct ScrewVertebra {
+    /// index of the rectangle in the screws list
     i_rect: usize,
+    /// centroid of the rectangle (screw)
     c_rect: (f64, f64),
+    /// index of the vertebra in the spine
     i_vert: usize,
+    /// distance from the rectangle centroid to the vertebra centroid
     dist: f64,
     /// displacement of the rectangle (screw) center from the vertebra center along the x-axis
     dx: f64,

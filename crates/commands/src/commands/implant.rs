@@ -42,21 +42,25 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
             let data_line = serde_json::from_str::<LabelMeOptionalDetectron2Line>(&line)?;
             log::debug!("Processing line: {:?}", data_line.filename);
             let screw_spine = data_line.content.screw_spine()?;
-            if args.count {
-                let count = label_counts(screw_spine.count_screws());
-                let count_line = ScrewCount {
-                    content: count,
-                    filename: data_line.filename,
-                };
-                println!("{}", serde_json::to_string(&count_line)?);
-            } else {
-                let labelme =
-                    screw_spine.to_labelme(data_line.content.labelme.flags, args.vertebrae);
-                let lm_line = LabelMeDataLine {
-                    content: labelme,
-                    filename: data_line.filename,
-                };
-                println!("{}", serde_json::to_string(&lm_line)?);
+            match args.task {
+                crate::cli::ImplantTask::Group => {
+                    let labelme =
+                        screw_spine.to_labelme(data_line.content.labelme.flags, args.vertebrae);
+                    let lm_line = LabelMeDataLine {
+                        content: labelme,
+                        filename: data_line.filename,
+                    };
+                    println!("{}", serde_json::to_string(&lm_line)?);
+                }
+                crate::cli::ImplantTask::Count => {
+                    let count = label_counts(screw_spine.count_screws());
+                    let count_line = ScrewCount {
+                        content: count,
+                        filename: data_line.filename,
+                    };
+                    println!("{}", serde_json::to_string(&count_line)?);
+                }
+                crate::cli::ImplantTask::Split => todo!(),
             }
         }
     } else {
@@ -64,12 +68,22 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
             .with_context(|| format!("Failed to read file: {:?}", args.input))?;
         let data: LabelMeOptionalDetectron2 = serde_json::from_str(&json_str)?;
         let screw_spine = data.screw_spine()?;
-        if args.count {
-            let count = label_counts(screw_spine.count_screws());
-            println!("{}", serde_json::to_string_pretty(&count)?);
-        } else {
-            let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae);
-            println!("{}", serde_json::to_string_pretty(&labelme)?);
+        match args.task {
+            crate::cli::ImplantTask::Group => {
+                let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae);
+                println!("{}", serde_json::to_string_pretty(&labelme)?);
+            }
+            crate::cli::ImplantTask::Count => {
+                let count = label_counts(screw_spine.count_screws());
+                println!("{}", serde_json::to_string_pretty(&count)?);
+            }
+            crate::cli::ImplantTask::Split => {
+                for screw in screw_spine.screws {
+                    if screw.left.is_none() {
+                        todo!();
+                    }
+                }
+            }
         }
     }
 
@@ -86,7 +100,7 @@ mod tests {
         let args = ImplantArgs {
             input: PathBuf::from("../../tests/data/case5/frontal_postop.json"),
             vertebrae: false,
-            count: false,
+            task: crate::cli::ImplantTask::Group,
         };
         cmd(args).unwrap();
     }

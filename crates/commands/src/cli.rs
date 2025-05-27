@@ -366,6 +366,17 @@ pub struct ConvArgs {
     pub pull_spacing: bool,
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone)]
+#[clap(rename_all = "lower")]
+pub enum ImplantTask {
+    /// Group screws and vertebrae
+    Group,
+    /// Count screws per vertebra
+    Count,
+    /// Split screws into left and right
+    Split,
+}
+
 #[derive(Parser, Debug, Clone)]
 pub struct ImplantArgs {
     /// Input labelme and detectron2 joined json filename
@@ -375,6 +386,6 @@ pub struct ImplantArgs {
     #[clap(long)]
     pub vertebrae: bool,
     /// Print paired screw count per vertebra instead of pairing data
-    #[clap(short, long)]
-    pub count: bool,
+    #[clap(short, long, default_value = "group")]
+    pub task: ImplantTask,
 }
