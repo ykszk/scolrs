@@ -713,42 +713,7 @@ fn split_pairs_brute_force(
     // sort by y-coordinate
     pairs.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
 
-    // pre split obvious screws
-    // Find vertically aligned screws and split them into hard_left and hard_right
-    let mut hard_left = Vec::new();
-    let mut hard_right = Vec::new();
-    for (i_pair, ref_pair) in pairs.iter().enumerate() {
-        // find vertically aligned screws
-        let ref_screw = &screws[ref_pair.i_rect];
-        let ref_width = (ref_screw.tl.0 - ref_screw.br.0).abs();
-        let ref_height = (ref_screw.tl.1 - ref_screw.br.1).abs();
-        for pair in pairs.iter() {
-            if pair.i_rect == ref_pair.i_rect {
-                continue;
-            }
-            let screw = &screws[pair.i_rect];
-            let width = (screw.tl.0 - screw.br.0).abs();
-            let mean_width = (width + ref_width) / 2.0;
-            let dx = (pair.c_rect.0 - ref_pair.c_rect.0).abs();
-            if dx < 0.5 * mean_width {
-                // Too close horizontally
-                continue;
-            }
-            let height = (screw.tl.1 - screw.br.1).abs();
-            let mean_height = (height + ref_height) / 2.0;
-            let dy = (pair.c_rect.1 - ref_pair.c_rect.1).abs();
-            if dy < 0.5 * mean_height {
-                // Close enough vertically
-                let dx = pair.c_rect.0 - ref_pair.c_rect.0;
-                if dx > 0.0 {
-                    hard_left.push(i_pair);
-                } else {
-                    hard_right.push(i_pair);
-                }
-                break;
-            }
-        }
-    }
+    let (hard_left, hard_right) = pre_split_easy_screws(screws, &pairs);
 
     // Find indices that are not in either hard_left or hard_right
     let unsorted_indices: Vec<_> = (0..pairs.len())
@@ -762,6 +727,14 @@ fn split_pairs_brute_force(
         unsorted_indices
     );
 
+    split_unsorted_screws(pairs, hard_left, unsorted_indices)
+}
+
+fn split_unsorted_screws(
+    pairs: Vec<ScrewVertebra>,
+    hard_left: Vec<usize>,
+    unsorted_indices: Vec<usize>,
+) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     let mut min_sum_diff = f64::INFINITY;
     let mut best_split = 0u64;
 
@@ -841,6 +814,49 @@ fn split_pairs_brute_force(
     }
 
     (left_pairs, right_pairs)
+}
+
+fn pre_split_easy_screws(
+    screws: &[Rectangle],
+    pairs: &[ScrewVertebra],
+) -> (Vec<usize>, Vec<usize>) {
+    // pre split obvious screws
+    // Find vertically aligned screws and split them into hard_left and hard_right
+    let mut hard_left = Vec::new();
+    let mut hard_right = Vec::new();
+    for (i_pair, ref_pair) in pairs.iter().enumerate() {
+        // find vertically aligned screws
+        let ref_screw = &screws[ref_pair.i_rect];
+        let ref_width = (ref_screw.tl.0 - ref_screw.br.0).abs();
+        let ref_height = (ref_screw.tl.1 - ref_screw.br.1).abs();
+        for pair in pairs.iter() {
+            if pair.i_rect == ref_pair.i_rect {
+                continue;
+            }
+            let screw = &screws[pair.i_rect];
+            let width = (screw.tl.0 - screw.br.0).abs();
+            let mean_width = (width + ref_width) / 2.0;
+            let dx = (pair.c_rect.0 - ref_pair.c_rect.0).abs();
+            if dx < 0.5 * mean_width {
+                // Too close horizontally
+                continue;
+            }
+            let height = (screw.tl.1 - screw.br.1).abs();
+            let mean_height = (height + ref_height) / 2.0;
+            let dy = (pair.c_rect.1 - ref_pair.c_rect.1).abs();
+            if dy < 0.5 * mean_height {
+                // Close enough vertically
+                let dx = pair.c_rect.0 - ref_pair.c_rect.0;
+                if dx > 0.0 {
+                    hard_left.push(i_pair);
+                } else {
+                    hard_right.push(i_pair);
+                }
+                break;
+            }
+        }
+    }
+    (hard_left, hard_right)
 }
 
 /// Split pairs into left and right groups
