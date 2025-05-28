@@ -37,11 +37,7 @@ pub const VERSION: &str = shadow_rs::concatcp!(
     build::SHORT_COMMIT,
     " ",
     build::BUILD_TIME,
-    if build::GIT_CLEAN {
-        ""
-    } else {
-        " (dirty)"
-    }
+    if build::GIT_CLEAN { "" } else { " (dirty)" }
 );
 
 pub type Point2d = (f64, f64);
@@ -1883,6 +1879,12 @@ impl TryFrom<&LabelMeData> for C7TLS {
                 "BR".into(),
                 corners[2].shape()[0],
                 corners[3].shape()[0],
+            ));
+        }
+        if corners[0].shape()[0] == 0 {
+            return Err(ScolError::InvalidPointCount(
+                "TL".into(),
+                corners[0].shape()[0],
             ));
         }
         if corners[0].shape()[0] - 1 != corners[2].shape()[0] {

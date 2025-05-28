@@ -20,6 +20,7 @@ pub struct Rectangle {
 #[derive(Debug, Clone)]
 pub struct Implant {
     pub screw: Vec<Rectangle>,
+    pub screw_id: Vec<Option<usize>>,
     pub hook: Vec<Rectangle>,
     pub transverse: Vec<Rectangle>,
     pub rod: Vec<Rectangle>,
@@ -41,8 +42,7 @@ impl Screw {
         Self { bb, vertebra, left }
     }
 
-    pub fn new(bb: Rectangle, vertebra: usize) -> Self {
-        let left = None;
+    pub fn new(bb: Rectangle, vertebra: usize, left: Option<bool>) -> Self {
         Self { bb, vertebra, left }
     }
 }
@@ -50,6 +50,7 @@ impl Screw {
 impl From<&LabelMeData> for Implant {
     fn from(data: &LabelMeData) -> Self {
         let mut screw = Vec::new();
+        let mut screw_id = Vec::new();
         let mut hook = Vec::new();
         let mut transverse = Vec::new();
         let mut rod = Vec::new();
@@ -67,7 +68,10 @@ impl From<&LabelMeData> for Implant {
                 let rectangle = Rectangle { tl, br };
 
                 match shape.label.to_lowercase().as_str() {
-                    "screw" => screw.push(rectangle),
+                    "screw" => {
+                        screw.push(rectangle);
+                        screw_id.push(shape.group_id);
+                    }
                     "hook" => hook.push(rectangle),
                     "transverse" => transverse.push(rectangle),
                     "rod" => rod.push(rectangle),
@@ -77,6 +81,7 @@ impl From<&LabelMeData> for Implant {
         }
         Self {
             screw,
+            screw_id,
             hook,
             transverse,
             rod,
@@ -113,6 +118,25 @@ impl TryFrom<&LabelMeData> for ImplantSpine {
         let spine = Spine::try_from(data)?;
         let implant = Implant::from(data);
         Ok(Self { spine, implant })
+    }
+}
+
+impl From<ScrewSpine> for ImplantSpine {
+    fn from(screw_spine: ScrewSpine) -> Self {
+        ImplantSpine {
+            spine: screw_spine.spine,
+            implant: Implant {
+                screw: screw_spine.screws.iter().map(|s| s.bb.clone()).collect(),
+                screw_id: screw_spine
+                    .screws
+                    .iter()
+                    .map(|s| Some(s.vertebra))
+                    .collect(),
+                hook: Vec::new(),
+                transverse: Vec::new(),
+                rod: Vec::new(),
+            },
+        }
     }
 }
 
@@ -233,10 +257,10 @@ impl ImplantSpine {
         pair_screw_rects(&self.implant.screw, &self.spine)
     }
 
-    pub fn screw_spine(&self, image_metadata: ImageMetadata) -> ScrewSpine {
+    pub fn screw_spine(self, image_metadata: ImageMetadata) -> ScrewSpine {
         let screws = self.pair_screw();
         ScrewSpine {
-            spine: self.spine.clone(),
+            spine: self.spine,
             screws,
             image_metadata,
         }
@@ -302,12 +326,26 @@ impl ScrewSpine {
         &self,
         flags: IndexMap<String, bool>,
         include_vertebrae: bool,
+        label_lr: bool,
     ) -> LabelMeData {
         let mut shapes = Vec::new();
         for screw in &self.screws {
             let points = vec![screw.bb.tl, screw.bb.br];
+            let label = if label_lr {
+                if let Some(left) = screw.left {
+                    if left {
+                        "ScrewLeft".to_string()
+                    } else {
+                        "ScrewRight".to_string()
+                    }
+                } else {
+                    "Screw".to_string()
+                }
+            } else {
+                "Screw".to_string()
+            };
             let shape = labelme_rs::Shape {
-                label: "Screw".to_string(),
+                label,
                 points,
                 shape_type: "rectangle".to_string(),
                 flags: Default::default(),
@@ -316,26 +354,27 @@ impl ScrewSpine {
             shapes.push(shape);
         }
         if include_vertebrae {
-            let vertebrae: std::collections::HashSet<_> =
-                self.screws.iter().map(|screw| screw.vertebra).collect();
-            for i_vert in vertebrae.into_iter() {
-                let points = self.spine.v_c7tl.0.index_axis(Axis(0), i_vert + 1);
-                // from (tl, tr, bl, br) to (tl, tr, br, bl)
-                let points = vec![
-                    (points[[0, 0]], points[[0, 1]]),
-                    (points[[1, 0]], points[[1, 1]]),
-                    (points[[3, 0]], points[[3, 1]]),
-                    (points[[2, 0]], points[[2, 1]]),
-                ];
-
-                let shape = labelme_rs::Shape {
-                    label: "Vertebra".to_string(),
-                    points,
-                    shape_type: "polygon".to_string(),
-                    flags: Default::default(),
-                    group_id: Some(i_vert + 1),
+            let labels4 = vec!["TL", "TR", "BL", "BR"];
+            let labels2 = vec!["TL", "TR"];
+            for (i_vert, vert) in self.spine.v_c7tl.0.axis_iter(Axis(0)).enumerate() {
+                let labels = if i_vert < self.spine.v_c7tl.0.len_of(Axis(0)) - 1 {
+                    // all four corner points for vertebrae except the last one
+                    &labels4
+                } else {
+                    // Last vertebra (Sacrum) has only TL and TR points
+                    &labels2
                 };
-                shapes.push(shape);
+                for (i, label) in labels.iter().enumerate() {
+                    let point = (vert[[i, 0]], vert[[i, 1]]);
+                    let shape = labelme_rs::Shape {
+                        label: label.to_string(),
+                        points: vec![point],
+                        shape_type: "point".to_string(),
+                        flags: Default::default(),
+                        group_id: Some(i_vert),
+                    };
+                    shapes.push(shape);
+                }
             }
         }
         shapes.sort_by_key(|shape| shape.group_id.unwrap());
@@ -509,21 +548,21 @@ pub mod detectron2 {
 }
 
 #[derive(Debug, Clone)]
-struct ScrewVertebra {
+pub struct ScrewVertebra {
     /// index of the rectangle in the screws list
-    i_rect: usize,
+    pub i_rect: usize,
     /// centroid of the rectangle (screw)
-    c_rect: (f64, f64),
+    pub c_rect: (f64, f64),
     /// index of the vertebra in the spine
-    i_vert: usize,
+    pub i_vert: usize,
     /// distance from the rectangle centroid to the vertebra centroid
-    dist: f64,
+    pub dist: f64,
     /// displacement of the rectangle (screw) center from the vertebra center along the x-axis
-    dx: f64,
+    pub dx: f64,
 }
 
 /// Define a trait to use [pair_to_closest] with both [Rectangle] and [DetectedBox]
-trait CalculateCentroid {
+pub trait CalculateCentroid {
     fn centroid(&self) -> (f64, f64);
 }
 
@@ -544,9 +583,9 @@ impl CalculateCentroid for DetectedBox {
 
 /// Helper function to determine if the screws are all on one side
 /// If there are two or more screws that are vertically aligned, pairs are not one-sided
-fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
+pub fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
     // Only need to check if we have enough pairs
-    if pairs.len() <= 2 {
+    if pairs.len() < 2 {
         return true;
     }
 
@@ -571,14 +610,14 @@ fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
         });
         closest.truncate(3);
 
-        let mut displacements = closest.iter().map(|sv| {
+        let displacements = closest.iter().map(|sv| {
             let dx = sv.c_rect.0 - reference_pair.c_rect.0;
             let dy = sv.c_rect.1 - reference_y;
             (dx, dy)
         });
 
         // Check if a displacement vector is horizontal (less than 30 degrees)
-        if displacements.any(|(dx, dy)| {
+        for (dx, dy) in displacements {
             // Handle edge cases properly
             if dx.abs() < 1e-6 {
                 return false; // Vertical vector, definitely not horizontal
@@ -590,9 +629,9 @@ fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
 
             // Consider horizontal if angle is less than threshold
             const MAX_ANGLE_DEG: f64 = 30.0;
-            angle_deg < MAX_ANGLE_DEG
-        }) {
-            return false;
+            if angle_deg < MAX_ANGLE_DEG {
+                return false; // Found a horizontal vector, not one-sided
+            }
         }
     }
 
@@ -730,7 +769,10 @@ fn split_pairs_brute_force(
     split_unsorted_screws(pairs, hard_left, unsorted_indices)
 }
 
-fn split_unsorted_screws(
+/// Split unsorted screws into left and right groups
+///
+/// `pairs` must be sorted by y-coordinate.
+pub fn split_unsorted_screws(
     pairs: Vec<ScrewVertebra>,
     hard_left: Vec<usize>,
     unsorted_indices: Vec<usize>,
@@ -969,6 +1011,7 @@ pub struct LabelMeOptionalDetectron2 {
 impl LabelMeOptionalDetectron2 {
     pub fn screw_spine(&self) -> Result<ScrewSpine, ScolError> {
         if let Some(detectron2) = &self.detectron2 {
+            log::debug!("Using Detectron2 output to pair screws");
             let screws = pair_screw(
                 &detectron2.instances.boxes(1),
                 &Spine::try_from(&self.labelme)?,
@@ -981,31 +1024,43 @@ impl LabelMeOptionalDetectron2 {
                 image_metadata,
             })
         } else {
+            let image_metadata = ImageMetadata::from(self.labelme.clone());
+
             // check if `Screw` with group_id exists
-            let group_id_exists = self
+            let screw_group_ids = self
                 .labelme
                 .shapes
                 .iter()
-                .any(|shape| shape.label == "Screw" && shape.group_id.is_some());
-
-            let image_metadata = ImageMetadata::from(self.labelme.clone());
+                .filter(|shape| {
+                    shape.label == "Screw"
+                        || shape.label == "ScrewLeft"
+                        || shape.label == "ScrewRight"
+                })
+                .map(|shape| shape.group_id)
+                .collect::<Vec<_>>();
+            let group_id_exists = screw_group_ids.iter().any(|&id| id.is_some());
             if group_id_exists {
+                let group_id_exists_all = screw_group_ids.iter().all(|&id| id.is_some());
+                if !group_id_exists_all {
+                    panic!("Screw without group_id found")
+                }
                 log::debug!("Use group_id to pair screws");
                 let mut screws = Vec::new();
                 for shape in &self.labelme.shapes {
-                    if shape.label == "Screw" {
-                        match shape.group_id {
-                            Some(group_id) => {
-                                // group_id is 1-indexed
-                                let vertebra = group_id - 1;
-                                let rect = Rectangle {
-                                    tl: shape.points[0],
-                                    br: shape.points[1],
-                                };
-                                screws.push(Screw::new(rect, vertebra));
-                            }
-                            None => panic!("Screw without group_id found"),
+                    if shape.label.starts_with("Screw") {
+                        let group_id = shape.group_id.unwrap(); // guaranteed to be Some
+                        let vertebra = group_id - 1; // group_id is 1-indexed
+                        let rect = Rectangle {
+                            tl: shape.points[0],
+                            br: shape.points[1],
+                        };
+                        let mut left = None;
+                        if shape.label == "ScrewLeft" {
+                            left = Some(true);
+                        } else if shape.label == "ScrewRight" {
+                            left = Some(false);
                         }
+                        screws.push(Screw::new(rect, vertebra, left));
                     }
                 }
                 let spine = Spine::try_from(&self.labelme)?;
