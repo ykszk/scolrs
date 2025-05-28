@@ -34,6 +34,7 @@ pub struct Screw {
     /// bounding box of the screw
     pub bb: Rectangle,
     /// vertebrae that the screw is attached to
+    /// 0 is T1
     pub vertebra: usize,
     /// screws is on the left side of the vertebra
     pub left: Option<bool>,
@@ -356,15 +357,15 @@ impl ScrewSpine {
                 points,
                 shape_type: "rectangle".to_string(),
                 flags: Default::default(),
-                group_id: Some(screw.vertebra + 1),
+                group_id: Some(screw.vertebra + 1), // T1 is group_id==1
             };
             shapes.push(shape);
         }
         if include_vertebrae {
             let labels4 = vec!["TL", "TR", "BL", "BR"];
             let labels2 = vec!["TL", "TR"];
-            for (i_vert, vert) in self.spine.v_c7tl.0.axis_iter(Axis(0)).enumerate() {
-                let labels = if i_vert < self.spine.v_c7tl.0.len_of(Axis(0)) - 1 {
+            for (i_vert, vert) in self.spine.c7tls.0.axis_iter(Axis(0)).enumerate() {
+                let labels = if i_vert < self.spine.c7tls.0.len_of(Axis(0)) - 1 {
                     // all four corner points for vertebrae except the last one
                     &labels4
                 } else {
