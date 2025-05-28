@@ -64,6 +64,8 @@ pub enum ScolError {
     Json(#[from] serde_json::Error),
     #[error("Array shape error")]
     ArrayShape(#[from] ndarray::ShapeError),
+    #[error("Value error")]
+    Value(String),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -433,6 +435,15 @@ pub struct Spine {
 }
 
 impl Spine {
+    /// Corner points of T1 to Sacral vertebrae
+    pub fn t1_to_sac_vertebrae(&self) -> ArrayView3<f64> {
+        self.v_c7tl.0.slice(s![1.., .., ..])
+    }
+
+    pub fn t1_to_sac_centroids(&self) -> ArrayView2<f64> {
+        self.c_c7tl.slice(s![1.., ..])
+    }
+
     pub fn scale(&mut self, scale_xy: ArrayView1<f64>) {
         self.c7tls.0.scale(scale_xy);
         self.v_c7tl.0.scale(scale_xy);

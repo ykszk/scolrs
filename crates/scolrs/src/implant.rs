@@ -3,7 +3,7 @@ use crate::{HasImageMetadata, ImplantDraw, Scalable};
 use detectron2::DetectedBox;
 use indexmap::IndexMap;
 use labelme_rs::LabelMeData;
-use ndarray::{Array, Array1, Axis, Slice};
+use ndarray::{Array, Array1, ArrayView2, Axis, Slice};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -20,11 +20,14 @@ pub struct Rectangle {
 #[derive(Debug, Clone)]
 pub struct Implant {
     pub screw: Vec<Rectangle>,
-    pub screw_id: Vec<Option<usize>>,
     pub hook: Vec<Rectangle>,
     pub transverse: Vec<Rectangle>,
     pub rod: Vec<Rectangle>,
 }
+
+pub const LABEL_SCREW: &str = "Screw";
+pub const LABEL_SCREW_LEFT: &str = "ScrewLeft";
+pub const LABEL_SCREW_RIGHT: &str = "ScrewRight";
 
 #[derive(Debug, Clone)]
 pub struct Screw {
@@ -50,7 +53,6 @@ impl Screw {
 impl From<&LabelMeData> for Implant {
     fn from(data: &LabelMeData) -> Self {
         let mut screw = Vec::new();
-        let mut screw_id = Vec::new();
         let mut hook = Vec::new();
         let mut transverse = Vec::new();
         let mut rod = Vec::new();
@@ -68,10 +70,7 @@ impl From<&LabelMeData> for Implant {
                 let rectangle = Rectangle { tl, br };
 
                 match shape.label.to_lowercase().as_str() {
-                    "screw" => {
-                        screw.push(rectangle);
-                        screw_id.push(shape.group_id);
-                    }
+                    "screw" => screw.push(rectangle),
                     "hook" => hook.push(rectangle),
                     "transverse" => transverse.push(rectangle),
                     "rod" => rod.push(rectangle),
@@ -81,7 +80,6 @@ impl From<&LabelMeData> for Implant {
         }
         Self {
             screw,
-            screw_id,
             hook,
             transverse,
             rod,
@@ -127,11 +125,6 @@ impl From<ScrewSpine> for ImplantSpine {
             spine: screw_spine.spine,
             implant: Implant {
                 screw: screw_spine.screws.iter().map(|s| s.bb.clone()).collect(),
-                screw_id: screw_spine
-                    .screws
-                    .iter()
-                    .map(|s| Some(s.vertebra))
-                    .collect(),
                 hook: Vec::new(),
                 transverse: Vec::new(),
                 rod: Vec::new(),
@@ -144,7 +137,7 @@ impl From<ScrewSpine> for ImplantSpine {
 /// to be considered a valid pairing. This factor is multiplied by the mean plate length of the spine.
 const ALLOWED_DIST_FACTOR: f64 = 1.0;
 
-trait ScrewVertebraUtils {
+pub trait ScrewVertebraUtils {
     fn sort_by_y(&mut self);
     fn count_rect_per_vertebra(&self, n_vertebrae: usize) -> Vec<u8>;
 }
@@ -203,12 +196,12 @@ fn _refine_pairing_two_sided(
         pairs
             .iter()
             .zip(optimal_assignments.assignments.iter())
-            .map(|(sv, &i_vert)| Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left))
+            .map(|(sv, &i_vert)| Screw::with_pos(rectangles[sv.i_screw].clone(), i_vert, is_left))
             .collect()
     } else {
         pairs
             .iter()
-            .map(|x| Screw::with_pos(rectangles[x.i_rect].clone(), x.i_vert, is_left))
+            .map(|x| Screw::with_pos(rectangles[x.i_screw].clone(), x.i_vert, is_left))
             .collect::<Vec<_>>()
     };
     optimal_pairs
@@ -246,7 +239,7 @@ fn refine_one_sided_pairings(
         chosen_pairs.extend(
             closest
                 .iter()
-                .map(|sv| Screw::with_pos(rectangles[sv.i_rect].clone(), i_vert, is_left)),
+                .map(|sv| Screw::with_pos(rectangles[sv.i_screw].clone(), i_vert, is_left)),
         );
     }
     chosen_pairs
@@ -332,17 +325,13 @@ impl ScrewSpine {
         for screw in &self.screws {
             let points = vec![screw.bb.tl, screw.bb.br];
             let label = if label_lr {
-                if let Some(left) = screw.left {
-                    if left {
-                        "ScrewLeft".to_string()
-                    } else {
-                        "ScrewRight".to_string()
-                    }
-                } else {
-                    "Screw".to_string()
+                match screw.left {
+                    Some(true) => LABEL_SCREW_LEFT.to_string(),
+                    Some(false) => LABEL_SCREW_RIGHT.to_string(),
+                    None => LABEL_SCREW.to_string(),
                 }
             } else {
-                "Screw".to_string()
+                LABEL_SCREW.to_string()
             };
             let shape = labelme_rs::Shape {
                 label,
@@ -550,7 +539,7 @@ pub mod detectron2 {
 #[derive(Debug, Clone)]
 pub struct ScrewVertebra {
     /// index of the rectangle in the screws list
-    pub i_rect: usize,
+    pub i_screw: usize,
     /// centroid of the rectangle (screw)
     pub c_rect: (f64, f64),
     /// index of the vertebra in the spine
@@ -559,6 +548,31 @@ pub struct ScrewVertebra {
     pub dist: f64,
     /// displacement of the rectangle (screw) center from the vertebra center along the x-axis
     pub dx: f64,
+}
+
+impl ScrewVertebra {
+    pub fn create(
+        i_screw: usize,
+        c_rect: (f64, f64),
+        i_vert: usize,
+        dx: f64,
+        vertebra: ArrayView2<f64>,
+    ) -> Self {
+        let min_dist = vertebra
+            .map_axis(Axis(1), |xy| {
+                ((c_rect.0 - xy[0]).powi(2) + (c_rect.1 - xy[1]).powi(2)).sqrt()
+            })
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        Self {
+            i_screw,
+            c_rect,
+            i_vert,
+            dist: min_dist,
+            dx,
+        }
+    }
 }
 
 /// Define a trait to use [pair_to_closest] with both [Rectangle] and [DetectedBox]
@@ -595,7 +609,7 @@ pub fn detect_one_sided_configuration(pairs: &[ScrewVertebra]) -> bool {
 
         let mut closest = pairs
             .iter()
-            .filter(|sv| sv.i_rect != reference_pair.i_rect)
+            .filter(|sv| sv.i_screw != reference_pair.i_screw)
             .collect::<Vec<_>>();
         closest.sort_by(|a, b| {
             let dx_a = reference_pair.c_rect.0 - a.c_rect.0;
@@ -648,8 +662,9 @@ fn pair_to_closest(
 ) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     let max_allowed_distance = ALLOWED_DIST_FACTOR * crate::draw::mean_plate_length(spine);
     log::debug!("max_allowed_distance: {}", max_allowed_distance);
-    let vertebrae = spine.v_c7tl.0.slice_axis(Axis(0), Slice::from(1..));
-    let vertebra_centroids = spine.c_c7tl.slice_axis(Axis(0), Slice::from(1..));
+    let vertebrae = spine.t1_to_sac_vertebrae();
+    let vertebra_centroids = spine.t1_to_sac_centroids();
+
     let rectangle_centroids = screws
         .iter()
         .map(|rectangle| rectangle.centroid())
@@ -664,20 +679,11 @@ fn pair_to_closest(
                 .axis_iter(Axis(0))
                 .enumerate()
                 .filter_map(|(i_vert, vertebra)| {
-                    // distances from the rectangle centroid to the corner points of the vertebra
-                    let distances = vertebra.map_axis(Axis(1), |xy| {
-                        ((x - xy[0]).powi(2) + (y - xy[1]).powi(2)).sqrt()
-                    });
-                    let min_distance = distances.iter().cloned().fold(f64::INFINITY, f64::min);
-                    if min_distance < max_allowed_distance {
-                        let dx = x - vertebra_centroids.index_axis(Axis(0), i_vert)[0];
-                        Some(ScrewVertebra {
-                            i_rect,
-                            c_rect: (*x, *y),
-                            i_vert,
-                            dist: min_distance,
-                            dx,
-                        })
+                    let dx = x - vertebra_centroids.index_axis(Axis(0), i_vert)[0];
+                    let screw_vertebra =
+                        ScrewVertebra::create(i_rect, (*x, *y), i_vert, dx, vertebra);
+                    if screw_vertebra.dist < max_allowed_distance {
+                        Some(screw_vertebra)
                     } else {
                         None
                     }
@@ -868,14 +874,14 @@ fn pre_split_easy_screws(
     let mut hard_right = Vec::new();
     for (i_pair, ref_pair) in pairs.iter().enumerate() {
         // find vertically aligned screws
-        let ref_screw = &screws[ref_pair.i_rect];
+        let ref_screw = &screws[ref_pair.i_screw];
         let ref_width = (ref_screw.tl.0 - ref_screw.br.0).abs();
         let ref_height = (ref_screw.tl.1 - ref_screw.br.1).abs();
         for pair in pairs.iter() {
-            if pair.i_rect == ref_pair.i_rect {
+            if pair.i_screw == ref_pair.i_screw {
                 continue;
             }
-            let screw = &screws[pair.i_rect];
+            let screw = &screws[pair.i_screw];
             let width = (screw.tl.0 - screw.br.0).abs();
             let mean_width = (width + ref_width) / 2.0;
             let dx = (pair.c_rect.0 - ref_pair.c_rect.0).abs();
@@ -899,31 +905,6 @@ fn pre_split_easy_screws(
         }
     }
     (hard_left, hard_right)
-}
-
-/// Split pairs into left and right groups
-/// The split is done by minimizing the sum of standard deviations of dx in each group
-fn _split_pairs_min_dx(mut pairs: Vec<ScrewVertebra>) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
-    // sort pairs by dx
-    pairs.sort_by(|a, b| a.dx.partial_cmp(&b.dx).unwrap());
-
-    // split pairs into two groups: left and right groups
-    // split minimize the sum of standard deviations of dx in each group
-    let mut sum_stds = Vec::new();
-    for i in 1..pairs.len() - 1 {
-        let (left, right) = pairs.split_at(i);
-        let left_dx = left.iter().map(|sv| sv.dx).collect::<Vec<_>>();
-        let right_dx = right.iter().map(|sv| sv.dx).collect::<Vec<_>>();
-        let left_std = left_dx.std();
-        let right_std = right_dx.std();
-        sum_stds.push(left_std + right_std);
-    }
-    let min_sum_std = sum_stds.iter().cloned().fold(f64::INFINITY, f64::min);
-    let i_split = sum_stds.iter().position(|&x| x == min_sum_std).unwrap();
-    let (mut left_pairs, mut right_pairs) = pairs.split_at_mut(i_split + 1);
-    left_pairs.sort_by_y();
-    right_pairs.sort_by_y();
-    (left_pairs.to_vec(), right_pairs.to_vec())
 }
 
 pub fn pair_screw_rects(screw_rects: &[Rectangle], spine: &Spine) -> Vec<Screw> {
@@ -1032,9 +1013,9 @@ impl LabelMeOptionalDetectron2 {
                 .shapes
                 .iter()
                 .filter(|shape| {
-                    shape.label == "Screw"
-                        || shape.label == "ScrewLeft"
-                        || shape.label == "ScrewRight"
+                    shape.label == LABEL_SCREW
+                        || shape.label == LABEL_SCREW_LEFT
+                        || shape.label == LABEL_SCREW_RIGHT
                 })
                 .map(|shape| shape.group_id)
                 .collect::<Vec<_>>();
@@ -1047,19 +1028,24 @@ impl LabelMeOptionalDetectron2 {
                 log::debug!("Use group_id to pair screws");
                 let mut screws = Vec::new();
                 for shape in &self.labelme.shapes {
-                    if shape.label.starts_with("Screw") {
+                    if shape.label.starts_with(LABEL_SCREW) {
                         let group_id = shape.group_id.unwrap(); // guaranteed to be Some
                         let vertebra = group_id - 1; // group_id is 1-indexed
                         let rect = Rectangle {
                             tl: shape.points[0],
                             br: shape.points[1],
                         };
-                        let mut left = None;
-                        if shape.label == "ScrewLeft" {
-                            left = Some(true);
-                        } else if shape.label == "ScrewRight" {
-                            left = Some(false);
-                        }
+                        let left = match shape.label.as_str() {
+                            LABEL_SCREW => None,
+                            LABEL_SCREW_LEFT => Some(true),
+                            LABEL_SCREW_RIGHT => Some(false),
+                            _ => {
+                                return Err(ScolError::Value(format!(
+                                    "Unknown screw label: {}",
+                                    shape.label
+                                )));
+                            }
+                        };
                         screws.push(Screw::new(rect, vertebra, left));
                     }
                 }

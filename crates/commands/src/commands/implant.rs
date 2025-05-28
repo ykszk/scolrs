@@ -5,7 +5,7 @@ use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::LabelMeDataLine;
-use ndarray::{Axis, Slice};
+use ndarray::Axis;
 use scolrs::implant::{
     detect_one_sided_configuration, split_unsorted_screws, LabelMeOptionalDetectron2,
     LabelMeOptionalDetectron2Line, ScrewSpine, ScrewVertebra,
@@ -109,122 +109,113 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
 
 /// Splits screws into left and right based on their positions in the spine.
 /// If screws are already labeled as left or right, they are kept as is.
-fn split_screws(screw_spine: ScrewSpine) -> ScrewSpine {
-    let rectangle_centroid: Vec<_> = screw_spine
+fn split_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
+    // Compute centroids for each screw's bounding box
+    let screw_centroids: Vec<_> = screw_spine
         .screws
         .iter()
         .map(|s| {
-            let tl = s.bb.tl;
-            let br = s.bb.br;
-            let rect = scolrs::implant::Rectangle { tl, br };
+            let rect = scolrs::implant::Rectangle {
+                tl: s.bb.tl,
+                br: s.bb.br,
+            };
             scolrs::implant::CalculateCentroid::centroid(&rect)
         })
         .collect();
-    let vertebrae = screw_spine
-        .spine
-        .v_c7tl
-        .0
-        .slice_axis(Axis(0), Slice::from(1..));
-    let vertebra_centroids = screw_spine
-        .spine
-        .c_c7tl
-        .slice_axis(Axis(0), Slice::from(1..));
-    let mut screw_vertebrae: Vec<ScrewVertebra> = Vec::new();
-    for (i, screw) in screw_spine.screws.iter().enumerate() {
-        let i_vert = screw.vertebra;
-        let v_centroid = vertebra_centroids.index_axis(Axis(0), i_vert);
-        let i_rect = i;
-        let c_rect = (rectangle_centroid[i_rect].0, rectangle_centroid[i_rect].1);
-        let vertebra = vertebrae.index_axis(Axis(0), i_vert);
-        let distances = vertebra.map_axis(Axis(1), |xy| {
-            ((c_rect.0 - xy[0]).powi(2) + (c_rect.1 - xy[1]).powi(2)).sqrt()
-        });
-        let dist = distances.iter().cloned().fold(f64::INFINITY, f64::min);
-        let dx = c_rect.0 - v_centroid[0];
-        let screw_vertebra = ScrewVertebra {
-            i_rect,
-            c_rect,
-            i_vert,
-            dist,
-            dx,
-        };
-        screw_vertebrae.push(screw_vertebra);
-    }
-    let screws_one_sided = detect_one_sided_configuration(&screw_vertebrae);
-    if screws_one_sided {
+
+    let vertebrae = screw_spine.spine.t1_to_sac_vertebrae();
+    let vertebra_centroids = screw_spine.spine.t1_to_sac_centroids();
+
+    // Build ScrewVertebra list
+    let screw_vertebrae: Vec<ScrewVertebra> = screw_spine
+        .screws
+        .iter()
+        .enumerate()
+        .map(|(i_screw, screw)| {
+            let i_vert = screw.vertebra;
+            let v_centroid = vertebra_centroids.index_axis(Axis(0), i_vert);
+            let c_rect = screw_centroids[i_screw];
+            let vertebra = vertebrae.index_axis(Axis(0), i_vert);
+            let dx = c_rect.0 - v_centroid[0];
+            ScrewVertebra::create(i_screw, c_rect, i_vert, dx, vertebra)
+        })
+        .collect();
+
+    if detect_one_sided_configuration(&screw_vertebrae) {
         let mean_dx =
             screw_vertebrae.iter().map(|sv| sv.dx).sum::<f64>() / screw_vertebrae.len() as f64;
+        let left = mean_dx < 0.0;
+        log::debug!(
+            "Detected one-sided configuration with {} screws",
+            if left { "left" } else { "right" }
+        );
+        let left = Some(left);
 
-        let left = if mean_dx < 0.0 {
-            log::info!("Detected one-sided configuration with left screws");
-            Some(true)
-        } else {
-            log::info!("Detected one-sided configuration with right screws");
-            Some(false)
-        };
-        let mut screw_spine = screw_spine;
         screw_spine.screws.iter_mut().for_each(|s| s.left = left);
-        screw_spine
-    } else {
-        log::info!("Detected two-sided configuration");
-        // sort screw_vertebrae by y-coordinate of c_rect
-        screw_vertebrae.sort_by(|a, b| a.c_rect.1.partial_cmp(&b.c_rect.1).unwrap());
-        let (mut hard_left, mut hard_right) = (Vec::new(), Vec::new());
-        // if two screws are on the same vertebra, split them into left and right based on their x-coordinates
-        for sv1 in screw_vertebrae.iter() {
-            let screw = &screw_spine.screws[sv1.i_rect];
-            if let Some(left) = screw.left {
-                if left {
-                    hard_left.push(sv1.i_rect);
-                } else {
-                    hard_right.push(sv1.i_rect);
-                }
-                continue;
-            }
-            if hard_left.contains(&sv1.i_rect) || hard_right.contains(&sv1.i_rect) {
-                continue;
-            }
-            for sv2 in screw_vertebrae.iter() {
-                if sv1.i_rect == sv2.i_rect
-                    || hard_left.contains(&sv2.i_rect)
-                    || hard_right.contains(&sv2.i_rect)
-                {
-                    continue;
-                }
-                if sv1.i_vert == sv2.i_vert {
-                    if sv1.c_rect.0 < sv2.c_rect.0 {
-                        hard_left.push(sv1.i_rect);
-                        hard_right.push(sv2.i_rect);
-                    } else {
-                        hard_left.push(sv2.i_rect);
-                        hard_right.push(sv1.i_rect);
-                    }
-                }
-            }
-        }
-        let unsorted_indices: Vec<_> = (0..screw_vertebrae.len())
-            .filter(|i| !hard_left.contains(i) && !hard_right.contains(i))
-            .collect();
-        log::debug!("Splitting {} unsorted screws", unsorted_indices.len());
-        let (left_pairs, right_pairs) =
-            split_unsorted_screws(screw_vertebrae, hard_left, unsorted_indices);
-        let mut screws = Vec::new();
-        for left_pair in left_pairs {
-            let screw = &screw_spine.screws[left_pair.i_rect];
-            let mut new_screw = screw.clone();
-            new_screw.left = Some(true);
-            screws.push(new_screw);
-        }
-        for right_pair in right_pairs {
-            let screw = &screw_spine.screws[right_pair.i_rect];
-            let mut new_screw = screw.clone();
-            new_screw.left = Some(false);
-            screws.push(new_screw);
-        }
-        let mut screw_spine = screw_spine;
-        screw_spine.screws = screws;
-        screw_spine
+        return screw_spine;
     }
+
+    log::debug!("Detected two-sided configuration");
+    // Sort by y-coordinate
+    let mut screw_vertebrae = screw_vertebrae;
+    use scolrs::implant::ScrewVertebraUtils;
+    screw_vertebrae.sort_by_y();
+
+    let (mut hard_left, mut hard_right) = (Vec::new(), Vec::new());
+
+    // Assign screws with explicit left/right or by x-coordinate
+    for sv1 in &screw_vertebrae {
+        if hard_left.contains(&sv1.i_screw) || hard_right.contains(&sv1.i_screw) {
+            continue;
+        }
+        let screw = &screw_spine.screws[sv1.i_screw];
+        if let Some(left) = screw.left {
+            if left {
+                hard_left.push(sv1.i_screw);
+            } else {
+                hard_right.push(sv1.i_screw);
+            }
+            continue;
+        }
+        for sv2 in &screw_vertebrae {
+            if sv1.i_screw == sv2.i_screw
+                || hard_left.contains(&sv2.i_screw)
+                || hard_right.contains(&sv2.i_screw)
+            {
+                continue;
+            }
+            // If two screws are on the same vertebra, assign them based on their x-coordinates
+            if sv1.i_vert == sv2.i_vert {
+                if sv1.c_rect.0 < sv2.c_rect.0 {
+                    hard_left.push(sv1.i_screw);
+                    hard_right.push(sv2.i_screw);
+                } else {
+                    hard_left.push(sv2.i_screw);
+                    hard_right.push(sv1.i_screw);
+                }
+            }
+        }
+    }
+
+    let unsorted_indices: Vec<_> = (0..screw_vertebrae.len())
+        .filter(|i| !hard_left.contains(i) && !hard_right.contains(i))
+        .collect();
+    log::debug!("Splitting {} unsorted screws", unsorted_indices.len());
+
+    let (left_pairs, right_pairs) =
+        split_unsorted_screws(screw_vertebrae, hard_left, unsorted_indices);
+
+    // Assign left/right labels to screws
+    for (pairs, left) in [(left_pairs, true), (right_pairs, false)] {
+        for sv in pairs {
+            if let Some(screw) = screw_spine.screws.get_mut(sv.i_screw) {
+                screw.left = Some(left);
+            } else {
+                log::warn!("Screw index {} out of bounds", sv.i_screw);
+            }
+        }
+    }
+    screw_spine
 }
 
 #[cfg(test)]
