@@ -367,13 +367,15 @@ pub struct ConvArgs {
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone)]
-#[clap(rename_all = "lower")]
+#[clap(rename_all = "snake_case")]
 pub enum ImplantTask {
     /// Group screws and vertebrae
     Group,
     /// Count screws per vertebra
     Count,
-    /// Split screws into left and right
+    /// Count screws per vertebra and left/right
+    CountLr,
+    /// Split `Screw`s into `ScrewLeft` and `ScrewRight`
     Split,
 }
 

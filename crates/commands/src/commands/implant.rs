@@ -18,6 +18,31 @@ struct ScrewCount {
     pub filename: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ScrewCountLr {
+    pub left: IndexMap<String, usize>,
+    pub right: IndexMap<String, usize>,
+}
+
+impl TryFrom<ScrewSpine> for ScrewCountLr {
+    type Error = anyhow::Error;
+
+    fn try_from(screw_spine: ScrewSpine) -> Result<Self> {
+        let count_lr = screw_spine
+            .count_screws_lr()
+            .context("Unsorted screws was found")?;
+        let left = label_counts(count_lr.0);
+        let right = label_counts(count_lr.1);
+        Ok(ScrewCountLr { left, right })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ScrewCountLrLine {
+    pub content: ScrewCountLr,
+    pub filename: String,
+}
+
 fn vertebra_label(index: usize) -> String {
     if index < 12 {
         format!("T{}", index + 1)
@@ -68,7 +93,7 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                     println!("{}", serde_json::to_string(&count_line)?);
                 }
                 crate::cli::ImplantTask::Split => {
-                    let screw_spine = split_screws(screw_spine);
+                    let screw_spine = split_paired_screws(screw_spine);
                     let labelme = screw_spine.to_labelme(
                         data_line.content.labelme.flags,
                         args.vertebrae,
@@ -79,6 +104,14 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                         filename: data_line.filename,
                     };
                     println!("{}", serde_json::to_string(&lm_line)?);
+                }
+                crate::cli::ImplantTask::CountLr => {
+                    let count_lr = ScrewCountLr::try_from(screw_spine)?;
+                    let count_line = ScrewCountLrLine {
+                        content: count_lr,
+                        filename: data_line.filename,
+                    };
+                    println!("{}", serde_json::to_string(&count_line)?);
                 }
             }
         }
@@ -97,9 +130,13 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&count)?);
             }
             crate::cli::ImplantTask::Split => {
-                let screw_spine = split_screws(screw_spine);
+                let screw_spine = split_paired_screws(screw_spine);
                 let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae, true);
                 println!("{}", serde_json::to_string_pretty(&labelme)?);
+            }
+            crate::cli::ImplantTask::CountLr => {
+                let count_lr = ScrewCountLr::try_from(screw_spine)?;
+                println!("{}", serde_json::to_string_pretty(&count_lr)?);
             }
         }
     }
@@ -109,7 +146,8 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
 
 /// Splits screws into left and right based on their positions in the spine.
 /// If screws are already labeled as left or right, they are kept as is.
-fn split_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
+/// Pairing is fixed and not  tentative unlike similar function [`split_pairs`]
+fn split_paired_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
     // Compute centroids for each screw's bounding box
     let screw_centroids: Vec<_> = screw_spine
         .screws

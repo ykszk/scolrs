@@ -312,6 +312,24 @@ impl ScrewSpine {
         count
     }
 
+    pub fn count_screws_lr(&self) -> Option<(Vec<usize>, Vec<usize>)> {
+        let mut left_count = vec![0; self.spine.v_c7tl.0.len_of(Axis(0)) - 1];
+        let mut right_count = vec![0; self.spine.v_c7tl.0.len_of(Axis(0)) - 1];
+        for screw in &self.screws {
+            if let Some(left) = screw.left {
+                if left {
+                    left_count[screw.vertebra] += 1;
+                } else {
+                    right_count[screw.vertebra] += 1;
+                }
+            } else {
+                // If the screw is not labeled as left or right, we cannot count it
+                return None;
+            }
+        }
+        Some((left_count, right_count))
+    }
+
     /// Convert to LabelMeData with Screws and optionally Vertebrae
     ///
     /// `group_id` is the vertebrae index starting from 1
