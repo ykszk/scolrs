@@ -43,6 +43,19 @@ struct ScrewCountLrLine {
     pub filename: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct OpParams {
+    pub screw_counts: ScrewCountLr,
+    pub tilt_angles: Vec<f64>,
+    pub version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OpParamsLine {
+    pub content: OpParams,
+    pub filename: String,
+}
+
 fn vertebra_label(index: usize) -> String {
     if index < 12 {
         format!("T{}", index + 1)
@@ -113,6 +126,14 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                     };
                     println!("{}", serde_json::to_string(&count_line)?);
                 }
+                crate::cli::ImplantTask::OpParams => {
+                    let op_params = OpParams::try_from(screw_spine)?;
+                    let op_params_line = OpParamsLine {
+                        content: op_params,
+                        filename: data_line.filename,
+                    };
+                    println!("{}", serde_json::to_string(&op_params_line)?);
+                }
             }
         }
     } else {
@@ -138,10 +159,35 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                 let count_lr = ScrewCountLr::try_from(screw_spine)?;
                 println!("{}", serde_json::to_string_pretty(&count_lr)?);
             }
+            crate::cli::ImplantTask::OpParams => {
+                let op_params = OpParams::try_from(screw_spine)?;
+                println!("{}", serde_json::to_string_pretty(&op_params)?);
+            }
         }
     }
 
     Ok(())
+}
+
+impl TryFrom<ScrewSpine> for OpParams {
+    type Error = anyhow::Error;
+
+    fn try_from(screw_spine: ScrewSpine) -> Result<OpParams> {
+        let couunt_lr = ScrewCountLr::try_from(screw_spine.clone())?;
+        let vertebrae = screw_spine.spine.v_c7tl.0.slice(ndarray::s![1..17, .., ..]);
+        let mut tilt_angles = Vec::new();
+        for (i, vertebra) in vertebrae.axis_iter(Axis(0)).enumerate() {
+            let tilt_angle =
+                scolrs::draw::tilt_angle(&format!("V{}", i), vertebra.slice(ndarray::s![..2, ..]));
+            tilt_angles.push(tilt_angle?);
+        }
+        let op_params = OpParams {
+            screw_counts: couunt_lr,
+            tilt_angles,
+            version: scolrs::VERSION.to_string(),
+        };
+        Ok(op_params)
+    }
 }
 
 /// Splits screws into left and right based on their positions in the spine.

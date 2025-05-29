@@ -1161,7 +1161,7 @@ fn draw_difference_in_y(
     Ok(g)
 }
 
-fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
+pub fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];

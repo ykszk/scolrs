@@ -377,6 +377,8 @@ pub enum ImplantTask {
     CountLr,
     /// Split `Screw`s into `ScrewLeft` and `ScrewRight`
     Split,
+    /// Print operational parameters
+    OpParams,
 }
 
 #[derive(Parser, Debug, Clone)]
