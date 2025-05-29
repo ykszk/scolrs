@@ -86,11 +86,8 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
             let screw_spine = data_line.content.screw_spine()?;
             match args.task {
                 crate::cli::ImplantTask::Group => {
-                    let labelme = screw_spine.to_labelme(
-                        data_line.content.labelme.flags,
-                        args.vertebrae,
-                        false,
-                    );
+                    let labelme =
+                        screw_spine.to_labelme(data_line.content.labelme.flags, args.vertebrae);
                     let lm_line = LabelMeDataLine {
                         content: labelme,
                         filename: data_line.filename,
@@ -107,11 +104,8 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
                 }
                 crate::cli::ImplantTask::Split => {
                     let screw_spine = split_paired_screws(screw_spine);
-                    let labelme = screw_spine.to_labelme(
-                        data_line.content.labelme.flags,
-                        args.vertebrae,
-                        true,
-                    );
+                    let labelme =
+                        screw_spine.to_labelme(data_line.content.labelme.flags, args.vertebrae);
                     let lm_line = LabelMeDataLine {
                         content: labelme,
                         filename: data_line.filename,
@@ -143,7 +137,7 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
         let screw_spine = data.screw_spine()?;
         match args.task {
             crate::cli::ImplantTask::Group => {
-                let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae, false);
+                let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae);
                 println!("{}", serde_json::to_string_pretty(&labelme)?);
             }
             crate::cli::ImplantTask::Count => {
@@ -152,7 +146,7 @@ pub fn cmd(args: ImplantArgs) -> Result<()> {
             }
             crate::cli::ImplantTask::Split => {
                 let screw_spine = split_paired_screws(screw_spine);
-                let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae, true);
+                let labelme = screw_spine.to_labelme(data.labelme.flags, args.vertebrae);
                 println!("{}", serde_json::to_string_pretty(&labelme)?);
             }
             crate::cli::ImplantTask::CountLr => {
@@ -193,7 +187,7 @@ impl TryFrom<ScrewSpine> for OpParams {
 /// Splits screws into left and right based on their positions in the spine.
 /// If screws are already labeled as left or right, they are kept as is.
 /// Pairing is fixed and not  tentative unlike similar function [`split_pairs`]
-fn split_paired_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
+fn split_paired_screws(screw_spine: ScrewSpine) -> ScrewSpine {
     // Compute centroids for each screw's bounding box
     let screw_centroids: Vec<_> = screw_spine
         .screws
@@ -235,6 +229,7 @@ fn split_paired_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
         );
         let left = Some(left);
 
+        let mut screw_spine = screw_spine;
         screw_spine.screws.iter_mut().for_each(|s| s.left = left);
         return screw_spine;
     }
@@ -286,16 +281,24 @@ fn split_paired_screws(mut screw_spine: ScrewSpine) -> ScrewSpine {
         .collect();
     log::debug!("Splitting {} unsorted screws", unsorted_indices.len());
 
-    let (left_pairs, right_pairs) =
-        split_unsorted_screws(screw_vertebrae, hard_left, unsorted_indices);
+    let (left_pairs, right_pairs) = if unsorted_indices.is_empty() {
+        (hard_left, hard_right)
+    } else {
+        let (l, r) = split_unsorted_screws(screw_vertebrae, hard_left, unsorted_indices);
+        (
+            l.into_iter().map(|i| i.i_screw).collect(),
+            r.into_iter().map(|i| i.i_screw).collect(),
+        )
+    };
 
     // Assign left/right labels to screws
-    for (pairs, left) in [(left_pairs, true), (right_pairs, false)] {
-        for sv in pairs {
-            if let Some(screw) = screw_spine.screws.get_mut(sv.i_screw) {
+    let mut screw_spine = screw_spine;
+    for (i_screws, left) in [(left_pairs, true), (right_pairs, false)] {
+        for i_screw in i_screws {
+            if let Some(screw) = screw_spine.screws.get_mut(i_screw) {
                 screw.left = Some(left);
             } else {
-                log::warn!("Screw index {} out of bounds", sv.i_screw);
+                log::warn!("Screw index {} out of bounds", i_screw);
             }
         }
     }

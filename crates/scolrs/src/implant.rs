@@ -214,9 +214,16 @@ fn refine_two_sided_pairings(
     right_pairs: Vec<ScrewVertebra>,
     vertebra_centroids: ndarray::ArrayBase<ndarray::ViewRepr<&f64>, ndarray::Dim<[usize; 2]>>,
 ) -> Vec<Screw> {
-    let left_refined = _refine_pairing_two_sided(rectangles, left_pairs, vertebra_centroids, true);
-    let right_refined =
+    let mut left_refined =
+        _refine_pairing_two_sided(rectangles, left_pairs, vertebra_centroids, true);
+    left_refined.iter_mut().for_each(|screw| {
+        screw.left = Some(true);
+    });
+    let mut right_refined =
         _refine_pairing_two_sided(rectangles, right_pairs, vertebra_centroids, false);
+    right_refined.iter_mut().for_each(|screw| {
+        screw.left = Some(false);
+    });
     let mut both_pairs = left_refined;
     both_pairs.extend(right_refined);
     both_pairs
@@ -338,19 +345,14 @@ impl ScrewSpine {
         &self,
         flags: IndexMap<String, bool>,
         include_vertebrae: bool,
-        label_lr: bool,
     ) -> LabelMeData {
         let mut shapes = Vec::new();
         for screw in &self.screws {
             let points = vec![screw.bb.tl, screw.bb.br];
-            let label = if label_lr {
-                match screw.left {
-                    Some(true) => LABEL_SCREW_LEFT.to_string(),
-                    Some(false) => LABEL_SCREW_RIGHT.to_string(),
-                    None => LABEL_SCREW.to_string(),
-                }
-            } else {
-                LABEL_SCREW.to_string()
+            let label = match screw.left {
+                Some(true) => LABEL_SCREW_LEFT.to_string(),
+                Some(false) => LABEL_SCREW_RIGHT.to_string(),
+                None => LABEL_SCREW.to_string(),
             };
             let shape = labelme_rs::Shape {
                 label,
@@ -803,9 +805,8 @@ pub fn split_unsorted_screws(
     unsorted_indices: Vec<usize>,
 ) -> (Vec<ScrewVertebra>, Vec<ScrewVertebra>) {
     let mut min_sum_diff = f64::INFINITY;
-    let mut best_split = 0u64;
-
     let bitmask_hard_left = hard_left.iter().fold(0u64, |acc, &idx| acc | (1 << idx));
+    let mut best_split = bitmask_hard_left;
 
     // Try all possible splits for unsorted pairs
     for unsorted_bitmask in 0u64..(1 << unsorted_indices.len()) {
@@ -867,18 +868,6 @@ pub fn split_unsorted_screws(
     // Sort results by y-coordinate
     left_pairs.sort_by_y();
     right_pairs.sort_by_y();
-
-    // Make sure left is actually on the left side
-    if !left_pairs.is_empty() && !right_pairs.is_empty() {
-        let left_mean_x =
-            left_pairs.iter().map(|sv| sv.c_rect.0).sum::<f64>() / left_pairs.len() as f64;
-        let right_mean_x =
-            right_pairs.iter().map(|sv| sv.c_rect.0).sum::<f64>() / right_pairs.len() as f64;
-
-        if left_mean_x > right_mean_x {
-            std::mem::swap(&mut left_pairs, &mut right_pairs);
-        }
-    }
 
     (left_pairs, right_pairs)
 }
