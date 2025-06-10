@@ -364,7 +364,7 @@ impl Painter {
         element::Line::new()
             .set("x1", 0)
             .set("y1", y)
-            .set("x2", self.size.0)
+            .set("x2", "100%")
             .set("y2", y)
     }
 
@@ -376,7 +376,7 @@ impl Painter {
             .set("x1", x)
             .set("y1", 0)
             .set("x2", x)
-            .set("y2", self.size.1)
+            .set("y2", "100%")
     }
 
     pub fn polyline<S>(&mut self, points: ArrayBase<S, Ix2>) -> element::Polyline
@@ -1464,6 +1464,15 @@ pub fn wrap_in_html(
         .add_raw_templates(vec![
             ("html.jinja", include_str!("templates/html.jinja")),
             ("checkbox.jinja", include_str!("templates/checkbox.jinja")),
+            (
+                "draw_setting.jinja",
+                include_str!("templates/draw_setting.jinja"),
+            ),
+            (
+                "draw_setting.css",
+                include_str!("templates/draw_setting.css"),
+            ),
+            ("draw_setting.js", include_str!("templates/draw_setting.js")),
         ])
         .unwrap();
     let javascript = include_str!("templates/capture.js");
