@@ -1,0 +1,13 @@
+.control-group {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.value-display {
+    display: inline-block;
+    min-width: 4em;
+    text-align: right;
+}

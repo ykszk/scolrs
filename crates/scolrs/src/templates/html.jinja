@@ -29,6 +29,7 @@
             list-style-type: none;
             padding: 0.5em;
         }
+        {% include "draw_setting.css" %}
     </style>
     <script>
         function toggle_visibility(cb) {
@@ -66,6 +67,7 @@
         </form>
         <button onclick="change_all('visible')">Show All</button>
         <button onclick="change_all('hidden')">Hide All</button>
+        {% include "draw_setting.jinja" %}
         {{save_module}}
     </div>
 </body>
@@ -79,6 +81,7 @@
         const stem_name = document.title;
         convertSvg(svgElement, format, scale, stem_name);
     });
+    {% include "draw_setting.js" %}
 </script>
 
 </html>
