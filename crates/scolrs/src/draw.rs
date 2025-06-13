@@ -1247,16 +1247,21 @@ pub fn draw_incidence_angle(
     let sac_p2a = &plate.index_axis(Axis(0), 1) - &plate.index_axis(Axis(0), 0);
     let mut perp_sac = ndarray::Array::from_vec(vec![-sac_p2a[1], sac_p2a[0]]);
     perp_sac /= perp_sac.l2norm();
-    perp_sac = 0.25 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() * perp_sac;
+    perp_sac = 0.85 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap() * perp_sac;
     perp_sac += &sac_sup_mid;
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
-    g = g.add(painter.line(perp_line.view()));
-    let angle = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
-    let angle = angle.abs();
-    let text = format!("{:.1}°", angle);
-    let text = painter.text(&text, sac_sup_mid, Some(label), None);
+    let arc_radius = 0.5 * sac_sup_mid.l2_dist(&mid_femoral_heads).unwrap();
+    g = painter
+        .angle_between(
+            g,
+            perp_line.view(),
+            line_sac2fem.view(),
+            sac_sup_mid.view(),
+            arc_radius,
+            Some(label),
+        )
+        .0;
 
-    g = g.add(text);
     g
 }
 

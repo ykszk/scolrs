@@ -348,10 +348,10 @@ impl PelvicTilt<'_> {
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let mid_sac = sac_sup.mean_axis(Axis(0)).unwrap();
         let femoral_head = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
-        let sac2fem = stack![Axis(0), mid_sac, femoral_head];
-        let mut v_line_from_fem = sac2fem.clone();
-        v_line_from_fem[[0, 0]] = v_line_from_fem[[1, 0]];
-        Ok((sac2fem, v_line_from_fem))
+        let fem2sac = stack![Axis(0), femoral_head, mid_sac];
+        let mut v_line_from_fem = fem2sac.clone();
+        v_line_from_fem[[1, 0]] = v_line_from_fem[[0, 0]];
+        Ok((fem2sac, v_line_from_fem))
     }
 }
 impl SagittalComponent for PelvicTilt<'_> {}
@@ -363,29 +363,39 @@ impl DrawComponent for PelvicTilt<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let sagittal_points = self.0;
-        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
+        let (fem2sac, v_line) = Self::prep(sagittal_points)?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
         g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
-        g = g.add(painter.point(sac2fem.index_axis(Axis(0), 0)));
-        // TODO: use painter.angle_between
-        g = g.add(painter.line(sac2fem.view()));
+        g = g.add(painter.point(fem2sac.index_axis(Axis(0), 1)));
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
+        for p in sac_sup.axis_iter(Axis(0)) {
+            g = g.add(painter.point(p));
+        }
         g = g.add(painter.line(sac_sup.view()));
-        g = g.add(painter.line(v_line.view()));
-        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
-        let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, sac2fem.index_axis(Axis(0), 1), Some(label), None);
-        g = g.add(text);
+
+        let arc_radius = 0.5
+            * fem2sac
+                .index_axis(Axis(0), 0)
+                .l2_dist(&fem2sac.index_axis(Axis(0), 1))
+                .unwrap();
+        let (g, _) = painter.angle_between(
+            g,
+            v_line.view(),
+            fem2sac.view(),
+            fem2sac.index_axis(Axis(0), 0),
+            arc_radius,
+            Some(label),
+        );
         Ok(g)
     }
 }
 impl MeasureComponent for PelvicTilt<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let sagittal_points = self.0;
-        let (sac2fem, v_line) = Self::prep(sagittal_points)?;
-        let angle = angle_between(v_line.view(), sac2fem.view()).to_degrees();
+        let (fem2sac, v_line) = Self::prep(sagittal_points)?;
+        let angle = angle_between(v_line.view(), fem2sac.view()).to_degrees();
         Ok(angle)
     }
 }
@@ -523,8 +533,13 @@ impl PelvicRadiusAngle<'_> {
         let mid_femoral_heads = sagittal_points.femoral_head.0.mean_axis(Axis(0)).unwrap();
         let sac_sup = sagittal_points.spine.sacral_sup_plate();
         let post_sac = sac_sup.index_axis(Axis(0), 1);
-        let line_fem2post_sac = stack![Axis(0), mid_femoral_heads, post_sac];
-        Ok((sac_sup.to_owned(), line_fem2post_sac))
+        let sac_sup_post2ante = stack![
+            Axis(0),
+            sac_sup.index_axis(Axis(0), 1),
+            sac_sup.index_axis(Axis(0), 0)
+        ];
+        let post_sac2fem = stack![Axis(0), post_sac, mid_femoral_heads];
+        Ok((sac_sup_post2ante, post_sac2fem))
     }
 }
 impl SagittalComponent for PelvicRadiusAngle<'_> {}
@@ -536,26 +551,34 @@ impl DrawComponent for PelvicRadiusAngle<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let sagittal_points = self.0;
-        let (sac_sup, line_fem2post_sac) = Self::prep(sagittal_points)?;
-        let post_sac = sac_sup.index_axis(Axis(0), 1);
+        let (sac_sup_post2ante, post_sac2fem) = Self::prep(sagittal_points)?;
+        let post_sac = sac_sup_post2ante.index_axis(Axis(0), 0);
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
         g = draw_femoral_center(g, sagittal_points.femoral_head.0.view(), painter);
-        g = g.add(painter.line(sac_sup.view()));
-        g = g.add(painter.line(line_fem2post_sac.view()));
-        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
-        let text = format!("{:.1}°", angle);
-        let text = painter.text(&text, post_sac, Some(label), None);
-        g = g.add(text);
+        let arc_radius = sac_sup_post2ante
+            .index_axis(Axis(0), 0)
+            .l2_dist(&sac_sup_post2ante.index_axis(Axis(0), 1))
+            .unwrap();
+        let g = painter
+            .angle_between(
+                g,
+                post_sac2fem.view(),
+                sac_sup_post2ante.view(),
+                post_sac,
+                arc_radius,
+                Some(label),
+            )
+            .0;
         Ok(g)
     }
 }
 
 impl MeasureComponent for PelvicRadiusAngle<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        let (sac_sup, line_fem2post_sac) = Self::prep(self.0)?;
-        let angle = angle_between(line_fem2post_sac.view(), sac_sup.view()).to_degrees();
+        let (sac_sup_post2ante, post_sac2fem) = Self::prep(self.0)?;
+        let angle = angle_between(post_sac2fem.view(), sac_sup_post2ante.view()).to_degrees();
         Ok(angle)
     }
 }
