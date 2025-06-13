@@ -484,6 +484,25 @@ impl Painter {
         }
     }
 
+    /// Draw two arrows (parallel sign) at the middle of the line
+    pub fn parallel_sign(
+        &mut self,
+        group: element::Group,
+        line: ArrayView2<f64>,
+        length: f64,
+    ) -> element::Group {
+        let d = &line.slice(s![1, ..]) - &line.slice(s![0, ..]);
+        let unit_d = &d / d.l2norm();
+        let p1 = line.mean_axis(Axis(0)).unwrap();
+        let p2 = rotate_around(&p1 - &unit_d * length, p1.view(), 30.0_f64.to_radians());
+        let p3 = rotate_around(&p1 - &unit_d * length, p1.view(), -30.0_f64.to_radians());
+        let arrow = ndarray::stack![Axis(0), p2, p1, p3];
+        let arrow1 = &arrow - &unit_d * length * 0.5;
+        let arrow2 = arrow + &unit_d * length * 0.5;
+        let group = group.add(self.polyline(arrow1));
+        group.add(self.polyline(arrow2))
+    }
+
     pub fn cobb_from_plates(
         &mut self,
         mut group: element::Group,
@@ -1167,6 +1186,7 @@ fn draw_difference_in_y(
     Ok(g)
 }
 
+/// Calculate the angle (degree) between two lines defined by points
 pub fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();

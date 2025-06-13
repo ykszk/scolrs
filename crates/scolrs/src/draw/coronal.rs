@@ -1,4 +1,4 @@
-use crate::draw::Named;
+use crate::draw::{self, Named};
 use crate::{ApexSet, Curve, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
 use ndarray::{s, stack, Array2, Axis};
@@ -371,9 +371,17 @@ impl SacralObliquity<'_> {
         let mut sac_seg = femoral_head.clone();
         sac_seg[[0, 1]] = line_eqn.solve_y_for_x(femoral_head[[0, 0]]).unwrap();
         sac_seg[[1, 1]] = line_eqn.solve_y_for_x(femoral_head[[1, 0]]).unwrap();
-        let mut hor_line = sac_seg.clone();
-        hor_line[[1, 1]] = hor_line[[0, 1]];
-        Ok((hor_line, sac_seg))
+        // slide the line connecting the femoral head points to the sacral line
+        let mut fem_line = sac_seg.clone();
+        fem_line[[1, 1]] = fem_line[[0, 1]];
+        let leg_tilt_angle = tilt_angle("FemoralHead", femoral_head.view())?.to_radians();
+        let p_on_right = draw::rotate_around(
+            fem_line.index_axis(Axis(0), 1),
+            fem_line.index_axis(Axis(0), 0),
+            leg_tilt_angle,
+        );
+        fem_line.index_axis_mut(Axis(0), 1).assign(&p_on_right);
+        Ok((fem_line, sac_seg))
     }
 }
 impl DrawComponent for SacralObliquity<'_> {
@@ -383,7 +391,7 @@ impl DrawComponent for SacralObliquity<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        let (hor_line, sac_seg) = self.prep()?;
+        let (femoral_line, sac_seg) = self.prep()?;
         let label = self.id();
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
@@ -391,16 +399,23 @@ impl DrawComponent for SacralObliquity<'_> {
         for c in femoral_head.axis_iter(Axis(0)) {
             g = g.add(painter.point(c));
         }
+        for c in self.0.spine.sacral_sup_plate().axis_iter(Axis(0)) {
+            g = g.add(painter.point(c));
+        }
 
         g = g.add(painter.line(femoral_head.view()));
         g = g.add(painter.line(sac_seg.view()));
 
+        // draw parallel signs
+        g = painter.parallel_sign(g, femoral_line.view(), painter.param.line_width * 8.0);
+        g = painter.parallel_sign(g, femoral_head.view(), painter.param.line_width * 8.0);
+
         g = painter
             .angle_between(
                 g,
-                hor_line.view(),
+                femoral_line.view(),
                 sac_seg.view(),
-                hor_line.index_axis(Axis(0), 0),
+                femoral_line.index_axis(Axis(0), 0),
                 0.8 * sac_seg
                     .index_axis(Axis(0), 0)
                     .l2_dist(&sac_seg.index_axis(Axis(0), 1))
@@ -413,8 +428,8 @@ impl DrawComponent for SacralObliquity<'_> {
 }
 impl MeasureComponent for SacralObliquity<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
-        let (hor_line, sac_seg) = self.prep()?;
-        let angle = angle_between(hor_line.view(), sac_seg.view()).to_degrees();
+        let (femoral_line, sac_seg) = self.prep()?;
+        let angle = angle_between(femoral_line.view(), sac_seg.view()).to_degrees();
         Ok(angle)
     }
 }
