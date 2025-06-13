@@ -9,9 +9,19 @@ const radiusValue = document.getElementById('radiusValue');
 const opacitySlider = document.getElementById('opacity');
 const opacityValue = document.getElementById('opacityValue');
 
+function selectSvg() {
+    // Select the SVG element in the popup content
+    let svg = document.querySelector(".popup-content > svg")
+    if (svg !== null) {
+        return svg;
+    }
+    // If not found, try to select the SVG element in the main content
+    return document.querySelector('svg');
+}
+
 // Update line width
 function updateLineWidth(width) {
-    const svgElement = document.querySelector('svg');
+    const svgElement = selectSvg();
     for (const element of svgElement.querySelectorAll('line, polyline, polygon, path, rect, ellipse')) {
         element.style.strokeWidth = width / 10 + 'px';
     }
@@ -20,7 +30,7 @@ function updateLineWidth(width) {
 
 // Update font size
 function updateFontSize(size) {
-    const svgElement = document.querySelector('svg');
+    const svgElement = selectSvg();
     for (const element of svgElement.querySelectorAll('text')) {
         element.style.fontSize = size + 'px';
     }
@@ -33,7 +43,7 @@ function updateFontSize(size) {
 
 // Update radius for circles
 function updateRadius(radius) {
-    const svgElement = document.querySelector('svg');
+    const svgElement = selectSvg();
     for (const element of svgElement.querySelectorAll('circle')) {
         element.setAttribute('r', radius / 10);
     }
@@ -42,7 +52,7 @@ function updateRadius(radius) {
 
 // Update opacity
 function updateOpacity(value) {
-    const svgElement = document.querySelector('svg');
+    const svgElement = selectSvg();
     const opacity = value / 100;
     for (const element of svgElement.querySelectorAll('*')) {
         // ignore image

@@ -56,8 +56,10 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     if let Some(title) = args.title {
         writer.ws(&format!("<title>{}</title>\n", title))?;
     }
-    let style = include_str!("../../../scolrs/src/templates/catalog.css");
     writer.ws("<style>\n")?;
+    let style = include_str!("../../../scolrs/src/templates/catalog.css");
+    writer.ws(style)?;
+    let style = include_str!("../../../scolrs/src/templates/draw_setting.css");
     writer.ws(style)?;
     writer.ws("</style>\n")?;
     writer.ws("</head>\n")?;
@@ -84,6 +86,10 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
         (
             "catalog_popup.jinja",
             include_str!("../../../scolrs/src/templates/catalog_popup.jinja"),
+        ),
+        (
+            "draw_setting.jinja",
+            include_str!("../../../scolrs/src/templates/draw_setting.jinja"),
         ),
     ])?;
 
@@ -211,6 +217,12 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     );
     let div_popup = templates.render("catalog_popup.jinja", &context)?;
     writer.ws(&div_popup)?;
-    writer.ws("</body></html>\n")?;
+    writer.ws("</body>\n")?;
+    writer.ws("<script>\n")?;
+    let javascript = include_str!("../../../scolrs/src/templates/draw_setting.js");
+    writer.ws(javascript)?;
+    writer.ws("</script>\n")?;
+    writer.ws("</html>\n")?;
+
     Ok(())
 }
