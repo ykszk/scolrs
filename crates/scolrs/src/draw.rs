@@ -277,6 +277,12 @@ impl CobbAux {
         dft.plate_scale *= -1.0;
         dft
     }
+    fn flip_default() -> Self {
+        Self {
+            flip_sign: true,
+            ..Default::default()
+        }
+    }
 }
 
 fn rotate_around<S, T>(
@@ -1165,7 +1171,7 @@ pub fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureEr
     points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];
-    let angle = angle_between(hor_line.view(), points);
+    let angle = angle_between(points, hor_line.view());
     Ok(angle.to_degrees())
 }
 
@@ -1226,6 +1232,7 @@ pub fn draw_incidence_angle(
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
     g = g.add(painter.line(perp_line.view()));
     let angle = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
+    let angle = angle.abs();
     let text = format!("{:.1}°", angle);
     let text = painter.text(&text, sac_sup_mid, Some(label), None);
 
@@ -1250,7 +1257,7 @@ pub fn femoral_incidence_angle(
     perp_sac += &sac_sup_mid;
     let perp_line = stack![Axis(0), sac_sup_mid, perp_sac];
     let angle_deg = angle_between(line_sac2fem.view(), perp_line.view()).to_degrees();
-    Ok(angle_deg)
+    Ok(angle_deg.abs())
 }
 
 /// Shared function for drawing T1 tilt angle in coronal view and T1 slope in sagittal view
@@ -1289,22 +1296,20 @@ where
         let arc_radius = mult_arc * l2r.l2norm();
         arc_start[[0]] += arc_radius;
 
-        if l2r[1] != 0.0 {
-            // draw tilted T1 line
-            let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
-            hor_line[[0, 0]] -= mult_left * l2r.l2norm();
-            hor_line[[1, 0]] += mult_right * l2r.l2norm();
-            g = painter
-                .angle_between(
-                    g,
-                    sup_line.view(),
-                    hor_line.view(),
-                    mid.view(),
-                    arc_radius,
-                    Some(label),
-                )
-                .0;
-        }
+        // draw tilted T1 line
+        let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
+        hor_line[[0, 0]] -= mult_left * l2r.l2norm();
+        hor_line[[1, 0]] += mult_right * l2r.l2norm();
+        g = painter
+            .angle_between(
+                g,
+                hor_line.view(),
+                sup_line.view(),
+                mid.view(),
+                arc_radius,
+                Some(label),
+            )
+            .0;
     };
     Ok(g)
 }
