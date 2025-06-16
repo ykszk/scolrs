@@ -82,7 +82,7 @@ impl From<&CoronalDrawGroup> for Vec<CoronalDraw> {
         match group {
             CoronalDrawGroup::CobbExtra => vec![Centroids, SpinalLine, CurveApex],
             CoronalDrawGroup::NonCobb => vec![
-                CSVL,
+                AVT,
                 T1TiltAngle,
                 CoronalBalance,
                 ClavicleAngle,

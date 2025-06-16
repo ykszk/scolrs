@@ -1,7 +1,7 @@
 use crate::draw::{self, Named};
-use crate::{ApexSet, Curve, ScaledType, Spine};
+use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
-use ndarray::{s, stack, Array2, Axis};
+use ndarray::{s, stack, Array1, Array2, Axis};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
 
@@ -36,7 +36,7 @@ macro_rules! impl_cobb_angle {
                 let (curve, _angle) = self.1.as_ref().unwrap();
                 let color = line_colors.get_or_new(self.id());
                 let g = self.default_group().set("stroke", color);
-                let aux_param = CobbAux::flip_default();
+                let aux_param = CobbAux::default();
                 let mean_plate_length = mean_plate_length(&coronal_points.spine);
 
                 let group = painter.cobb(
@@ -62,28 +62,28 @@ macro_rules! impl_cobb_angle {
     };
 }
 
-/// Cobb angle for PT curve
+/// Cobb angle for proximal thoracic (PT) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbPT<'_> {}
 impl_cobb_angle!(CobbPT);
 
-/// Cobb angle for MT curve
+/// Cobb angle for main thoracic (MT) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbMT<'_> {}
 impl_cobb_angle!(CobbMT);
 
-/// Cobb angle for TLL curve
+/// Cobb angle for thoracolumbar/lumbar (TL/L) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbTLL<'_> {}
 impl_cobb_angle!(CobbTLL);
 
-/// Curve apices for each curve
+/// Curve apex for each curve
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
 struct CurveApex<'a>(&'a CoronalPoints, &'a ApexSet);
@@ -150,12 +150,41 @@ impl DrawComponent for SpinalLine<'_> {
     }
 }
 
-/// center sacral vertical line (CSVL) (p. 54)
+/// Apical Vertebral Translation (AVT) (p. 51)
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
-pub struct Csvl<'a>(&'a CoronalPoints, &'a ApexSet);
-impl CoronalComponent for Csvl<'_> {}
-impl DrawComponent for Csvl<'_> {
+pub struct Avt<'a>(&'a CoronalPoints, &'a CurveDesc);
+impl CoronalComponent for Avt<'_> {}
+impl Avt<'_> {
+    fn prep(
+        coronal_points: &CoronalPoints,
+        curve_desc: &CurveDesc,
+    ) -> Result<(Array1<f64>, Array1<f64>), MeasureError> {
+        let curve_set = &curve_desc.curves;
+        if curve_set.pt.is_none() && curve_set.mt.is_none() && curve_set.tll.is_none() {
+            return Err(MeasureError::NoCurveFound);
+        }
+        let spine = &coronal_points.spine;
+        let (mid, apex) = match curve_desc.major_curve {
+            Some(crate::lenke::MajorCurve::MT) => {
+                let c7_centroid = spine.c_c7tl.index_axis(Axis(0), 0);
+                (c7_centroid.to_owned(), curve_desc.apices.mt.unwrap())
+            }
+            Some(crate::lenke::MajorCurve::TLL) => {
+                let sup_plate = spine.sacral_sup_plate();
+                let mid = sup_plate.mean_axis(Axis(0)).unwrap();
+                (mid, curve_desc.apices.tll.unwrap())
+            }
+            None => unreachable!(),
+        };
+        let veert_disc_centroids = crate::Centroids::from(spine.tl_vert_disc_corners());
+        let apex_centroid = veert_disc_centroids
+            .index_axis(Axis(0), apex as usize)
+            .to_owned();
+        Ok((apex_centroid, mid))
+    }
+}
+impl DrawComponent for Avt<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
@@ -163,22 +192,33 @@ impl DrawComponent for Csvl<'_> {
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
         let coronal_points = self.0;
-        let spine = &coronal_points.spine;
         let label = self.id();
         let line_color = line_colors.get_or_new(label);
-        let mut g = self.default_group().set("stroke", line_color);
-        let sup_plate = spine.sacral_sup_plate();
-        let sacral_line = painter.line(sup_plate.view());
-        g = g.add(sacral_line);
-        if let Some(tll) = self.1.tll {
-            let v_idx = ((tll as u8) / 2 - 1) as usize; // one level above the tll apex
-            let mid = sup_plate.mean_axis(Axis(0)).unwrap();
-            let mut vl = ndarray::stack![Axis(0), mid, mid];
-            let y = spine.c7tls.0[[v_idx + 1, 0, 1]]; // v_idx+1 because vertebrae include c7
-            vl[[0, 1]] = y;
-            g = g.add(painter.line(vl));
-        }
+        let mut g = self
+            .default_group()
+            .set("stroke", line_color)
+            .set("fill", line_color);
+
+        let (apex_centroid, mid) = Self::prep(coronal_points, self.1)?;
+
+        let points = stack![Axis(0), apex_centroid, mid.view()];
+        g = draw_difference_in_x(
+            g,
+            "AVT",
+            label,
+            points.view(),
+            painter,
+            coronal_points.image_metadata.unit.as_str(),
+        )?;
         Ok(g)
+    }
+}
+
+impl MeasureComponent for Avt<'_> {
+    fn measure(&self) -> Result<f64, MeasureError> {
+        let (apex_centroid, mid) = Self::prep(self.0, self.1)?;
+        let dx = apex_centroid[0] - mid[0];
+        Ok(dx)
     }
 }
 
@@ -199,6 +239,7 @@ impl DrawComponent for T1TiltAngle<'_> {
             line_colors,
             &self.0.spine,
             self,
+            false,
             self.default_group(),
         )
     }
@@ -320,7 +361,7 @@ impl MeasureComponent for ShoulderHeight<'_> {
             .0
             .validate_label_length("Shoulder", 2)?;
         let points = coronal_points.shoulder.0.view();
-        let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
+        let dy = points.index_axis(Axis(0), 1)[1] - points.index_axis(Axis(0), 0)[1];
         Ok(dy)
     }
 }
@@ -374,7 +415,7 @@ impl SacralObliquity<'_> {
         // slide the line connecting the femoral head points to the sacral line
         let mut fem_line = sac_seg.clone();
         fem_line[[1, 1]] = fem_line[[0, 1]];
-        let leg_tilt_angle = tilt_angle("FemoralHead", femoral_head.view())?.to_radians();
+        let leg_tilt_angle = -tilt_angle("FemoralHead", femoral_head.view())?.to_radians();
         let p_on_right = draw::rotate_around(
             fem_line.index_axis(Axis(0), 1),
             fem_line.index_axis(Axis(0), 0),
@@ -466,7 +507,7 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
             .0
             .validate_label_length("FemoralHead", 2)?;
         let points = coronal_points.femoral_head.0.view();
-        let dy = points.index_axis(Axis(0), 0)[1] - points.index_axis(Axis(0), 1)[1];
+        let dy = points.index_axis(Axis(0), 1)[1] - points.index_axis(Axis(0), 0)[1];
         Ok(dy)
     }
 }
@@ -486,7 +527,7 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalDraw::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
 
             CoronalDraw::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
-            CoronalDraw::CSVL => Box::new(Csvl(coronal_points, apex_set)),
+            CoronalDraw::AVT => Box::new(Avt(coronal_points, &coronal_set.curves)),
             CoronalDraw::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
             CoronalDraw::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
             CoronalDraw::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
@@ -516,6 +557,7 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
             CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
 
+            CoronalMeasure::Avt => Box::new(Avt(coronal_points, &coronal_points_and_curve.curves)),
             CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
             CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
             CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),

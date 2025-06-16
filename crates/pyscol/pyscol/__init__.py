@@ -102,7 +102,7 @@ def ada_minmax(arr: np.ndarray, tile_width: int, tile_height: int, tile_sample: 
 
 def default_coronal_hide() -> list[str]:
     return [
-        "CSVL",
+        "AVT",
         "T1TiltAngle",
         "CoronalBalance",
         "ClavicleAngle",

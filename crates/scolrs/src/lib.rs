@@ -1694,7 +1694,7 @@ impl Spine {
     pub fn angle(&self, curve: &Curve) -> Option<f64> {
         let sup_line = self.sup_plate(curve.sup);
         let inf_line = self.inf_plate(curve.inf);
-        angle_from_lines(sup_line, inf_line)
+        angle_from_lines(sup_line, inf_line).map(|a| -a)
     }
 }
 
@@ -1963,10 +1963,10 @@ pub enum CoronalDraw {
     Centroids,
     SpinalLine,
     CurveApex,
-    CSVL,
     CobbPT,
     CobbMT,
     CobbTLL,
+    AVT,
     T1TiltAngle,
     CoronalBalance,
     ClavicleAngle,
@@ -1998,6 +1998,7 @@ pub enum CoronalMeasure {
     CobbPT,
     CobbMT,
     CobbTLL,
+    Avt,
     T1TiltAngle,
     CoronalBalance,
     ClavicleAngle,

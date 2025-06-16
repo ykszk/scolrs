@@ -272,12 +272,12 @@ impl Default for CobbAux {
 }
 
 impl CobbAux {
-    fn opposite_default() -> Self {
+    pub fn opposite_default() -> Self {
         let mut dft = Self::default();
         dft.plate_scale *= -1.0;
         dft
     }
-    fn flip_default() -> Self {
+    pub fn flip_default() -> Self {
         Self {
             flip_sign: true,
             ..Default::default()
@@ -1113,8 +1113,10 @@ fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureE
     difference_in_index(label, points, 0)
 }
 
+/// Difference in y-coordinates of two points
+/// Return positive value if the first point is above the second point
 fn difference_in_y(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
-    difference_in_index(label, points, 1)
+    difference_in_index(label, points, 1).map(|dy| -dy)
 }
 
 fn draw_difference_in_x(
@@ -1191,7 +1193,7 @@ pub fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureEr
     points.validate_label_length(label, 2)?;
     let mut hor_line = points.to_owned();
     hor_line[[1, 1]] = points[[0, 1]];
-    let angle = angle_between(points, hor_line.view());
+    let angle = angle_between(hor_line.view(), points);
     Ok(angle.to_degrees())
 }
 
@@ -1291,6 +1293,7 @@ fn draw_t1_angle<T>(
     line_colors: &mut ColorPalette,
     spine: &Spine,
     component: &T,
+    flip_sign: bool,
     default_group: element::Group,
 ) -> Result<element::Group, DrawError>
 where
@@ -1325,16 +1328,29 @@ where
         let mut hor_line = stack![Axis(0), mid.view(), mid.view()];
         hor_line[[0, 0]] -= mult_left * l2r.l2norm();
         hor_line[[1, 0]] += mult_right * l2r.l2norm();
-        g = painter
-            .angle_between(
-                g,
-                hor_line.view(),
-                sup_line.view(),
-                mid.view(),
-                arc_radius,
-                Some(label),
-            )
-            .0;
+        g = if flip_sign {
+            painter
+                .angle_between(
+                    g,
+                    sup_line.view(),
+                    hor_line.view(),
+                    mid.view(),
+                    arc_radius,
+                    Some(label),
+                )
+                .0
+        } else {
+            painter
+                .angle_between(
+                    g,
+                    hor_line.view(),
+                    sup_line.view(),
+                    mid.view(),
+                    arc_radius,
+                    Some(label),
+                )
+                .0
+        };
     };
     Ok(g)
 }

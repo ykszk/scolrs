@@ -58,7 +58,7 @@ macro_rules! impl_kyophosis {
         }
         impl<'a> MeasureComponent for $name<'a> {
             fn measure(&self) -> Result<f64, MeasureError> {
-                let angle = -self
+                let angle = self
                     .0
                     .spine
                     .angle(&Curve {
@@ -173,7 +173,7 @@ impl MeasureComponent for LumbarLordosis<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
-        let angle = -spine.angle(&Curve { sup, inf }).unwrap();
+        let angle = spine.angle(&Curve { sup, inf }).unwrap();
         Ok(angle)
     }
 }
@@ -195,6 +195,7 @@ impl DrawComponent for T1Slope<'_> {
             line_colors,
             &self.0.spine,
             self,
+            true,
             self.default_group(),
         )
     }
@@ -203,7 +204,7 @@ impl MeasureComponent for T1Slope<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
-        tilt_angle("Vertebra", t1sup)
+        tilt_angle("Vertebra", t1sup).map(|a| -a)
     }
 }
 
