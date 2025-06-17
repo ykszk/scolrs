@@ -36,7 +36,7 @@ macro_rules! impl_cobb_angle {
                 let (curve, _angle) = self.1.as_ref().unwrap();
                 let color = line_colors.get_or_new(self.id());
                 let g = self.default_group().set("stroke", color);
-                let aux_param = CobbAux::default();
+                let aux_param = CobbAux::flip_default();
                 let mean_plate_length = mean_plate_length(&coronal_points.spine);
 
                 let group = painter.cobb(
@@ -53,7 +53,7 @@ macro_rules! impl_cobb_angle {
         impl<'a> MeasureComponent for $name<'a> {
             fn measure(&self) -> Result<f64, MeasureError> {
                 if let Some((_curve, angle)) = self.1.as_ref() {
-                    Ok(*angle)
+                    Ok(-*angle)
                 } else {
                     Err(MeasureError::NoCurveFound)
                 }
