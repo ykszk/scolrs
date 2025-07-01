@@ -3,10 +3,10 @@ use std::{convert::Infallible, ops::MulAssign};
 use crate::{
     angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
     draw::{
-        angle_between, distanced_pair3, draw_incidence_angle, femoral_incidence_angle, points2line,
-        CobbAux, ColorPalette, DrawArguments, DrawComponent, DrawCorners, DrawError, MeasureError,
-        Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
-        CLASS_POINT, CLASS_TEXT,
+        angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
+        femoral_incidence_angle, points2line, tilt_angle, CobbAux, ColorPalette, DrawArguments,
+        DrawComponent, DrawCorners, DrawError, MeasureError, Named, Painter, CLASS_ANGLE,
+        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
@@ -1071,6 +1071,66 @@ impl NeckMeasureComponent for OccipitocervicalInclination<'_> {
     }
 }
 
+/// Cranial Slope
+/// Angle between McGregor's line and the horizontal line
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct CranialSlope<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for CranialSlope<'_> {}
+impl DrawComponent for CranialSlope<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color).set("fill", color);
+        let mcgregor_points = self.0.mcgregor_line()?;
+        group = draw_tilt_angle(group, painter, &mcgregor_points, Some(self.id()));
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for CranialSlope<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let mcgregor_points = self.0.mcgregor_line()?;
+        tilt_angle(self.id(), mcgregor_points.view()).map(|angle| vec![angle])
+    }
+}
+
+/// T1 tilt angle (T1 slope)
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct T1Tilt<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for T1Tilt<'_> {}
+impl T1Tilt<'_> {
+    fn prep(&self) -> Array2<f64> {
+        let t1 = self.0.corners.0.index_axis(Axis(0), 6);
+        let t1_top_plate = t1.slice(s![..2, ..]);
+        t1_top_plate.to_owned()
+    }
+}
+impl DrawComponent for T1Tilt<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let group = self.default_group().set("stroke", color).set("fill", color);
+        let t1_top_plate = self.prep();
+        let group = draw_tilt_angle(group, painter, &t1_top_plate, Some(self.id()));
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for T1Tilt<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let t1_top_plate = self.prep();
+        tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![angle])
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1183,6 +1243,8 @@ pub enum NeckLateralMeasure {
     NeckTilt,
     SpinoCranialAngle,
     OccipitocervicalInclination,
+    CranialSlope,
+    T1Tilt,
 }
 
 impl NeckLateralMeasure {
@@ -1211,6 +1273,8 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::OccipitocervicalInclination => {
                 Box::new(OccipitocervicalInclination(lateral_points))
             }
+            NeckLateralMeasure::CranialSlope => Box::new(CranialSlope(lateral_points)),
+            NeckLateralMeasure::T1Tilt => Box::new(T1Tilt(lateral_points)),
         }
     }
 }
@@ -1231,6 +1295,8 @@ pub enum NeckLateralDraw {
     NeckTilt,
     SpinoCranialAngle,
     OccipitocervicalInclination,
+    CranialSlope,
+    T1Tilt,
 }
 
 impl NeckLateralDraw {
@@ -1257,6 +1323,8 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::OccipitocervicalInclination => {
                 Box::new(OccipitocervicalInclination(lateral_points))
             }
+            NeckLateralDraw::CranialSlope => Box::new(CranialSlope(lateral_points)),
+            NeckLateralDraw::T1Tilt => Box::new(T1Tilt(lateral_points)),
         }
     }
 }

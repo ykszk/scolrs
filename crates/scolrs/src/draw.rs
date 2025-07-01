@@ -1197,7 +1197,7 @@ pub fn tilt_angle(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureEr
     Ok(angle.to_degrees())
 }
 
-fn draw_tilt_angle(
+pub fn draw_tilt_angle(
     group: element::Group,
     painter: &mut Painter,
     points: &ndarray::Array2<f64>,
