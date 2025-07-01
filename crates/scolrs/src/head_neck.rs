@@ -16,7 +16,7 @@ use clap::{self, ValueEnum};
 use lyon_geom::point;
 
 use labelme_rs::{LabelMeData, LabelMeDataLine};
-use ndarray::{concatenate, s, stack, Array, Array2, Array3, ArrayView1, ArrayView2, Axis};
+use ndarray::{concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
@@ -1000,26 +1000,27 @@ impl NeckMeasureComponent for SpinoCranialAngle<'_> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct OccipitocervicalInclination<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for OccipitocervicalInclination<'_> {}
+type OccipitocervicalInclinationPrepResult = Option<(Array2<f64>, Array2<f64>, Array1<f64>)>;
 impl OccipitocervicalInclination<'_> {
-    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
+    fn prep(&self) -> Result<OccipitocervicalInclinationPrepResult, MeasureError> {
         self.0.mcgregor_line()?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let c4 = self.0.corners.0.index_axis(Axis(0), 3);
-        let c4_lower_endplate = c4.slice(s![2.., ..]);
-        let c4_lower_middle = c4_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let c4_posterior = c4.slice(s![1..;2, ..]);
         let mcgregor_points = self.0.mcgregor_line()?;
-        // let mcgregor_to_c4 = stack![Axis(0), mcgregor_points.index_axis(Axis(0), 0).view(), c4_lower_middle];
-        let mcgregor_to_c4 = stack![
-            Axis(0),
-            mcgregor_points.index_axis(Axis(0), 0).view(),
-            c4_lower_middle.view()
-        ];
-        let c4_to_mcgregor = stack![
-            Axis(0),
-            c4_lower_middle.view(),
-            mcgregor_points.index_axis(Axis(0), 0).view()
-        ];
-        Ok((mcgregor_to_c4, c4_to_mcgregor))
+        let c4_line = points2line(c4_posterior);
+        let mcgregor_line = points2line(mcgregor_points.view());
+        let intersection = mcgregor_line.intersection(&c4_line);
+        if let Some(intersection) = intersection {
+            let intersection = Array::from(vec![intersection.x, intersection.y]);
+            Ok(Some((
+                c4_posterior.to_owned(),
+                mcgregor_points,
+                intersection,
+            )))
+        } else {
+            Ok(None)
+        }
     }
 }
 impl DrawComponent for OccipitocervicalInclination<'_> {
@@ -1031,18 +1032,25 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let (mcgregor_to_c4, c4_to_mcgregor) = self.prep()?;
+        let prep_data = self.prep()?;
+        let (c4_posterior, mcgregor_points, intersection) = if let Some(data) = prep_data {
+            data
+        } else {
+            // TODO??: draw parallel lines
+            return Ok(group); // No intersection found, nothing to draw
+        };
+        let extended_c4_line = stack![Axis(0), intersection, c4_posterior.index_axis(Axis(0), 1)];
         let arc_radius = 0.8
-            * mcgregor_to_c4
+            * c4_posterior
                 .index_axis(Axis(0), 0)
-                .l2_dist(&c4_to_mcgregor.index_axis(Axis(0), 1))
+                .l2_dist(&c4_posterior.index_axis(Axis(0), 1))
                 .unwrap();
         group = painter
             .angle_between(
                 group,
-                mcgregor_to_c4.view(),
-                c4_to_mcgregor.view(),
-                c4_to_mcgregor.index_axis(Axis(0), 0),
+                mcgregor_points.view(),
+                extended_c4_line.view(),
+                intersection.view(),
                 arc_radius,
                 Some(self.id()),
             )
@@ -1052,8 +1060,13 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
 }
 impl NeckMeasureComponent for OccipitocervicalInclination<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
-        let (mcgregor_to_c4, c4_to_mcgregor) = self.prep()?;
-        let angle = angle_between(mcgregor_to_c4.view(), c4_to_mcgregor.view()).to_degrees();
+        let prep_data = self.prep()?;
+        let (c4_posterior, mcgregor_points, _intersection) = if let Some(data) = prep_data {
+            data
+        } else {
+            return Ok(vec![0.0]); // No intersection found, return 0
+        };
+        let angle = angle_between(mcgregor_points.view(), c4_posterior.view()).to_degrees();
         Ok(vec![angle])
     }
 }
