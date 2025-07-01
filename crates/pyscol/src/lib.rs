@@ -15,6 +15,7 @@ use scolrs::{
         draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, MeasureError,
         Painter,
     },
+    head_neck::{LateralPoints, NeckLateralDraw},
     CoronalDraw, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
     PointDataWithImage, SagittalDraw, SagittalPoints, Scalable, ScaledType,
 };
@@ -423,6 +424,36 @@ pub fn py_draw_sagittal(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn py_draw_neck(
+    lateral_points_json: &str,
+    json_path: &str,
+    draws: Vec<String>,
+    hide: Vec<String>,
+    draw_param_json: &str,
+    label_colors: HashMap<String, String>,
+    line_colors: HashMap<String, String>,
+    resize: Option<String>,
+    svg_size: Option<(usize, usize)>,
+    overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
+    point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
+) -> Result<String, PyScolError> {
+    draw_generic::<LateralPoints, NeckLateralDraw>(
+        lateral_points_json,
+        json_path,
+        draws,
+        hide,
+        draw_param_json,
+        label_colors,
+        line_colors,
+        resize,
+        svg_size,
+        overlay,
+        point_sets,
+    )
+}
+
+#[pyfunction]
 fn py_wrap_in_html(
     svg: String,
     title: String,
@@ -451,6 +482,7 @@ fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(clahe_u16_u16, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_coronal, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_sagittal, m)?)?;
+    m.add_function(wrap_pyfunction!(py_draw_neck, m)?)?;
     m.add_function(wrap_pyfunction!(py_wrap_in_html, m)?)?;
     m.add_function(wrap_pyfunction!(py_calc_resize, m)?)?;
     // m.add_function(wrap_pyfunction!(ada_minmax_u8_u8, m)?)?;

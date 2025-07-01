@@ -11,6 +11,7 @@ from .pyscol import (
     trimming_box_with_resample,
     py_draw_coronal,
     py_draw_sagittal,
+    py_draw_neck,
     py_wrap_in_html,
 )
 
@@ -173,6 +174,37 @@ def draw_sagittal(
         hide = default_sagittal_hide()
     return py_draw_sagittal(
         coronal_points_json,
+        json_path,
+        draws,
+        hide,
+        draw_param_json,
+        label_colors,
+        line_colors,
+        resize,
+        svg_size,
+        overlay,
+        label_and_point_set,
+    )
+
+
+def draw_neck(
+    neck_points_json: str,
+    json_path: str | Path,
+    draws: list[str],
+    hide: Optional[list[str]],
+    draw_param_json: str,
+    label_colors: dict[str, str],
+    line_colors: dict[str, str],
+    resize: Optional[str],
+    svg_size: Optional[tuple[int, int]],
+    overlay: Optional[np.ndarray],
+    label_and_point_set: Optional[list[tuple[str, np.ndarray]]],
+) -> str:
+    json_path = str(json_path)
+    if hide is None:
+        hide = []
+    return py_draw_neck(
+        neck_points_json,
         json_path,
         draws,
         hide,
