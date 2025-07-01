@@ -611,6 +611,26 @@ impl NeckMeasureComponent for Adi<'_> {
     }
 }
 
+trait NeckExt {
+    /// McGregor's line
+    /// Line between the posterior hard palate and the occipital point
+    fn mcgregor_line(&self) -> Result<Array2<f64>, MeasureError>;
+}
+
+impl NeckExt for LateralPoints {
+    fn mcgregor_line(&self) -> Result<Array2<f64>, MeasureError> {
+        self.posterior_hard_palate
+            .validate_label_length("PosteriorHardPlate", 1)?;
+        self.occipital.validate_label_length("Occipital", 1)?;
+        let mcgregor_points = stack![
+            Axis(0),
+            self.posterior_hard_palate.index_axis(Axis(0), 0),
+            self.occipital.index_axis(Axis(0), 0),
+        ];
+        Ok(mcgregor_points)
+    }
+}
+
 /// Occiput-C2 Angle
 /// Angle between McGregor's line and C2 lower endplate
 #[derive(Named)]
@@ -619,15 +639,7 @@ pub struct OC2<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for OC2<'_> {}
 impl OC2<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
-        self.0.occipital.validate_label_length("Occipital", 1)?;
-        self.0
-            .posterior_hard_palate
-            .validate_label_length("PosteriorHardPlate", 1)?;
-        let mcgregor_points = stack![
-            Axis(0),
-            self.0.posterior_hard_palate.index_axis(Axis(0), 0).view(),
-            self.0.occipital.index_axis(Axis(0), 0).view(),
-        ];
+        let mcgregor_points = self.0.mcgregor_line()?;
         let c2 = self.0.corners.0.index_axis(Axis(0), 0);
         let c2_lower_endplate = c2.slice(s![2.., ..]).to_owned();
         Ok((mcgregor_points, c2_lower_endplate))
@@ -921,6 +933,131 @@ impl NeckMeasureComponent for NeckTilt<'_> {
     }
 }
 
+/// Spino-Cranial Angle
+/// Angle between C7 upper endplate and the line connecting sella and the middle of C7 upper endplate
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct SpinoCranialAngle<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for SpinoCranialAngle<'_> {}
+impl SpinoCranialAngle<'_> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
+        self.0.sella.validate_label_length("Sella", 1)?;
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
+        let c7 = self.0.corners.0.index_axis(Axis(0), 6);
+        let c7_upper_endplate = c7.slice(s![..2, ..]);
+        let c7_upper_middle = c7_upper_endplate.mean_axis(Axis(0)).unwrap();
+        let sella = self.0.sella.index_axis(Axis(0), 0);
+        // let sella_to_c7 = stack![Axis(0), sella, c7_upper_middle.view()];
+        let c7_to_sella = stack![Axis(0), c7_upper_middle.view(), sella.view()];
+        let c7_mid_to_posterior = stack![
+            Axis(0),
+            c7_upper_middle.view(),
+            c7_upper_endplate.index_axis(Axis(0), 1).view()
+        ];
+        Ok((c7_to_sella, c7_mid_to_posterior))
+    }
+}
+impl DrawComponent for SpinoCranialAngle<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let (c7_to_sella, c7_mid_to_posterior) = self.prep()?;
+
+        let arc_radius = 0.8
+            * c7_to_sella
+                .index_axis(Axis(0), 0)
+                .l2_dist(&c7_mid_to_posterior.index_axis(Axis(0), 1))
+                .unwrap();
+        group = painter
+            .angle_between(
+                group,
+                c7_to_sella.view(),
+                c7_mid_to_posterior.view(),
+                c7_mid_to_posterior.index_axis(Axis(0), 0),
+                arc_radius,
+                Some(self.id()),
+            )
+            .0;
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for SpinoCranialAngle<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let (c7_to_sella, c7_mid_to_posterior) = self.prep()?;
+        let angle = angle_between(c7_to_sella.view(), c7_mid_to_posterior.view()).to_degrees();
+        Ok(vec![angle])
+    }
+}
+
+/// Occipitocervical inclination
+/// The angle formed by the line connecting McGregor’s line and the posterior border of the C4 vertebral body
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct OccipitocervicalInclination<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for OccipitocervicalInclination<'_> {}
+impl OccipitocervicalInclination<'_> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
+        self.0.mcgregor_line()?;
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
+        let c4 = self.0.corners.0.index_axis(Axis(0), 3);
+        let c4_lower_endplate = c4.slice(s![2.., ..]);
+        let c4_lower_middle = c4_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let mcgregor_points = self.0.mcgregor_line()?;
+        // let mcgregor_to_c4 = stack![Axis(0), mcgregor_points.index_axis(Axis(0), 0).view(), c4_lower_middle];
+        let mcgregor_to_c4 = stack![
+            Axis(0),
+            mcgregor_points.index_axis(Axis(0), 0).view(),
+            c4_lower_middle.view()
+        ];
+        let c4_to_mcgregor = stack![
+            Axis(0),
+            c4_lower_middle.view(),
+            mcgregor_points.index_axis(Axis(0), 0).view()
+        ];
+        Ok((mcgregor_to_c4, c4_to_mcgregor))
+    }
+}
+impl DrawComponent for OccipitocervicalInclination<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let (mcgregor_to_c4, c4_to_mcgregor) = self.prep()?;
+        let arc_radius = 0.8
+            * mcgregor_to_c4
+                .index_axis(Axis(0), 0)
+                .l2_dist(&c4_to_mcgregor.index_axis(Axis(0), 1))
+                .unwrap();
+        group = painter
+            .angle_between(
+                group,
+                mcgregor_to_c4.view(),
+                c4_to_mcgregor.view(),
+                c4_to_mcgregor.index_axis(Axis(0), 0),
+                arc_radius,
+                Some(self.id()),
+            )
+            .0;
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for OccipitocervicalInclination<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let (mcgregor_to_c4, c4_to_mcgregor) = self.prep()?;
+        let angle = angle_between(mcgregor_to_c4.view(), c4_to_mcgregor.view()).to_degrees();
+        Ok(vec![angle])
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1031,6 +1168,8 @@ pub enum NeckLateralMeasure {
     ModifiedRenawatIndex,
     ThoracicInletAngle,
     NeckTilt,
+    SpinoCranialAngle,
+    OccipitocervicalInclination,
 }
 
 impl NeckLateralMeasure {
@@ -1055,6 +1194,10 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             }
             NeckLateralMeasure::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralMeasure::NeckTilt => Box::new(NeckTilt(lateral_points)),
+            NeckLateralMeasure::SpinoCranialAngle => Box::new(SpinoCranialAngle(lateral_points)),
+            NeckLateralMeasure::OccipitocervicalInclination => {
+                Box::new(OccipitocervicalInclination(lateral_points))
+            }
         }
     }
 }
@@ -1073,6 +1216,8 @@ pub enum NeckLateralDraw {
     ModifiedRenawatIndex,
     ThoracicInletAngle,
     NeckTilt,
+    SpinoCranialAngle,
+    OccipitocervicalInclination,
 }
 
 impl NeckLateralDraw {
@@ -1095,6 +1240,10 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::ModifiedRenawatIndex => Box::new(ModifiedRenawatIndex(lateral_points)),
             NeckLateralDraw::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralDraw::NeckTilt => Box::new(NeckTilt(lateral_points)),
+            NeckLateralDraw::SpinoCranialAngle => Box::new(SpinoCranialAngle(lateral_points)),
+            NeckLateralDraw::OccipitocervicalInclination => {
+                Box::new(OccipitocervicalInclination(lateral_points))
+            }
         }
     }
 }
