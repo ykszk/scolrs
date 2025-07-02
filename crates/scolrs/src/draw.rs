@@ -1066,6 +1066,7 @@ pub const CLASS_TEXT: &str = "Text";
 pub const CLASS_MEASURE: &str = "Measure";
 pub const CLASS_ANGLE: &str = "Angle";
 pub const CLASS_DISTANCE: &str = "Distance";
+pub const CLASS_RATIO: &str = "Ratio";
 
 /// Centroids of each vertebra
 #[derive(Named)]

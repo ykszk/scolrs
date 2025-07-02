@@ -6,7 +6,8 @@ use crate::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
         femoral_incidence_angle, points2line, tilt_angle, CobbAux, ColorPalette, DrawArguments,
         DrawComponent, DrawCorners, DrawError, MeasureError, Named, Painter, CLASS_ANGLE,
-        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_TEXT,
+        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO,
+        CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
@@ -1131,6 +1132,102 @@ impl NeckMeasureComponent for T1Tilt<'_> {
     }
 }
 
+/// Torg-Pavlov Ratio
+/// canal-to-body ratio: https://radiopaedia.org/articles/canal-to-body-ratio-of-torg-and-pavlov
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_RATIO])]
+pub struct TPR<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for TPR<'_> {}
+impl DrawComponent for TPR<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
+        let lamina_below_c2 = self.0.lamina.slice(s![2.., ..]);
+        let vertebra_below_c2 = self.0.corners.0.slice(s![1.., .., ..]);
+        for (i, (lamina, vertebra)) in lamina_below_c2
+            .axis_iter(Axis(0))
+            .zip(vertebra_below_c2.axis_iter(Axis(0)))
+            .enumerate()
+        {
+            let anterior_mid_point = stack![
+                Axis(0),
+                vertebra.index_axis(Axis(0), 0),
+                vertebra.index_axis(Axis(0), 2)
+            ]
+            .mean_axis(Axis(0))
+            .unwrap();
+            let posterior_mid_point = stack![
+                Axis(0),
+                vertebra.index_axis(Axis(0), 1),
+                vertebra.index_axis(Axis(0), 3)
+            ]
+            .mean_axis(Axis(0))
+            .unwrap();
+            let canal_diameter = lamina.l2_dist(&posterior_mid_point).unwrap();
+            let body_diameter = anterior_mid_point.l2_dist(&posterior_mid_point).unwrap();
+            let ratio = canal_diameter / body_diameter;
+
+            let poly = painter.polyline(stack![
+                Axis(0),
+                anterior_mid_point.view(),
+                posterior_mid_point.view(),
+                lamina.view()
+            ]);
+            group = group.add(poly);
+            let title = if i < 6 {
+                format!("C{}-TPR", i + 2)
+            } else {
+                format!("T{}-TPR", i - 5)
+            };
+            let text = painter.text(
+                &format!("{:.2}", ratio),
+                anterior_mid_point.view(),
+                Some(&title),
+                None,
+            );
+            group = group.add(text);
+        }
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for TPR<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        self.0.corners.0.validate_label_length("Vertebra", 7)?;
+        let mut ratios = Vec::new();
+        let lamina_below_c2 = self.0.lamina.slice(s![2.., ..]);
+        let vertebra_below_c2 = self.0.corners.0.slice(s![1.., .., ..]);
+        for (lamina, vertebra) in lamina_below_c2
+            .axis_iter(Axis(0))
+            .zip(vertebra_below_c2.axis_iter(Axis(0)))
+        {
+            let anterior_mid_point = stack![
+                Axis(0),
+                vertebra.index_axis(Axis(0), 0),
+                vertebra.index_axis(Axis(0), 2)
+            ]
+            .mean_axis(Axis(0))
+            .unwrap();
+            let posterior_mid_point = stack![
+                Axis(0),
+                vertebra.index_axis(Axis(0), 1),
+                vertebra.index_axis(Axis(0), 3)
+            ]
+            .mean_axis(Axis(0))
+            .unwrap();
+            let canal_diameter = lamina.l2_dist(&posterior_mid_point).unwrap();
+            let body_diameter = anterior_mid_point.l2_dist(&posterior_mid_point).unwrap();
+            ratios.push(canal_diameter / body_diameter);
+        }
+        Ok(ratios)
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1245,6 +1342,7 @@ pub enum NeckLateralMeasure {
     OccipitocervicalInclination,
     CranialSlope,
     T1Tilt,
+    TPR,
 }
 
 impl NeckLateralMeasure {
@@ -1275,6 +1373,7 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             }
             NeckLateralMeasure::CranialSlope => Box::new(CranialSlope(lateral_points)),
             NeckLateralMeasure::T1Tilt => Box::new(T1Tilt(lateral_points)),
+            NeckLateralMeasure::TPR => Box::new(TPR(lateral_points)),
         }
     }
 }
@@ -1297,6 +1396,7 @@ pub enum NeckLateralDraw {
     OccipitocervicalInclination,
     CranialSlope,
     T1Tilt,
+    TPR,
 }
 
 impl NeckLateralDraw {
@@ -1325,6 +1425,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             }
             NeckLateralDraw::CranialSlope => Box::new(CranialSlope(lateral_points)),
             NeckLateralDraw::T1Tilt => Box::new(T1Tilt(lateral_points)),
+            NeckLateralDraw::TPR => Box::new(TPR(lateral_points)),
         }
     }
 }
