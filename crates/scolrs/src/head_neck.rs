@@ -883,7 +883,7 @@ impl NeckMeasureComponent for ThoracicInletAngle<'_> {
 pub struct NeckTilt<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for NeckTilt<'_> {}
 impl NeckTilt<'_> {
-    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>, f64), MeasureError> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         self.0.manubrium.validate_label_length("Manubrium", 1)?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
@@ -894,11 +894,18 @@ impl NeckTilt<'_> {
             self.0.manubrium.index_axis(Axis(0), 0).view(),
             t1_top_middle
         ];
-        let mut v_line_from_manubrium = manubrium_to_t1.clone();
-        v_line_from_manubrium[[1, 0]] = manubrium_to_t1[[0, 0]];
-        let angle =
-            angle_between(v_line_from_manubrium.view(), manubrium_to_t1.view()).to_degrees();
-        Ok((manubrium_to_t1, v_line_from_manubrium, angle))
+        let mut v_line_from_manubrium = stack![
+            Axis(0),
+            self.0.manubrium.index_axis(Axis(0), 0),
+            self.0.manubrium.index_axis(Axis(0), 0),
+        ];
+        let v_line_length = 0.5
+            * manubrium_to_t1
+                .index_axis(Axis(0), 0)
+                .l2_dist(&manubrium_to_t1.index_axis(Axis(0), 1))
+                .unwrap();
+        v_line_from_manubrium[[1, 1]] -= v_line_length;
+        Ok((v_line_from_manubrium, manubrium_to_t1))
     }
 }
 impl DrawComponent for NeckTilt<'_> {
@@ -910,26 +917,27 @@ impl DrawComponent for NeckTilt<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let (manubrium_to_t1, v_line_from_manubrium, angle) = self.prep()?;
-        let line = painter.line(manubrium_to_t1.view());
-        group = group.add(line);
-        let line = painter.line(v_line_from_manubrium.view());
-        group = group.add(line);
-
-        let text = format!("{:.1}°", angle);
-        let text = painter.text(
-            &text,
-            self.0.manubrium.index_axis(Axis(0), 0),
-            Some(self.id()),
-            None,
-        );
-        group = group.add(text);
+        let (v_line_from_manubrium, manubrium_to_t1) = self.prep()?;
+        group = painter
+            .angle_between(
+                group,
+                v_line_from_manubrium.view(),
+                manubrium_to_t1.view(),
+                v_line_from_manubrium.index_axis(Axis(0), 0),
+                0.8 * manubrium_to_t1
+                    .index_axis(Axis(0), 0)
+                    .l2_dist(&v_line_from_manubrium.index_axis(Axis(0), 1))
+                    .unwrap(),
+                Some(self.id()),
+            )
+            .0;
         Ok(group)
     }
 }
 impl NeckMeasureComponent for NeckTilt<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
-        let (_, _, angle) = self.prep()?;
+        let (line1, line2) = self.prep()?;
+        let angle = angle_between(line1.view(), line2.view()).to_degrees();
         Ok(vec![angle])
     }
 }
