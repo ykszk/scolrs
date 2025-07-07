@@ -13,8 +13,10 @@ from .pyscol import (
     py_draw_sagittal,
     py_draw_neck,
     py_wrap_in_html,
+    version as pyscol_version,
 )
 
+__version__ = pyscol_version()
 
 class TrimImageFilter(str, Enum):
     Original = ('original',)

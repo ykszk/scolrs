@@ -22,6 +22,11 @@ use scolrs::{
 use svg::node::element;
 
 #[pyfunction]
+fn version() -> String {
+    scolrs::VERSION.to_string()
+}
+
+#[pyfunction]
 #[pyo3(name = "trimming_box_with_resample")]
 fn py_trimming_box_with_resample(
     arr2d: PyReadonlyArray2<'_, i16>,
@@ -476,6 +481,7 @@ fn py_calc_resize(
 #[pymodule]
 fn pyscol(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     env_logger::init();
+    m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(py_trimming_box_with_resample, m)?)?;
     m.add_function(wrap_pyfunction!(clahe_u8_u8, m)?)?;
     m.add_function(wrap_pyfunction!(clahe_u16_u8, m)?)?;
