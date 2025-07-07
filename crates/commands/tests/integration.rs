@@ -74,7 +74,6 @@ fn test_redirect() -> Result<()> {
     cmd.arg("svg-ndjson")
         .arg(&ndjson_native)
         .arg("-")
-        .arg("--labelme")
         .arg("coronal")
         .assert()
         .success();

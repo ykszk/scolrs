@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use log::debug;
 
@@ -398,6 +398,10 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
     }
 
     let (svg_common, subcommand) = load_svg_common(args.svg_args)?;
+
+    if svg_common.labelme {
+        bail!("LabelMe format is not supported ndjson input");
+    }
 
     let reader = if args.input.as_os_str() == "-" {
         Box::new(BufReader::new(std::io::stdin())) as Box<dyn BufRead>
