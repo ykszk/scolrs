@@ -6,12 +6,24 @@ authors.workspace = true
 repository.workspace = true
 description.workspace = true
 
+
+[lib]
+name = "deepscol"
+path = "src/lib.rs"
+
+[[bin]]
+name = "deepscol"
+path = "src/main.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
 env_logger.workspace = true
 image = "0.25.6"
+imageproc = "0.25.0"
+labelme-rs.workspace = true
 log.workspace = true
 ndarray.workspace = true
 ort = "1.16.3"
+serde_json.workspace = true
 tracing-subscriber = "0.3.19"
