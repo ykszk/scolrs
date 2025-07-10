@@ -3,25 +3,34 @@ use std::vec;
 use anyhow::Result;
 use ndarray::{s, Array3, Axis, CowArray, NewAxis};
 // use ndarray_npz::ndarray::{s, Array3, Axis, CowArray, NewAxis};
+use clap::Parser;
 use ort::{Environment, GraphOptimizationLevel, SessionBuilder, Value};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// Path to the ONNX model file
+    model: PathBuf,
+    /// Path to the input image file
+    input_image: PathBuf,
+    /// Path to save the output heatmaps or image
+    output_image: PathBuf,
+    /// Save LabelMe format points
+    #[arg(long)]
+    labelme: Option<PathBuf>,
+    /// Text file of labels for the points in LabelMe format
+    #[arg(long)]
+    labels: Option<PathBuf>,
+}
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    // get arguments: first is the model path, second is the image path, and third is the output path
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 4 {
-        eprintln!(
-            "Usage: {} <model_path> <input_image_path> <output_image_path> [labelme_path]",
-            args[0]
-        );
-        std::process::exit(1);
-    }
-    let model_path = &args[1];
-    let image_path = &args[2];
-    let output_path = &args[3];
-    log::info!("Model path: {}", model_path);
-    log::info!("Image path: {}", image_path);
-    log::info!("Output path: {}", output_path);
+
+    let args = Args::parse();
+    let model_path = &args.model;
+    let image_path = &args.input_image;
+    let output_path = &args.output_image;
 
     // Load the model
     let environment = Environment::builder().build()?.into_arc();
@@ -33,9 +42,10 @@ fn main() -> Result<()> {
     log::debug!("model input dimensions {:?}", session.inputs[0].dimensions);
     // Load the image
     let image = image::open(image_path).expect("Failed to open image");
+    let original_image_width = image.width();
     let original_image_height = image.height();
     log::info!("Image loaded successfully");
-    let model_input_height = session.inputs[0].dimensions[2].unwrap() as u32;
+    let model_input_height = session.inputs[0].dimensions[2].unwrap();
     let image = image.thumbnail(10000, model_input_height);
     // Convert the image to a tensor
     let image = Array3::from_shape_vec(
@@ -77,7 +87,6 @@ fn main() -> Result<()> {
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
     if output_path.ends_with(".npz") {
-        log::info!("Saving output as npz file at {}", output_path);
         let mut npz = ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
         //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
         let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
@@ -105,30 +114,53 @@ fn main() -> Result<()> {
             .save(output_path)
             .expect("Failed to save output image");
     }
-    if args.len() > 4 {
-        let labelme_path = &args[4];
-        log::info!(
-            "Extracting points and saving to LabelMe format at {}",
-            labelme_path
-        );
+
+    if let Some(labelme_path) = &args.labelme {
         let points = deepscol::extract_points(&output3, 0.1).unwrap();
         // Save the points to LabelMe format
         let mut lm_data = labelme_rs::LabelMeData {
-            imagePath: image_path.to_string(),
+            imagePath: std::path::absolute(image_path)?
+                .to_string_lossy()
+                .to_string(),
+            imageHeight: original_image_height as usize,
+            imageWidth: original_image_width as usize,
             ..Default::default()
+        };
+        let labels = if let Some(labels_path) = &args.labels {
+            let labels = std::fs::read_to_string(labels_path)
+                .expect("Failed to read labels file")
+                .lines()
+                .map(|line| line.trim().to_string())
+                .collect::<Vec<String>>();
+            if labels.len() != points.len() {
+                return Err(anyhow::anyhow!(
+                    "Number of labels does not match number of channels. Expected {} labels, got {}",
+                    points.len(),
+                    labels.len()
+                ));
+            }
+            labels
+        } else {
+            points
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("label{}", i + 1))
+                .collect::<Vec<String>>()
         };
 
         for (i_point, v_point) in points.into_iter().enumerate() {
             if v_point.is_empty() {
-                log::warn!("No points found for channel {}", i_point + 1);
+                log::warn!("No points found for {}", labels[i_point]);
                 continue; // Skip empty points
             }
             for point in v_point {
                 let points = vec![(point.0 as f64, point.1 as f64)];
+                let label = labels[i_point].clone();
+                let shape_type = "point".to_string();
                 let shape = labelme_rs::Shape {
-                    label: format!("label{}", i_point + 1),
+                    label,
                     points,
-                    shape_type: "point".to_string(),
+                    shape_type,
                     ..Default::default()
                 };
                 lm_data.shapes.push(shape);
@@ -137,7 +169,7 @@ fn main() -> Result<()> {
         let scale = original_image_height as f64 / model_input_height as f64;
         lm_data.scale(scale);
         // Save the LabelMe data to a file
-        let labelme_json = serde_json::to_string(&lm_data)?;
+        let labelme_json = serde_json::to_string_pretty(&lm_data)?;
 
         std::fs::write(labelme_path, labelme_json).expect("Failed to write LabelMe data to file");
     }

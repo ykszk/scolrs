@@ -9,7 +9,7 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
     let height = arr.shape()[1];
     let width = arr.shape()[2];
     let ch_axis = Axis(0);
-    let mut candidates: Vec<Vec<Point>> = Vec::new();
+    let mut all_points: Vec<Vec<Point>> = Vec::new();
     for img_ch in arr.axis_iter(ch_axis) {
         let bin_arr = img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 });
         let bin_img =
@@ -42,15 +42,23 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
                 local_maximas.insert(cc_val, (val, y, x));
             }
         }
-        let candidates_for_ch: Vec<Point> = local_maximas
+        let mut points_for_ch: Vec<Point> = local_maximas
             .into_iter()
             .map(|(_, (_val, y, x))| {
                 // Convert to (x, y) coordinates
                 (x as f32, y as f32)
             })
             .collect::<Vec<Point>>();
-        candidates.push(candidates_for_ch);
+        // sort by y and then by x
+        points_for_ch.sort_by(|a, b| {
+            if a.1 == b.1 {
+                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+        all_points.push(points_for_ch);
     }
 
-    Ok(candidates)
+    Ok(all_points)
 }
