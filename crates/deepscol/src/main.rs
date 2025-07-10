@@ -2,6 +2,7 @@ use std::vec;
 
 use anyhow::Result;
 use ndarray::{s, Array3, Axis, CowArray, NewAxis};
+// use ndarray_npz::ndarray::{s, Array3, Axis, CowArray, NewAxis};
 use ort::{Environment, GraphOptimizationLevel, SessionBuilder, Value};
 
 fn main() -> Result<()> {
@@ -75,21 +76,35 @@ fn main() -> Result<()> {
     log::debug!("Output tensor shape: {:?}", output3.shape());
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-    let rgb = output3.slice(s![..3, .., ..]).to_owned();
-    let first_channel_image =
-        image::ImageBuffer::from_fn(rgb.shape()[2] as u32, rgb.shape()[1] as u32, |x, y| {
-            let r = rgb[[0, y as usize, x as usize]];
-            let r = (r * 255.0) as u8;
-            let g = rgb[[1, y as usize, x as usize]];
-            let g = (g * 255.0) as u8;
-            let b = rgb[[2, y as usize, x as usize]];
-            let b = (b * 255.0) as u8;
+    if output_path.ends_with(".npz") {
+        log::info!("Saving output as npz file at {}", output_path);
+        let mut npz = ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
+        //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
+        let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
+            (output3.shape()[0], output3.shape()[1], output3.shape()[2]),
+            output3.clone().into_raw_vec(),
+        )?;
+        let ndarray_output3 = ndarray_output3.mapv(|x| (x * 1000.0) as u16);
+        // save the output
+        npz.add_array("heatmaps", &ndarray_output3)?;
+        npz.finish()?;
+    } else if output_path.ends_with(".png") {
+        let rgb = output3.slice(s![..3, .., ..]).to_owned();
+        let first_channel_image =
+            image::ImageBuffer::from_fn(rgb.shape()[2] as u32, rgb.shape()[1] as u32, |x, y| {
+                let r = rgb[[0, y as usize, x as usize]];
+                let r = (r * 255.0) as u8;
+                let g = rgb[[1, y as usize, x as usize]];
+                let g = (g * 255.0) as u8;
+                let b = rgb[[2, y as usize, x as usize]];
+                let b = (b * 255.0) as u8;
 
-            image::Rgb([r, g, b])
-        });
-    first_channel_image
-        .save(output_path)
-        .expect("Failed to save output image");
+                image::Rgb([r, g, b])
+            });
+        first_channel_image
+            .save(output_path)
+            .expect("Failed to save output image");
+    }
     if args.len() > 4 {
         let labelme_path = &args[4];
         log::info!(

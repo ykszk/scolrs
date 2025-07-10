@@ -124,6 +124,9 @@ name = "arbitrary"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
+dependencies = [
+ "derive_arbitrary",
+]
 
 [[package]]
 name = "arg_enum_proc_macro"
@@ -332,7 +335,7 @@ dependencies = [
  "env_logger",
  "image 0.24.9",
  "log",
- "ndarray",
+ "ndarray 0.15.6",
  "ndarray-stats",
  "num-traits",
  "thiserror 1.0.69",
@@ -554,7 +557,8 @@ dependencies = [
  "imageproc",
  "labelme-rs",
  "log",
- "ndarray",
+ "ndarray 0.15.6",
+ "ndarray-npz",
  "ort",
  "serde_json",
  "tracing-subscriber",
@@ -567,6 +571,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c9e6a11ca8224451684bc0d7d5a7adbf8f2fd6887261a1cfc3c0432f9d4068e"
 dependencies = [
  "powerfmt",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -590,7 +605,7 @@ dependencies = [
  "dicom-transfer-syntax-registry",
  "env_logger",
  "log",
- "ndarray",
+ "ndarray 0.15.6",
  "ndarray-ndimage",
  "ndarray-stats",
  "pretty_assertions",
@@ -734,7 +749,7 @@ dependencies = [
  "dicom-transfer-syntax-registry",
  "gdcm-rs",
  "image 0.25.6",
- "ndarray",
+ "ndarray 0.15.6",
  "num-traits",
  "rayon",
  "snafu",
@@ -998,6 +1013,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
+ "libz-rs-sys",
  "miniz_oxide",
 ]
 
@@ -1869,6 +1885,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libz-rs-sys"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "172a788537a2221661b480fee8dc5f96c580eb34fa88764d3205dc356c7e4221"
+dependencies = [
+ "zlib-rs",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2081,14 +2106,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+dependencies = [
+ "matrixmultiply 0.3.9",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer 0.2.1",
+]
+
+[[package]]
 name = "ndarray-ndimage"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e25f143f76f451ed1c8171c9fb87f0edf4942984d5782b0fb2657bff9fd2fe8"
 dependencies = [
- "ndarray",
+ "ndarray 0.15.6",
  "ndarray-stats",
  "num-traits",
+]
+
+[[package]]
+name = "ndarray-npy"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b313788c468c49141a9d9b6131fc15f403e6ef4e8446a0b2e18f664ddb278a9"
+dependencies = [
+ "byteorder",
+ "ndarray 0.16.1",
+ "num-traits",
+ "py_literal",
+]
+
+[[package]]
+name = "ndarray-npz"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c6ce900f6227eab0900b092c773a1f139b3d4e3e57b9aa884512e099ced1180"
+dependencies = [
+ "crc32fast",
+ "ndarray 0.16.1",
+ "ndarray-npy",
+ "zip 3.0.0",
 ]
 
 [[package]]
@@ -2099,7 +2163,7 @@ checksum = "af5a8477ac96877b5bd1fd67e0c28736c12943aba24eda92b127e036b0c8f400"
 dependencies = [
  "indexmap 1.9.3",
  "itertools 0.10.5",
- "ndarray",
+ "ndarray 0.15.6",
  "noisy_float",
  "num-integer",
  "num-traits",
@@ -2265,7 +2329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec170733ca37175f5d75a5bea5911d6ff45d2cd52849ce98b685394e4f2f37f4"
 dependencies = [
  "libc",
- "ndarray",
+ "ndarray 0.15.6",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -2289,14 +2353,14 @@ dependencies = [
  "half",
  "lazy_static",
  "libc",
- "ndarray",
+ "ndarray 0.15.6",
  "tar",
  "thiserror 1.0.69",
  "tracing",
  "ureq",
  "vswhom",
  "winapi",
- "zip",
+ "zip 0.6.6",
 ]
 
 [[package]]
@@ -2513,6 +2577,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 
 [[package]]
+name = "portable-atomic-util"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2605,6 +2678,19 @@ checksum = "a65f2e60fbf1063868558d69c6beacf412dc755f9fc020f514b7955fc914fe30"
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "py_literal"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "102df7a3d46db9d3891f178dcc826dc270a6746277a9ae6436f8d29fd490a8e1"
+dependencies = [
+ "num-bigint",
+ "num-complex",
+ "num-traits",
+ "pest",
+ "pest_derive",
 ]
 
 [[package]]
@@ -3058,7 +3144,7 @@ dependencies = [
  "log",
  "lyon_geom",
  "named_derive",
- "ndarray",
+ "ndarray 0.15.6",
  "ndarray-stats",
  "pretty_assertions",
  "regex",
@@ -3090,7 +3176,7 @@ dependencies = [
  "labelme-rs",
  "log",
  "named_derive",
- "ndarray",
+ "ndarray 0.15.6",
  "ndarray-stats",
  "rayon",
  "rstest",
@@ -4340,6 +4426,38 @@ dependencies = [
  "crc32fast",
  "crossbeam-utils",
  "flate2",
+]
+
+[[package]]
+name = "zip"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "flate2",
+ "indexmap 2.7.1",
+ "memchr",
+ "zopfli",
+]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "626bd9fa9734751fc50d6060752170984d7053f5a39061f524cda68023d4db8a"
+
+[[package]]
+name = "zopfli"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edfc5ee405f504cd4984ecc6f14d02d55cfda60fa4b689434ef4102aae150cd7"
+dependencies = [
+ "bumpalo",
+ "crc32fast",
+ "log",
+ "simd-adler32",
 ]
 
 [[package]]
