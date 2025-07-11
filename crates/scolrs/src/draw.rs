@@ -1356,11 +1356,12 @@ where
     Ok(g)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ColorPalettes {
     pub label_colors: ColorPalette,
     pub line_colors: ColorPalette,
 }
+
 const VISIBILITY_HIDDEN: &str = "hidden";
 const VISIBILITY_VISIBLE: &str = "visible";
 

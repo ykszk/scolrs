@@ -170,7 +170,7 @@ pub struct SvgArgs {
     /// Input labelme json filename. Specify '-' for stdin
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
-    /// Output svg filename. Specify '-' for stdout
+    /// Output svg filename. Use `.html` suffix to output html. Specify '-' for stdout
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
     #[clap(flatten)]

@@ -1,10 +1,16 @@
-use std::vec;
+use std::{path::Path, vec};
 
 use anyhow::Result;
-use ndarray::{s, Array3, Axis, CowArray, NewAxis};
-// use ndarray_npz::ndarray::{s, Array3, Axis, CowArray, NewAxis};
 use clap::Parser;
+use dicom_pixeldata::PixelDecoder;
+use image::DynamicImage;
+use labelme_rs::LabelMeDataWImage;
+use ndarray::{s, Array3, Axis, CowArray, NewAxis};
 use ort::{Environment, GraphOptimizationLevel, SessionBuilder, Value};
+use scolrs::{
+    draw::{self, draw_coronal, wrap_in_html},
+    CoronalDraw, CoronalPointsAndCurve, HasImageMetadata, MeasureAndDraw, PointDataWithImage,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -22,6 +28,26 @@ struct Args {
     /// Text file of labels for the points in LabelMe format
     #[arg(long)]
     labels: Option<PathBuf>,
+    /// Output html
+    #[arg(long)]
+    html: Option<PathBuf>,
+}
+
+fn resize_height(image: &DynamicImage, target_height: u32) -> DynamicImage {
+    let width = image.width();
+    let height = image.height();
+    let resized_width: u32 = (width as f32 * (target_height as f32 / height as f32)) as u32;
+    image.thumbnail(resized_width + 1, target_height)
+}
+
+fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
+    let padded_width = image.shape()[1].div_ceil(multiple_of as usize) * multiple_of as usize;
+    let mut padded_image: Array3<f32> =
+        Array3::zeros((image.shape()[0], padded_width, image.shape()[2]));
+    padded_image
+        .slice_mut(s![.., ..image.shape()[1], ..])
+        .assign(image);
+    padded_image
 }
 
 fn main() -> Result<()> {
@@ -41,12 +67,24 @@ fn main() -> Result<()> {
     log::info!("Model loaded successfully");
     log::debug!("model input dimensions {:?}", session.inputs[0].dimensions);
     // Load the image
-    let image = image::open(image_path).expect("Failed to open image");
+    let image: DynamicImage = if image_path.extension().and_then(|s| s.to_str()) == Some("dcm") {
+        let dicom = dicom_object::open_file(image_path)?;
+        let pixel_data = dicom.decode_pixel_data()?;
+        let options = dicom_pixeldata::ConvertOptions::new()
+            .with_voi_lut(dicom_pixeldata::VoiLutOption::Normalize)
+            .force_8bit();
+        pixel_data.to_dynamic_image_with_options(0, &options)?
+    } else {
+        image::open(image_path).expect("Failed to open image")
+    };
     let original_image_width = image.width();
     let original_image_height = image.height();
-    log::info!("Image loaded successfully");
+    log::info!(
+        "Image with shape w x h {:?} loaded successfully",
+        (original_image_width, original_image_height)
+    );
     let model_input_height = session.inputs[0].dimensions[2].unwrap();
-    let image = image.thumbnail(10000, model_input_height);
+    let image = resize_height(&image, model_input_height);
     // Convert the image to a tensor
     let image = Array3::from_shape_vec(
         (image.height() as usize, image.width() as usize, 1),
@@ -56,13 +94,7 @@ fn main() -> Result<()> {
     let image = image.mapv(|x| x as f32 / 255.0);
     log::debug!("Image converted to tensor shape: {:?}", image.shape());
     // pad image width to be divisible by 256
-    let padded_width = ((image.shape()[1] + 255) / 256) * 256;
-    let mut padded_image: Array3<f32> =
-        Array3::zeros((image.shape()[0], padded_width, image.shape()[2]));
-    padded_image
-        .slice_mut(s![.., ..image.shape()[1], ..])
-        .assign(&image);
-    let image = padded_image;
+    let image = pad_width(&image, 256);
     // to channel first
     let image = image.permuted_axes([2, 0, 1]);
 
@@ -114,64 +146,142 @@ fn main() -> Result<()> {
             .save(output_path)
             .expect("Failed to save output image");
     }
+    let lm_scale = original_image_height as f64 / model_input_height as f64;
 
+    let mut extracted_points: Option<Vec<Vec<(f32, f32)>>> = None;
+    let mut extracted_lm: Option<labelme_rs::LabelMeData> = None;
+    let n_channels = output3.shape()[0];
+    let labels = if let Some(labels_path) = &args.labels {
+        let labels = std::fs::read_to_string(labels_path)
+            .expect("Failed to read labels file")
+            .lines()
+            .map(|line| line.trim().to_string())
+            .collect::<Vec<String>>();
+        if labels.len() != n_channels {
+            return Err(anyhow::anyhow!(
+                "Number of labels does not match number of channels. Expected {} labels, got {}",
+                n_channels,
+                labels.len()
+            ));
+        }
+        labels
+    } else {
+        (0..n_channels)
+            .map(|i| format!("channel{}", i + 1))
+            .collect::<Vec<String>>()
+    };
     if let Some(labelme_path) = &args.labelme {
         let points = deepscol::extract_points(&output3, 0.1).unwrap();
         // Save the points to LabelMe format
-        let mut lm_data = labelme_rs::LabelMeData {
-            imagePath: std::path::absolute(image_path)?
-                .to_string_lossy()
-                .to_string(),
-            imageHeight: original_image_height as usize,
-            imageWidth: original_image_width as usize,
-            ..Default::default()
-        };
-        let labels = if let Some(labels_path) = &args.labels {
-            let labels = std::fs::read_to_string(labels_path)
-                .expect("Failed to read labels file")
-                .lines()
-                .map(|line| line.trim().to_string())
-                .collect::<Vec<String>>();
-            if labels.len() != points.len() {
-                return Err(anyhow::anyhow!(
-                    "Number of labels does not match number of channels. Expected {} labels, got {}",
-                    points.len(),
-                    labels.len()
-                ));
-            }
-            labels
-        } else {
-            points
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("label{}", i + 1))
-                .collect::<Vec<String>>()
-        };
-
-        for (i_point, v_point) in points.into_iter().enumerate() {
-            if v_point.is_empty() {
-                log::warn!("No points found for {}", labels[i_point]);
-                continue; // Skip empty points
-            }
-            for point in v_point {
-                let points = vec![(point.0 as f64, point.1 as f64)];
-                let label = labels[i_point].clone();
-                let shape_type = "point".to_string();
-                let shape = labelme_rs::Shape {
-                    label,
-                    points,
-                    shape_type,
-                    ..Default::default()
-                };
-                lm_data.shapes.push(shape);
-            }
-        }
-        let scale = original_image_height as f64 / model_input_height as f64;
-        lm_data.scale(scale);
+        let lm_data = create_lm(
+            &labels,
+            image_path,
+            original_image_width,
+            original_image_height,
+            lm_scale,
+            points.as_slice(),
+        )?;
         // Save the LabelMe data to a file
         let labelme_json = serde_json::to_string_pretty(&lm_data)?;
 
         std::fs::write(labelme_path, labelme_json).expect("Failed to write LabelMe data to file");
+        extracted_points = Some(points);
+        extracted_lm = Some(lm_data);
+    }
+    if let Some(html_path) = &args.html {
+        let points = extracted_points.unwrap_or_else(|| {
+            deepscol::extract_points(&output3, 0.1).expect("Failed to extract points from heatmaps")
+        });
+        let lm_data = extracted_lm.unwrap_or_else(|| {
+            create_lm(
+                &labels,
+                image_path,
+                original_image_width,
+                original_image_height,
+                lm_scale,
+                points.as_slice(),
+            )
+            .expect("Failed to create LabelMe data")
+        });
+        let metadata = scolrs::ImageMetadata::try_from(Path::new(&lm_data.imagePath))?;
+        let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
+        let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
+        *cp.image_metadata_mut() = metadata;
+        let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
+        let draws = CoronalDraw::all();
+        let draw_param = scolrs::DrawParam::default();
+        let resize_param = labelme_rs::ResizeParam::Size(800, 800);
+        let svg_size = None;
+        let palettes = scolrs::draw::ColorPalettes::default();
+        let non_hide = [
+            CoronalDraw::VertebralLabels,
+            CoronalDraw::VertebralPoints,
+            CoronalDraw::CobbPT,
+            CoronalDraw::CobbMT,
+            CoronalDraw::CobbTLL,
+        ];
+        let hide = CoronalDraw::all()
+            .into_iter()
+            .filter(|d| !non_hide.contains(d))
+            .collect::<Vec<_>>();
+        let draw_args = draw::CoronalDrawArguments {
+            image: points_with_image.data_image.image,
+            data: points_with_image.data,
+            draw_param,
+            resize_param: Some(resize_param),
+            svg_size,
+            palettes,
+            draw: &draws,
+            hide: &hide,
+        };
+        // CoronalPointsAndCurve::draw()
+        let document = draw_coronal(draw_args).expect("Failed to draw coronal points and curve");
+        let html = wrap_in_html(
+            document.to_string(),
+            &["g.Component".to_string()],
+            "deepscol result".to_string(),
+        )?;
+        // Save the HTML to a file
+        std::fs::write(html_path, html).expect("Failed to write HTML file");
     }
     Ok(())
+}
+
+fn create_lm(
+    labels: &[String],
+    image_path: &PathBuf,
+    image_width: u32,
+    image_height: u32,
+    scale: f64,
+    points: &[Vec<(f32, f32)>],
+) -> Result<labelme_rs::LabelMeData> {
+    let mut lm_data = labelme_rs::LabelMeData {
+        imagePath: std::path::absolute(image_path)?
+            .to_string_lossy()
+            .to_string(),
+        imageHeight: image_height as usize,
+        imageWidth: image_width as usize,
+        ..Default::default()
+    };
+
+    for (i_point, v_point) in points.iter().enumerate() {
+        if v_point.is_empty() {
+            log::warn!("No points found for {}", labels[i_point]);
+            continue; // Skip empty points
+        }
+        for point in v_point {
+            let points = vec![(point.0 as f64, point.1 as f64)];
+            let label = labels[i_point].clone();
+            let shape_type = "point".to_string();
+            let shape = labelme_rs::Shape {
+                label,
+                points,
+                shape_type,
+                ..Default::default()
+            };
+            lm_data.shapes.push(shape);
+        }
+    }
+    lm_data.scale(scale);
+    Ok(lm_data)
 }
