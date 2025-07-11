@@ -1,8 +1,7 @@
-use std::{path::Path, vec};
+use std::{ops::Deref, vec};
 
 use anyhow::Result;
 use clap::Parser;
-use dicom_pixeldata::PixelDecoder;
 use image::DynamicImage;
 use labelme_rs::LabelMeDataWImage;
 use ndarray::{s, Array3, Axis, CowArray, NewAxis};
@@ -16,8 +15,6 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    /// Path to the ONNX model file
-    model: PathBuf,
     /// Path to the input image file
     input_image: PathBuf,
     /// Path to save the output heatmaps or image
@@ -31,6 +28,9 @@ struct Args {
     /// Output html
     #[arg(long)]
     html: Option<PathBuf>,
+    /// Path to the onnx model file
+    #[arg(long)]
+    model: Option<PathBuf>,
 }
 
 fn resize_height(image: &DynamicImage, target_height: u32) -> DynamicImage {
@@ -50,6 +50,20 @@ fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
     padded_image
 }
 
+enum MySession<'a> {
+    Session(ort::Session),
+    InMemorySession(ort::InMemorySession<'a>),
+}
+
+impl MySession<'_> {
+    fn get(&self) -> &ort::Session {
+        match self {
+            MySession::Session(sess) => sess,
+            MySession::InMemorySession(sess) => sess.deref(),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -60,30 +74,35 @@ fn main() -> Result<()> {
 
     // Load the model
     let environment = Environment::builder().build()?.into_arc();
-    let session = SessionBuilder::new(&environment)?
-        .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_intra_threads(4)?
-        .with_model_from_file(model_path)?;
-    log::info!("Model loaded successfully");
-    log::debug!("model input dimensions {:?}", session.inputs[0].dimensions);
-    // Load the image
-    let image: DynamicImage = if image_path.extension().and_then(|s| s.to_str()) == Some("dcm") {
-        let dicom = dicom_object::open_file(image_path)?;
-        let pixel_data = dicom.decode_pixel_data()?;
-        let options = dicom_pixeldata::ConvertOptions::new()
-            .with_voi_lut(dicom_pixeldata::VoiLutOption::Normalize)
-            .force_8bit();
-        pixel_data.to_dynamic_image_with_options(0, &options)?
+    let session: MySession = if let Some(model_path) = model_path {
+        let sess = SessionBuilder::new(&environment)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(4)?
+            .with_model_from_file(model_path)?;
+        MySession::Session(sess)
     } else {
-        image::open(image_path).expect("Failed to open image")
+        let sess = SessionBuilder::new(&environment)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(4)?
+            .with_model_from_memory(include_bytes!(
+                "../../../tests/data/models/spine_mobileone_s1.onnx"
+            ))?;
+        MySession::InMemorySession(sess)
     };
+    log::info!("Model loaded successfully");
+    log::debug!(
+        "model input dimensions {:?}",
+        session.get().inputs[0].dimensions
+    );
+
+    let (image, metadata) = deepscol::load_image(&std::fs::read(image_path)?)?;
     let original_image_width = image.width();
     let original_image_height = image.height();
     log::info!(
         "Image with shape w x h {:?} loaded successfully",
         (original_image_width, original_image_height)
     );
-    let model_input_height = session.inputs[0].dimensions[2].unwrap();
+    let model_input_height = session.get().inputs[0].dimensions[2].unwrap();
     let image = resize_height(&image, model_input_height);
     // Convert the image to a tensor
     let image = Array3::from_shape_vec(
@@ -104,9 +123,9 @@ fn main() -> Result<()> {
         input.shape()
     );
     // Run the model
-    let inputs = vec![Value::from_array(session.allocator(), &input)?];
+    let inputs = vec![Value::from_array(session.get().allocator(), &input)?];
     log::info!("Running model");
-    let mut outputs: Vec<Value> = session.run(inputs)?;
+    let mut outputs: Vec<Value> = session.get().run(inputs)?;
     log::info!("Model run completed");
 
     // convert to ndarray
@@ -129,7 +148,7 @@ fn main() -> Result<()> {
         // save the output
         npz.add_array("heatmaps", &ndarray_output3)?;
         npz.finish()?;
-    } else if output_path.ends_with(".png") {
+    } else {
         let rgb = output3.slice(s![..3, .., ..]).to_owned();
         let first_channel_image =
             image::ImageBuffer::from_fn(rgb.shape()[2] as u32, rgb.shape()[1] as u32, |x, y| {
@@ -203,10 +222,9 @@ fn main() -> Result<()> {
             )
             .expect("Failed to create LabelMe data")
         });
-        let metadata = scolrs::ImageMetadata::try_from(Path::new(&lm_data.imagePath))?;
         let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
-        let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
         *cp.image_metadata_mut() = metadata;
+        let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
         let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
         let draws = CoronalDraw::all();
         let draw_param = scolrs::DrawParam::default();

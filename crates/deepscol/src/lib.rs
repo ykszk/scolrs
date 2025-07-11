@@ -1,6 +1,9 @@
+use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
+use image::DynamicImage;
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
 use ndarray::Axis;
+use scolrs::ImageMetadata;
 use std::collections::HashMap;
 pub type Point = (f32, f32);
 
@@ -61,4 +64,41 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
     }
 
     Ok(all_points)
+}
+
+pub fn load_dicom_from_u8(
+    bytes: &[u8],
+) -> Result<(image::DynamicImage, ImageMetadata), Box<dyn std::error::Error>> {
+    assert!(bytes.len() > 128);
+    let wo_preamble = &bytes[128..]; // skip preamble
+    let obj = dicom_object::from_reader(wo_preamble)?;
+    let options = ConvertOptions::new()
+        .with_voi_lut(VoiLutOption::Normalize)
+        .force_8bit();
+    let dynamic_image = obj
+        .decode_pixel_data()?
+        .to_dynamic_image_with_options(0, &options)?;
+    let metadata = ImageMetadata::try_from_dicom(&obj, "".to_string())?;
+    Ok((dynamic_image, metadata))
+}
+
+/// load dicom or png/jpeg image
+pub fn load_image(
+    raw_bytes: &[u8],
+) -> Result<(image::DynamicImage, ImageMetadata), image::ImageError> {
+    let dcm_img = load_dicom_from_u8(raw_bytes);
+    match dcm_img {
+        Ok(img) => {
+            log::debug!("Dicom image has been loaded successfully.");
+            Ok(img)
+        }
+        Err(e) => {
+            debug!("Tried to read the file as dicom but failed: {}", e);
+            let img = image::load_from_memory(raw_bytes)?;
+            Ok((
+                DynamicImage::ImageLuma8(img.to_luma8()),
+                ImageMetadata::default(),
+            ))
+        }
+    }
 }

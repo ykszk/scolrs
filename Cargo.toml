@@ -33,3 +33,11 @@ scraper = { version = "0.22.0", default-features = false }
 tera = { version = "1.20", default-features = false }
 indexmap = "2.7"
 serde_json = "1.0.132"
+
+
+[profile.release-z]
+inherits = "release"
+strip = true
+opt-level = "z" # Optimize for size
+lto = true
+codegen-units = 1

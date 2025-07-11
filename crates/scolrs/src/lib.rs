@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use dicom_object::{FileDicomObject, InMemDicomObject};
 use draw::MeasureError;
 use head_neck::TryConvertContentFilename;
 use labelme_rs::{LabelMeData, LabelMeDataLine, LabelMeDataWImage};
@@ -75,6 +76,39 @@ pub struct ImageMetadata {
     pub width: usize,
     pub spacing_xy: (f64, f64),
     pub unit: String,
+}
+
+impl ImageMetadata {
+    pub fn try_from_dicom(
+        obj: &FileDicomObject<InMemDicomObject>,
+        path: String,
+    ) -> Result<Self, DicomError> {
+        use dicom_dictionary_std::tags;
+        let spacing = get_pixel_spacing(obj)?;
+        let (spacing_xy, unit) = if let Some(spacing) = spacing {
+            (spacing, "mm".to_string())
+        } else {
+            warn!("Spacing not found. Using default spacing (1.0, 1.0)");
+            ((1.0, 1.0), "px".to_string())
+        };
+        let height = obj
+            .get(tags::ROWS)
+            .ok_or(DicomError::MissingTag("Rows (0028,0010)".to_string()))?
+            .to_int()
+            .map_err(|e| DicomError::Convert(e.to_string()))?;
+        let width = obj
+            .get(tags::COLUMNS)
+            .ok_or(DicomError::MissingTag("Columns (0028,0011)".to_string()))?
+            .to_int()
+            .map_err(|e| DicomError::Convert(e.to_string()))?;
+        Ok(Self {
+            path,
+            width,
+            height,
+            spacing_xy,
+            unit,
+        })
+    }
 }
 
 pub trait HasImageMetadata {
@@ -177,32 +211,8 @@ impl TryFrom<&Path> for ImageMetadata {
     type Error = DicomError;
 
     fn try_from(path: &Path) -> Result<Self, DicomError> {
-        use dicom_dictionary_std::tags;
         let obj = dicom_object::open_file(path)?;
-        let spacing = get_pixel_spacing(&obj)?;
-        let (spacing_xy, unit) = if let Some(spacing) = spacing {
-            (spacing, "mm".to_string())
-        } else {
-            warn!("Spacing not found. Using default spacing (1.0, 1.0)");
-            ((1.0, 1.0), "px".to_string())
-        };
-        let height = obj
-            .get(tags::ROWS)
-            .ok_or(DicomError::MissingTag("Rows (0028,0010)".to_string()))?
-            .to_int()
-            .map_err(|e| DicomError::Convert(e.to_string()))?;
-        let width = obj
-            .get(tags::COLUMNS)
-            .ok_or(DicomError::MissingTag("Columns (0028,0011)".to_string()))?
-            .to_int()
-            .map_err(|e| DicomError::Convert(e.to_string()))?;
-        Ok(Self {
-            width,
-            height,
-            path: path.to_string_lossy().to_string(),
-            spacing_xy,
-            unit,
-        })
+        Self::try_from_dicom(&obj, path.to_string_lossy().to_string())
     }
 }
 
