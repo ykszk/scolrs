@@ -15,8 +15,12 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
     let mut all_points: Vec<Vec<Point>> = Vec::new();
     for img_ch in arr.axis_iter(ch_axis) {
         let bin_arr = img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 });
-        let bin_img =
-            image::GrayImage::from_raw(width as _, height as _, bin_arr.into_raw_vec()).unwrap();
+        let bin_img = image::GrayImage::from_raw(
+            width as _,
+            height as _,
+            bin_arr.into_raw_vec_and_offset().0,
+        )
+        .unwrap();
         let cced = connected_components(&bin_img, Connectivity::Four, image::Luma([0u8]));
         let n_cc = *cced.iter().max().unwrap();
         debug!("# of CC is {}", n_cc);
@@ -101,4 +105,16 @@ pub fn load_image(
             ))
         }
     }
+}
+
+extern crate wasm_bindgen;
+use wasm_bindgen::prelude::*;
+extern crate console_error_panic_hook;
+use std::panic;
+
+#[wasm_bindgen(start)]
+pub fn start() {
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+    wasm_logger::init(wasm_logger::Config::default());
+    debug!("logger initialized");
 }

@@ -408,8 +408,12 @@ where
     use rulinalg::matrix::{BaseMatrix, Matrix};
     use rulinalg::vector::Vector;
 
-    let vander = Matrix::new(vander.nrows(), vander.ncols(), vander.into_raw_vec());
-    let ys = Vector::new(ys.to_owned().into_raw_vec());
+    let vander = Matrix::new(
+        vander.nrows(),
+        vander.ncols(),
+        vander.into_raw_vec_and_offset().0,
+    );
+    let ys = Vector::new(ys.to_owned().into_raw_vec_and_offset().0);
     let a = vander.transpose() * &vander;
 
     let b = &vander.transpose() * &ys;
@@ -698,11 +702,14 @@ fn offsetted_rotate_array3(
     let offsetted = offsetted
         .as_standard_layout()
         .into_owned()
-        .into_shape((shape[0] * shape[1], 2))
+        .into_shape_with_order((shape[0] * shape[1], 2))
         .unwrap();
     let rotated = offsetted.dot(&rot_mat.t());
 
-    rotated.into_shape((shape[0], shape[1], 2)).unwrap() + offset
+    rotated
+        .into_shape_with_order((shape[0], shape[1], 2))
+        .unwrap()
+        + offset
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

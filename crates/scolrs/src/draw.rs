@@ -5,7 +5,6 @@ use crate::{
     CORNER_LABELS,
 };
 use crate::{Curve, DrawParam, Spine, VERTEBRAL_LABELS};
-use base64::Engine;
 use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
@@ -859,6 +858,22 @@ impl ImageOverlay {
     }
 }
 
+#[cfg(not(feature = "webp"))]
+fn encode_image(image: &DynamicImage) -> Result<String, labelme_rs::LabelMeDataError> {
+    let b64 = labelme_rs::img2base64(image, labelme_rs::image::ImageFormat::Png)?;
+    Ok(format!("data:image/webp;base64,{}", b64))
+}
+
+#[cfg(feature = "webp")]
+fn encode_image(image: &DynamicImage) -> Result<String, labelme_rs::LabelMeDataError> {
+    use base64::Engine;
+
+    let webp_encoder = webp::Encoder::from_image(image).unwrap();
+    let webp_memory = webp_encoder.encode(90.0);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&*webp_memory);
+    Ok(format!("data:image/webp;base64,{}", b64))
+}
+
 impl Named for ImageOverlay {
     fn id(&self) -> &str {
         &self.id
@@ -883,10 +898,7 @@ impl DrawComponent for ImageOverlay {
     ) -> Result<element::Group, DrawError> {
         let group = self.default_group();
 
-        let webp_encoder = webp::Encoder::from_image(&self.image).unwrap();
-        let webp_memory = webp_encoder.encode(90.0);
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&*webp_memory);
-        let base64_image_data = format!("data:image/webp;base64,{}", b64);
+        let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
         let layer = element::Image::new()
             .set("x", 0i64)
             .set("y", 0i64)
