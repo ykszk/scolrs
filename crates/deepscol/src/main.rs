@@ -84,9 +84,7 @@ fn main() -> Result<()> {
         let sess = SessionBuilder::new(&environment)?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(4)?
-            .with_model_from_memory(include_bytes!(
-                "../../../tests/data/models/spine_mobileone_s1.onnx"
-            ))?;
+            .with_model_from_memory(include_bytes!("../models/spine_mobileone_s1.onnx"))?;
         MySession::InMemorySession(sess)
     };
     log::info!("Model loaded successfully");

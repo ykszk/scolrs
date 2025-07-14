@@ -31,3 +31,9 @@ ort = "1.16.3"
 scolrs = { path = "../scolrs", features = ['dicom'] }
 serde_json.workspace = true
 tracing-subscriber = "0.3.19"
+
+[build-dependencies]
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+reqwest = { version = "0.12.22", features = ["blocking"] }
