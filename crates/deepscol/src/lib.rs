@@ -7,6 +7,12 @@ use scolrs::{HasImageMetadata, ImageMetadata};
 use std::collections::HashMap;
 pub type Point = (f32, f32);
 
+extern crate wee_alloc;
+// Use `wee_alloc` as the global allocator.
+// Default allocator somehow panics in `wrap_in_html`, which can be fixed in the future.
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 /// Extract landmark point out of the input heatmaps
 pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec<Point>>, String> {
     let height = arr.shape()[1];
@@ -64,6 +70,7 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
                 a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
             }
         });
+        // TODO: Use max point count to limit the number of points
         all_points.push(points_for_ch);
     }
 
@@ -86,6 +93,16 @@ pub fn load_dicom_from_u8(
     Ok((dynamic_image, metadata))
 }
 
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn decode_image(encoded: &[u8]) -> Result<String, JsValue> {
+    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    log::debug!("Image metadata: {:?}", metadata);
+    let b64_image = labelme_rs::img2base64(&image, labelme_rs::image::ImageFormat::Png)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(b64_image)
+}
+
 /// load dicom or png/jpeg image
 pub fn load_image(
     raw_bytes: &[u8],
@@ -99,10 +116,12 @@ pub fn load_image(
         Err(e) => {
             debug!("Tried to read the file as dicom but failed: {}", e);
             let img = image::load_from_memory(raw_bytes)?;
-            Ok((
-                DynamicImage::ImageLuma8(img.to_luma8()),
-                ImageMetadata::default(),
-            ))
+            let metadata = ImageMetadata {
+                width: img.width() as usize,
+                height: img.height() as usize,
+                ..ImageMetadata::default()
+            };
+            Ok((DynamicImage::ImageLuma8(img.to_luma8()), metadata))
         }
     }
 }
@@ -126,9 +145,9 @@ pub fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
 
 pub fn to_model_input(
     image: image::DynamicImage,
-    model_input_height: i64,
+    model_input_height: u32,
 ) -> Result<ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 4]>>, anyhow::Error> {
-    let image = resize_height(&image, model_input_height as u32);
+    let image = resize_height(&image, model_input_height);
     let image = Array3::from_shape_vec(
         (image.height() as usize, image.width() as usize, 1),
         image.to_luma8().into_raw(),
@@ -180,7 +199,7 @@ pub fn create_lm(
     lm_data
 }
 
-pub fn process_output(
+pub fn extract_array_from_output(
     outputs: ort::session::SessionOutputs<'_>,
 ) -> ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 3]>> {
     // convert to ndarray
@@ -258,42 +277,20 @@ pub fn create_html(
     Ok(html)
 }
 
-#[wasm_bindgen]
-pub fn run(bytes: &[u8], shape: &[u32]) -> String {
-    log::debug!("Create session");
-    let builder = ort::session::Session::builder()
-        .expect("Cannot create Session builder.")
-        .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
-        .expect("Cannot optimize graph.")
-        .with_parallel_execution(true)
-        .expect("Cannot activate parallel execution.")
-        .with_intra_threads(2)
-        .expect("Cannot set intra thread count.")
-        .with_inter_threads(1)
-        .expect("Cannot set inter thread count.");
-    let mut session = builder
-        .commit_from_memory(include_bytes!("../models/spine_mobileone_s1.onnx"))
-        .expect("Cannot load model from memory.");
-
-    log::debug!("Create array from bytes with shape {:?}", shape);
-    let (image, metadata) = load_image(bytes).unwrap();
-    let original_image_width = image.width();
-    let original_image_height = image.height();
-    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2];
-    let arr4 = to_model_input(image, model_input_height).unwrap();
-    let input = ort::value::Tensor::from_array(arr4).unwrap();
-    log::debug!(
-        "Image converted to tensor successfully with shape: {:?}",
-        input.shape()
-    );
-    // Run the model
-    let inputs = ort::inputs!["modelInput" => input];
-    log::info!("Running model");
-    let outputs: ort::session::SessionOutputs = session.run(inputs).expect("Model run failed");
-    log::info!("Model run completed");
-    let output3 = process_output(outputs);
-    let points = extract_points(&output3, 0.1).unwrap();
+pub fn create_result_html(
+    output3: &Array3<f32>,
+    original_image_width: u32,
+    original_image_height: u32,
+    model_input_height: u32,
+    image: DynamicImage,
+    metadata: ImageMetadata,
+    threshold: f32,
+) -> Result<String, anyhow::Error> {
+    let points = extract_points(output3, threshold)
+        .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
+    log::debug!("Extracted points: {:?}", points);
     let lm_scale = original_image_height as f64 / model_input_height as f64;
+    log::debug!("LM scale: {}", lm_scale);
     let lm_data = create_lm(
         &LABELS,
         "".to_string(),
@@ -302,22 +299,132 @@ pub fn run(bytes: &[u8], shape: &[u32]) -> String {
         lm_scale,
         points.as_slice(),
     );
-    let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone()).unwrap();
+    log::debug!("Created LabelMeData: {:?}", lm_data);
+
+    let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
     *cp.image_metadata_mut() = metadata;
-    let lm_data_with_image = LabelMeDataWImage::try_from(lm_data).unwrap();
-    create_html(cp, lm_data_with_image).unwrap()
+    let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
+
+    create_html(cp, lm_data_with_image)
 }
 
+#[wasm_bindgen(getter_with_clone)]
+pub struct Arr3 {
+    pub arr: js_sys::Float32Array,
+    pub d1: usize,
+    pub d2: usize,
+    pub d3: usize,
+}
+
+#[wasm_bindgen]
+pub fn create_input_array(bytes: &[u8], model_input_height: u32) -> Result<Arr3, JsValue> {
+    let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let arr4 =
+        to_model_input(image, model_input_height).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(Arr3 {
+        arr: js_sys::Float32Array::from(arr4.as_slice().unwrap()),
+        d1: arr4.shape()[1] as usize,
+        d2: arr4.shape()[2] as usize,
+        d3: arr4.shape()[3] as usize,
+    })
+}
+
+#[wasm_bindgen]
+pub fn process_output(
+    encoded: &[u8],
+    raw_output: &[f32],
+    tensor_dims: js_sys::Uint32Array,
+) -> Result<String, JsValue> {
+    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let output3 = Array3::from_shape_vec(
+        (
+            tensor_dims.get_index(1) as usize,
+            tensor_dims.get_index(2) as usize,
+            tensor_dims.get_index(3) as usize,
+        ),
+        raw_output.to_vec(),
+    )
+    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    // apply sigmoid
+    let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
+
+    log::debug!("Output tensor shape: {:?}", output3.shape());
+
+    let original_width = image.width();
+    let original_height = image.height();
+
+    let model_input_height = output3.shape()[1] as u32;
+    let html = create_result_html(
+        &output3,
+        original_width,
+        original_height,
+        model_input_height,
+        image,
+        metadata,
+        0.1,
+    )
+    .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
+    Ok(html)
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn run(bytes: &[u8], model: &[u8]) -> Result<String, JsValue> {
+    log::debug!("Create session");
+    let builder = ort::session::Session::builder().expect("Cannot create Session builder.");
+    log::debug!("Load model");
+    let mut session = builder
+        .commit_from_memory(model)
+        .expect("Cannot load model from memory.");
+
+    log::debug!("load image");
+    let (image, metadata) = load_image(bytes).unwrap();
+    let original_image_width = image.width();
+    let original_image_height = image.height();
+    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
+    let arr4 = to_model_input(image.clone(), model_input_height).unwrap();
+    let input = ort::value::Tensor::from_array(arr4).unwrap();
+    log::debug!(
+        "Image converted to tensor successfully with shape: {:?}",
+        input.shape()
+    );
+    // Run the model
+    let inputs = ort::inputs!["modelInput" => input];
+    log::info!("Running model");
+    let outputs: ort::session::SessionOutputs = session
+        .run(inputs)
+        .map_err(|e| JsValue::from_str(&format!("Failed to run model: {}", e)))?;
+    log::info!("Model run completed");
+    let output3 = extract_array_from_output(outputs);
+    let html = create_result_html(
+        &output3,
+        original_image_width,
+        original_image_height,
+        model_input_height,
+        image,
+        metadata,
+        0.1,
+    )
+    .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
+    Ok(html)
+}
+
+#[cfg(feature = "wasm")]
 extern crate console_error_panic_hook;
+#[cfg(feature = "wasm")]
 extern crate wasm_bindgen;
 use std::panic;
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn start() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
     wasm_logger::init(wasm_logger::Config::default());
     debug!("logger initialized");
-    ort::set_api(ort_tract::api());
-    debug!("ort api set to tract");
+    ort::set_api(ort_candle::api());
+    debug!("ort api set to candle");
 }

@@ -36,10 +36,10 @@ fn main() -> Result<()> {
     let model_path = &args.model;
     let image_path = &args.input_image;
     let output_path = &args.output_image;
-
+    // ort::set_api(ort_tract::api());
     let builder = ort::session::Session::builder()
         .expect("Cannot create Session builder.")
-        .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+        .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
         .expect("Cannot optimize graph.")
         .with_parallel_execution(true)
         .expect("Cannot activate parallel execution.")
@@ -85,7 +85,7 @@ fn main() -> Result<()> {
     log::info!("Model run completed");
 
     // convert to ndarray
-    let output3 = deepscol::process_output(outputs);
+    let output3 = deepscol::extract_array_from_output(outputs);
     if output_path.ends_with(".npz") {
         let mut npz = ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
         //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
