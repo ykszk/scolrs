@@ -159,7 +159,7 @@ fn main() -> Result<()> {
         let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
         *cp.image_metadata_mut() = metadata;
         let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
-        let html = deepscol::create_html(cp, lm_data_with_image)?;
+        let html = deepscol::create_coronal_html(cp, lm_data_with_image)?;
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }

@@ -3,7 +3,7 @@ use image::DynamicImage;
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
 use ndarray::{s, Array3, Array4, Axis, NewAxis};
-use scolrs::{HasImageMetadata, ImageMetadata};
+use scolrs::{draw::draw_sagittal, HasImageMetadata, ImageMetadata, SagittalDraw};
 use std::collections::HashMap;
 pub type Point = (f32, f32);
 
@@ -12,6 +12,37 @@ extern crate wee_alloc;
 // Default allocator somehow panics in `wrap_in_html`, which can be fixed in the future.
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+#[wasm_bindgen]
+#[derive(Default, Debug, Clone, Copy)]
+pub enum ScanDirection {
+    #[default]
+    Coronal,
+    Sagittal,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Default, Debug)]
+pub struct Settings {
+    pub flip_image: bool,
+    pub scan_direction: ScanDirection,
+}
+
+#[wasm_bindgen]
+impl Settings {
+    #[wasm_bindgen(constructor)]
+    pub fn new(flip_image: bool, scan_direction: ScanDirection) -> Settings {
+        Settings {
+            flip_image,
+            scan_direction,
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn default_settings() -> Settings {
+    Settings::default()
+}
 
 /// Extract landmark point out of the input heatmaps
 pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec<Point>>, String> {
@@ -95,9 +126,14 @@ pub fn load_dicom_from_u8(
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn decode_image(encoded: &[u8]) -> Result<String, JsValue> {
-    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<String, JsValue> {
+    let (mut image, metadata) =
+        load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
     log::debug!("Image metadata: {:?}", metadata);
+    if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image = image.fliph();
+    }
     let b64_image = labelme_rs::img2base64(&image, labelme_rs::image::ImageFormat::Png)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(b64_image)
@@ -237,12 +273,17 @@ pub const LABELS: [&str; 13] = [
     "S-TR",
 ];
 
-pub fn create_html(
+pub fn create_coronal_html(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
 ) -> Result<String, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
-    let draws = CoronalDraw::all();
+    let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
+    let draws = CoronalDraw::all()
+        .into_iter()
+        .filter(|d| !non_draws.contains(d))
+        .collect::<Vec<_>>();
+
     let draw_param = scolrs::DrawParam::default();
     let resize_param = labelme_rs::ResizeParam::Size(800, 800);
     let svg_size = None;
@@ -277,6 +318,45 @@ pub fn create_html(
     Ok(html)
 }
 
+pub fn create_sagittal_html(
+    cp: scolrs::SagittalPoints,
+    lm_data_with_image: LabelMeDataWImage,
+) -> Result<String, anyhow::Error> {
+    let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
+    let draws = scolrs::SagittalDraw::all();
+    let draw_param = scolrs::DrawParam::default();
+    let resize_param = labelme_rs::ResizeParam::Size(800, 800);
+    let svg_size = None;
+    let palettes = scolrs::draw::ColorPalettes::default();
+    let non_hide = [
+        SagittalDraw::VertebralLabels,
+        SagittalDraw::VertebralPoints,
+        SagittalDraw::ThoracicKyphosis,
+        SagittalDraw::LumbarLordosis,
+    ];
+    let hide = scolrs::SagittalDraw::all()
+        .into_iter()
+        .filter(|d| !non_hide.contains(d))
+        .collect::<Vec<_>>();
+    let draw_args = draw::SagittalDrawArguments {
+        image: points_with_image.data_image.image,
+        data: points_with_image.data,
+        draw_param,
+        resize_param: Some(resize_param),
+        svg_size,
+        palettes,
+        draw: &draws,
+        hide: &hide,
+    };
+    let document = draw_sagittal(draw_args).expect("Failed to draw sagittal points and curve");
+    let html = wrap_in_html(
+        document.to_string(),
+        &["g.Component".to_string()],
+        "deepscol result".to_string(),
+    )?;
+    Ok(html)
+}
+
 pub fn create_result_html(
     output3: &Array3<f32>,
     original_image_width: u32,
@@ -285,6 +365,7 @@ pub fn create_result_html(
     image: DynamicImage,
     metadata: ImageMetadata,
     threshold: f32,
+    scan_direction: ScanDirection,
 ) -> Result<String, anyhow::Error> {
     let points = extract_points(output3, threshold)
         .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
@@ -301,11 +382,24 @@ pub fn create_result_html(
     );
     log::debug!("Created LabelMeData: {:?}", lm_data);
 
-    let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
-    *cp.image_metadata_mut() = metadata;
-    let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
-
-    create_html(cp, lm_data_with_image)
+    match scan_direction {
+        ScanDirection::Coronal => {
+            log::debug!("Creating CoronalPointsAndCurve");
+            let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
+            *cp.image_metadata_mut() = metadata;
+            log::debug!("Created CoronalPointsAndCurve successfully");
+            let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
+            create_coronal_html(cp, lm_data_with_image)
+        }
+        ScanDirection::Sagittal => {
+            log::debug!("Creating SagittalPoints");
+            let mut cp: scolrs::SagittalPoints = scolrs::SagittalPoints::try_from(lm_data.clone())?;
+            *cp.image_metadata_mut() = metadata;
+            log::debug!("Created SagittalPoints successfully");
+            let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
+            create_sagittal_html(cp, lm_data_with_image)
+        }
+    }
 }
 
 #[wasm_bindgen(getter_with_clone)]
@@ -317,8 +411,18 @@ pub struct Arr3 {
 }
 
 #[wasm_bindgen]
-pub fn create_input_array(bytes: &[u8], model_input_height: u32) -> Result<Arr3, JsValue> {
+pub fn create_input_array(
+    bytes: &[u8],
+    model_input_height: u32,
+    settings: Settings,
+) -> Result<Arr3, JsValue> {
     let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let image = if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image.fliph()
+    } else {
+        image
+    };
     let arr4 =
         to_model_input(image, model_input_height).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Arr3 {
@@ -334,8 +438,16 @@ pub fn process_output(
     encoded: &[u8],
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
+    settings: Settings,
 ) -> Result<String, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let image = if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image.fliph()
+    } else {
+        image
+    };
 
     let output3 = Array3::from_shape_vec(
         (
@@ -364,6 +476,7 @@ pub fn process_output(
         image,
         metadata,
         0.1,
+        settings.scan_direction,
     )
     .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
@@ -371,7 +484,7 @@ pub fn process_output(
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn run(bytes: &[u8], model: &[u8]) -> Result<String, JsValue> {
+pub fn run(bytes: &[u8], model: &[u8], settings: Settings) -> Result<String, JsValue> {
     log::debug!("Create session");
     let builder = ort::session::Session::builder().expect("Cannot create Session builder.");
     log::debug!("Load model");
@@ -380,7 +493,11 @@ pub fn run(bytes: &[u8], model: &[u8]) -> Result<String, JsValue> {
         .expect("Cannot load model from memory.");
 
     log::debug!("load image");
-    let (image, metadata) = load_image(bytes).unwrap();
+    let (mut image, metadata) = load_image(bytes).unwrap();
+    if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image = image.fliph();
+    }
     let original_image_width = image.width();
     let original_image_height = image.height();
     let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
@@ -406,6 +523,7 @@ pub fn run(bytes: &[u8], model: &[u8]) -> Result<String, JsValue> {
         image,
         metadata,
         0.1,
+        settings.scan_direction,
     )
     .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
