@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::vec;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use labelme_rs::LabelMeDataWImage;
-use ndarray::s;
+use ndarray::{s, Axis};
+use ndarray_stats::QuantileExt;
 
 use scolrs::{CoronalPointsAndCurve, HasImageMetadata};
 
@@ -27,6 +28,39 @@ struct Args {
     /// Path to the onnx model file
     #[arg(long)]
     model: Option<PathBuf>,
+}
+
+/// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
+/// Returns None if no true values are found.
+fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usize)> {
+    let mut min_x = arr.shape()[1];
+    let mut min_y = arr.shape()[0];
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
+
+    for ((y, x), &val) in arr.indexed_iter() {
+        if val {
+            found = true;
+            if x < min_x {
+                min_x = x;
+            }
+            if y < min_y {
+                min_y = y;
+            }
+            if x > max_x {
+                max_x = x;
+            }
+            if y > max_y {
+                max_y = y;
+            }
+        }
+    }
+    if found {
+        Some((min_x, min_y, max_x, max_y))
+    } else {
+        None
+    }
 }
 
 fn main() -> Result<()> {
@@ -70,8 +104,9 @@ fn main() -> Result<()> {
         (original_image_width, original_image_height)
     );
     log::debug!("Expected model input {:?}", session);
-    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2];
-    let arr4 = deepscol::to_model_input(image, model_input_height)?;
+    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
+    let mut lm_scale = original_image_height as f64 / model_input_height as f64;
+    let arr4 = deepscol::to_model_input(image.clone(), model_input_height)?;
     let input = ort::value::Tensor::from_array(arr4)?;
     log::debug!(
         "Image converted to tensor successfully with shape: {:?}",
@@ -85,7 +120,64 @@ fn main() -> Result<()> {
     log::info!("Model run completed");
 
     // convert to ndarray
-    let output3 = deepscol::extract_array_from_output(outputs);
+    let mut output3 = deepscol::extract_array_from_output(outputs);
+    // max in first axis
+    let heatmap2 = output3.fold_axis(Axis(0), 0.0f32, |acc, &x| acc.max(x));
+    let bb_thresh = 0.05;
+    let heatmap2_bin = heatmap2.mapv(|x| x > bb_thresh);
+    let bbox = bounding_box(&heatmap2_bin);
+
+    let mut crop_min_xy = None;
+
+    // if bounding box is close to the image continue, otherwise crop the image
+    if let Some((min_x, min_y, max_x, max_y)) = bbox {
+        if (max_x - min_x) < (0.9 * original_image_width as f64) as usize
+            || (max_y - min_y) < (0.9 * original_image_height as f64) as usize
+        {
+            let margin_rate = 0.1;
+            let scale = original_image_height as f64 / model_input_height as f64;
+            let max_x = scale * max_x as f64;
+            let max_y = scale * max_y as f64;
+            let min_x = scale * min_x as f64;
+            let min_y = scale * min_y as f64;
+            let margin_x = original_image_width as f64 * margin_rate;
+            let margin_y = original_image_height as f64 * margin_rate;
+            let min_x = (min_x - margin_x).max(0.0) as usize;
+            let min_y = (min_y - margin_y).max(0.0) as usize;
+            let max_x = (max_x + margin_x).min(original_image_width as f64) as usize;
+            let max_y = (max_y + margin_y).min(original_image_height as f64) as usize;
+            log::info!(
+                "cropping image to bounding box: ({}, {}, {}, {})",
+                min_x,
+                min_y,
+                max_x,
+                max_y
+            );
+            crop_min_xy = Some((min_x, min_y));
+            // crop the image
+            let mut image = image;
+            let cropped_image = image.crop(
+                min_x as u32,
+                min_y as u32,
+                (max_x - min_x) as u32,
+                (max_y - min_y) as u32,
+            );
+            let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
+            lm_scale = (max_y - min_y) as f64 / model_input_height as f64;
+
+            // update the input tensor
+            let input3 = ort::value::Tensor::from_array(arr4)?;
+            // update the inputs
+            let inputs = ort::inputs!["modelInput" => input3];
+            // run the model again
+            log::info!("Running model on cropped input");
+            let outputs: ort::session::SessionOutputs = session.run(inputs)?;
+            log::info!("Model run completed on cropped input");
+            // convert to ndarray
+            output3 = deepscol::extract_array_from_output(outputs);
+        }
+    }
+
     if output_path.ends_with(".npz") {
         let mut npz = ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
         //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
@@ -98,64 +190,66 @@ fn main() -> Result<()> {
         npz.add_array("heatmaps", &ndarray_output3)?;
         npz.finish()?;
     } else {
-        let rgb = output3.slice(s![..3, .., ..]).to_owned();
-        let first_channel_image =
-            image::ImageBuffer::from_fn(rgb.shape()[2] as u32, rgb.shape()[1] as u32, |x, y| {
-                let r = rgb[[0, y as usize, x as usize]];
+        // let rgb = output3.slice(s![..3, .., ..]).to_owned();
+        let first_channel_image = image::ImageBuffer::from_fn(
+            output3.shape()[2] as u32,
+            output3.shape()[1] as u32,
+            |x, y| {
+                // let r = rgb[[0, y as usize, x as usize]];
+                let r = output3.slice(s![0..2, y as usize, x as usize]); // max value
+                let r = r.max().unwrap_or(&0.0);
                 let r = (r * 255.0) as u8;
-                let g = rgb[[1, y as usize, x as usize]];
+                let g = output3.slice(s![2..4, y as usize, x as usize]);
+                let g = g.max().unwrap_or(&0.0);
                 let g = (g * 255.0) as u8;
-                let b = rgb[[2, y as usize, x as usize]];
+                let b = output3.slice(s![4.., y as usize, x as usize]);
+                let b = b.max().unwrap_or(&0.0);
                 let b = (b * 255.0) as u8;
 
                 image::Rgb([r, g, b])
-            });
+            },
+        );
         first_channel_image
             .save(output_path)
             .expect("Failed to save output image");
     }
-    let lm_scale = original_image_height as f64 / model_input_height as f64;
-
-    let mut extracted_points: Option<Vec<Vec<(f32, f32)>>> = None;
-    let mut extracted_lm: Option<labelme_rs::LabelMeData> = None;
 
     let abs_path = image_path
         .canonicalize()
         .expect("Failed to get absolute path of image")
         .to_string_lossy()
         .to_string();
+    let thresh = 0.1;
+
+    let points = deepscol::extract_points(&output3, thresh).unwrap();
+    // Save the points to LabelMe format
+    let mut lm_data = deepscol::create_lm(
+        &deepscol::LABELS,
+        abs_path.clone(),
+        original_image_width,
+        original_image_height,
+        lm_scale,
+        points.as_slice(),
+    );
+
+    if let Some(crop_min_xy) = crop_min_xy {
+        // Update the points to be relative to the cropped image
+        log::debug!("Shifting points by ({}, {})", crop_min_xy.0, crop_min_xy.1);
+        lm_data.shift(crop_min_xy.0 as f64, crop_min_xy.1 as f64);
+    }
+
     if let Some(labelme_path) = &args.labelme {
-        let points = deepscol::extract_points(&output3, 0.1).unwrap();
-        // Save the points to LabelMe format
-        let lm_data = deepscol::create_lm(
-            &deepscol::LABELS,
-            abs_path.clone(),
-            original_image_width,
-            original_image_height,
-            lm_scale,
-            points.as_slice(),
-        );
         // Save the LabelMe data to a file
         let labelme_json = serde_json::to_string_pretty(&lm_data)?;
 
-        std::fs::write(labelme_path, labelme_json).expect("Failed to write LabelMe data to file");
-        extracted_points = Some(points);
-        extracted_lm = Some(lm_data);
+        std::fs::write(labelme_path, labelme_json).with_context(|| {
+            format!(
+                "Failed to write LabelMe data to file: {}",
+                labelme_path.display()
+            )
+        })?;
     }
     if let Some(html_path) = &args.html {
-        let points = extracted_points.unwrap_or_else(|| {
-            deepscol::extract_points(&output3, 0.1).expect("Failed to extract points from heatmaps")
-        });
-        let lm_data = extracted_lm.unwrap_or_else(|| {
-            deepscol::create_lm(
-                &deepscol::LABELS,
-                abs_path,
-                original_image_width,
-                original_image_height,
-                lm_scale,
-                points.as_slice(),
-            )
-        });
         let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
         *cp.image_metadata_mut() = metadata;
         let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;

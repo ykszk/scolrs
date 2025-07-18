@@ -17,10 +17,10 @@ name = "deepscol"
 path = "src/main.rs"
 
 [features]
-# default = ["std"]
-default = ["wasm"]
+default = ["std"]
+# default = ["wasm"]
 std = ["ort/std", "ort/download-binaries"]
-wasm = ["ort/alternative-backend", "ort-tract", "ort-candle", "wasm-bindgen", "wasm-logger", "getrandom", "console_error_panic_hook"]
+wasm = ["ort/alternative-backend","wasm-logger", "getrandom", "console_error_panic_hook"]
 
 [dependencies]
 anyhow.workspace = true
@@ -37,13 +37,12 @@ labelme-rs.workspace = true
 log.workspace = true
 ndarray.workspace = true
 ndarray-npz = { version = "0.4.2", default-features = false, features = ["compressed"] }
+ndarray-stats.workspace = true
 ort = { version = "2.0.0-rc.10", default-features = false, features = ["ndarray"] }
-ort-candle = { version = "0.1.0", optional = true }
-ort-tract = { version = "0.1.0", optional = true }
 scolrs = { path = "../scolrs", features = ['dicom'] }
 serde_json.workspace = true
 tracing-subscriber = "0.3.19"
-wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen = "0.2.100"
 wasm-logger = { version = "0.2.0", optional = true }
 wee_alloc = "0.4.5"
 

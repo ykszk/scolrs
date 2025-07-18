@@ -319,6 +319,8 @@ pub const MAX_POINT_COUNTS: [usize; 13] = [
 
 const RESIZE_PARAM_SIZE: u32 = 1200;
 
+// readonly CROP_LABELS="TL TR BL BR Shoulder Clavicle Pelvis Iliac FemoralHead"
+
 pub fn create_coronal_html(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
