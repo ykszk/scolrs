@@ -1,3 +1,4 @@
+extern crate wasm_bindgen;
 use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
 use image::DynamicImage;
 use imageproc::region_labelling::{connected_components, Connectivity};
@@ -5,6 +6,7 @@ use log::debug;
 use ndarray::{s, Array3, Array4, Axis, NewAxis};
 use scolrs::{draw::draw_sagittal, HasImageMetadata, ImageMetadata, SagittalDraw};
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 pub type Point = (f32, f32);
 
 extern crate wee_alloc;
@@ -21,6 +23,7 @@ pub enum ScanDirection {
     Sagittal,
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen(getter_with_clone)]
 #[derive(Default, Debug)]
 pub struct Settings {
@@ -28,6 +31,7 @@ pub struct Settings {
     pub scan_direction: ScanDirection,
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 impl Settings {
     #[wasm_bindgen(constructor)]
@@ -39,6 +43,7 @@ impl Settings {
     }
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn default_settings() -> Settings {
     Settings::default()
@@ -50,7 +55,7 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
     let width = arr.shape()[2];
     let ch_axis = Axis(0);
     let mut all_points: Vec<Vec<Point>> = Vec::new();
-    for img_ch in arr.axis_iter(ch_axis) {
+    for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(MAX_POINT_COUNTS.iter()) {
         let bin_arr = img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 });
         let bin_img = image::GrayImage::from_raw(
             width as _,
@@ -101,7 +106,29 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
                 a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
             }
         });
-        // TODO: Use max point count to limit the number of points
+        if points_for_ch.len() > *max_point_count {
+            log::debug!(
+                "Channel has more points than max_point_count: {} > {}",
+                points_for_ch.len(),
+                max_point_count
+            );
+            let mut heatmap_values = points_for_ch
+                .into_iter()
+                .map(|(x, y)| {
+                    let val = img_ch[[y as usize, x as usize]];
+                    (x, y, val)
+                })
+                .collect::<Vec<(f32, f32, f32)>>();
+            // sort by heatmap value
+            heatmap_values
+                .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            // take the top `max_point_count` points
+            points_for_ch = heatmap_values
+                .into_iter()
+                .take(*max_point_count)
+                .map(|(x, y, _val)| (x, y))
+                .collect::<Vec<Point>>();
+        }
         all_points.push(points_for_ch);
     }
 
@@ -273,6 +300,25 @@ pub const LABELS: [&str; 13] = [
     "S-TR",
 ];
 
+// '{"TL":19, "TR":19, "BL":18, "BR":18, "Shoulder": 2, "Clavicle": 2, "Pelvis": 2, "Iliac": 2, "FemoralHead": 2, "C7-TL": 1, "C7-TR": 1, "S-TL": 1, "S-TR": 1}'
+pub const MAX_POINT_COUNTS: [usize; 13] = [
+    19, // TL
+    19, // TR
+    18, // BL
+    18, // BR
+    2,  // Shoulder
+    2,  // Clavicle
+    2,  // Pelvis
+    2,  // Iliac
+    2,  // FemoralHead
+    1,  // C7-TL
+    1,  // C7-TR
+    1,  // S-TL
+    1,  // S-TR
+];
+
+const RESIZE_PARAM_SIZE: u32 = 1200;
+
 pub fn create_coronal_html(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
@@ -285,7 +331,7 @@ pub fn create_coronal_html(
         .collect::<Vec<_>>();
 
     let draw_param = scolrs::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(800, 800);
+    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
@@ -325,7 +371,7 @@ pub fn create_sagittal_html(
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let draws = scolrs::SagittalDraw::all();
     let draw_param = scolrs::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(800, 800);
+    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
@@ -402,6 +448,7 @@ pub fn create_result_html(
     }
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen(getter_with_clone)]
 pub struct Arr3 {
     pub arr: js_sys::Float32Array,
@@ -410,6 +457,7 @@ pub struct Arr3 {
     pub d3: usize,
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn create_input_array(
     bytes: &[u8],
@@ -433,6 +481,7 @@ pub fn create_input_array(
     })
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn process_output(
     encoded: &[u8],
@@ -483,59 +532,9 @@ pub fn process_output(
 }
 
 #[cfg(feature = "wasm")]
-#[wasm_bindgen]
-pub fn run(bytes: &[u8], model: &[u8], settings: Settings) -> Result<String, JsValue> {
-    log::debug!("Create session");
-    let builder = ort::session::Session::builder().expect("Cannot create Session builder.");
-    log::debug!("Load model");
-    let mut session = builder
-        .commit_from_memory(model)
-        .expect("Cannot load model from memory.");
-
-    log::debug!("load image");
-    let (mut image, metadata) = load_image(bytes).unwrap();
-    if settings.flip_image {
-        log::debug!("Flipping image horizontally");
-        image = image.fliph();
-    }
-    let original_image_width = image.width();
-    let original_image_height = image.height();
-    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
-    let arr4 = to_model_input(image.clone(), model_input_height).unwrap();
-    let input = ort::value::Tensor::from_array(arr4).unwrap();
-    log::debug!(
-        "Image converted to tensor successfully with shape: {:?}",
-        input.shape()
-    );
-    // Run the model
-    let inputs = ort::inputs!["modelInput" => input];
-    log::info!("Running model");
-    let outputs: ort::session::SessionOutputs = session
-        .run(inputs)
-        .map_err(|e| JsValue::from_str(&format!("Failed to run model: {}", e)))?;
-    log::info!("Model run completed");
-    let output3 = extract_array_from_output(outputs);
-    let html = create_result_html(
-        &output3,
-        original_image_width,
-        original_image_height,
-        model_input_height,
-        image,
-        metadata,
-        0.1,
-        settings.scan_direction,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
-    Ok(html)
-}
-
-#[cfg(feature = "wasm")]
 extern crate console_error_panic_hook;
 #[cfg(feature = "wasm")]
-extern crate wasm_bindgen;
 use std::panic;
-#[cfg(feature = "wasm")]
-use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
@@ -543,6 +542,4 @@ pub fn start() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
     wasm_logger::init(wasm_logger::Config::default());
     debug!("logger initialized");
-    ort::set_api(ort_candle::api());
-    debug!("ort api set to candle");
 }
