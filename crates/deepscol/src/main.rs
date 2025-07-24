@@ -30,39 +30,6 @@ struct Args {
     model: Option<PathBuf>,
 }
 
-/// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
-/// Returns None if no true values are found.
-fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usize)> {
-    let mut min_x = arr.shape()[1];
-    let mut min_y = arr.shape()[0];
-    let mut max_x = 0;
-    let mut max_y = 0;
-    let mut found = false;
-
-    for ((y, x), &val) in arr.indexed_iter() {
-        if val {
-            found = true;
-            if x < min_x {
-                min_x = x;
-            }
-            if y < min_y {
-                min_y = y;
-            }
-            if x > max_x {
-                max_x = x;
-            }
-            if y > max_y {
-                max_y = y;
-            }
-        }
-    }
-    if found {
-        Some((min_x, min_y, max_x, max_y))
-    } else {
-        None
-    }
-}
-
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -121,61 +88,47 @@ fn main() -> Result<()> {
 
     // convert to ndarray
     let mut output3 = deepscol::extract_array_from_output(outputs);
-    // max in first axis
-    let heatmap2 = output3.fold_axis(Axis(0), 0.0f32, |acc, &x| acc.max(x));
-    let bb_thresh = 0.05;
-    let heatmap2_bin = heatmap2.mapv(|x| x > bb_thresh);
-    let bbox = bounding_box(&heatmap2_bin);
+
+    let cropping_params = deepscol::calculate_crop_parameters(
+        &output3,
+        0.05,
+        original_image_height,
+        original_image_width,
+        model_input_height,
+    );
 
     let mut crop_min_xy = None;
 
-    // if bounding box is close to the image continue, otherwise crop the image
-    if let Some((min_x, min_y, max_x, max_y)) = bbox {
-        if (max_x - min_x) < (0.9 * original_image_width as f64) as usize
-            || (max_y - min_y) < (0.9 * original_image_height as f64) as usize
-        {
-            let margin_rate = 0.1;
-            let scale = original_image_height as f64 / model_input_height as f64;
-            let max_x = scale * max_x as f64;
-            let max_y = scale * max_y as f64;
-            let min_x = scale * min_x as f64;
-            let min_y = scale * min_y as f64;
-            let margin_x = original_image_width as f64 * margin_rate;
-            let margin_y = original_image_height as f64 * margin_rate;
-            let min_x = (min_x - margin_x).max(0.0) as usize;
-            let min_y = (min_y - margin_y).max(0.0) as usize;
-            let max_x = (max_x + margin_x).min(original_image_width as f64) as usize;
-            let max_y = (max_y + margin_y).min(original_image_height as f64) as usize;
-            log::info!(
-                "cropping image to bounding box: ({}, {}, {}, {})",
-                min_x,
-                min_y,
-                max_x,
-                max_y
-            );
-            crop_min_xy = Some((min_x, min_y));
-            // crop the image
-            let mut image = image;
-            let cropped_image = image.crop(
-                min_x as u32,
-                min_y as u32,
-                (max_x - min_x) as u32,
-                (max_y - min_y) as u32,
-            );
-            let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
-            lm_scale = (max_y - min_y) as f64 / model_input_height as f64;
+    if let Some((min_x, min_y, max_x, max_y)) = cropping_params {
+        log::info!(
+            "cropping image to bounding box: ({}, {}, {}, {})",
+            min_x,
+            min_y,
+            max_x,
+            max_y
+        );
+        crop_min_xy = Some((min_x, min_y));
+        // crop the image
+        let mut image = image;
+        let cropped_image = image.crop(
+            min_x as u32,
+            min_y as u32,
+            (max_x - min_x) as u32,
+            (max_y - min_y) as u32,
+        );
+        let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
+        lm_scale = (max_y - min_y) as f64 / model_input_height as f64;
 
-            // update the input tensor
-            let input3 = ort::value::Tensor::from_array(arr4)?;
-            // update the inputs
-            let inputs = ort::inputs!["modelInput" => input3];
-            // run the model again
-            log::info!("Running model on cropped input");
-            let outputs: ort::session::SessionOutputs = session.run(inputs)?;
-            log::info!("Model run completed on cropped input");
-            // convert to ndarray
-            output3 = deepscol::extract_array_from_output(outputs);
-        }
+        // update the input tensor
+        let input3 = ort::value::Tensor::from_array(arr4)?;
+        // update the inputs
+        let inputs = ort::inputs!["modelInput" => input3];
+        // run the model again
+        log::info!("Running model on cropped input");
+        let outputs: ort::session::SessionOutputs = session.run(inputs)?;
+        log::info!("Model run completed on cropped input");
+        // convert to ndarray
+        output3 = deepscol::extract_array_from_output(outputs);
     }
 
     if output_path.ends_with(".npz") {

@@ -98,14 +98,7 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
                 (x as f32, y as f32)
             })
             .collect::<Vec<Point>>();
-        // sort by y and then by x
-        points_for_ch.sort_by(|a, b| {
-            if a.1 == b.1 {
-                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-            } else {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
+
         if points_for_ch.len() > *max_point_count {
             log::debug!(
                 "Channel has more points than max_point_count: {} > {}",
@@ -129,6 +122,15 @@ pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec
                 .map(|(x, y, _val)| (x, y))
                 .collect::<Vec<Point>>();
         }
+
+        // sort by y and then by x
+        points_for_ch.sort_by(|a, b| {
+            if a.1 == b.1 {
+                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
         all_points.push(points_for_ch);
     }
 
@@ -151,9 +153,16 @@ pub fn load_dicom_from_u8(
     Ok((dynamic_image, metadata))
 }
 
+#[wasm_bindgen(getter_with_clone)]
+pub struct DecodedImage {
+    pub image: String,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<String, JsValue> {
+pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<DecodedImage, JsValue> {
     let (mut image, metadata) =
         load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
     log::debug!("Image metadata: {:?}", metadata);
@@ -163,7 +172,11 @@ pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<String, JsValu
     }
     let b64_image = labelme_rs::img2base64(&image, labelme_rs::image::ImageFormat::Png)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    Ok(b64_image)
+    Ok(DecodedImage {
+        image: b64_image,
+        width: metadata.width as u32,
+        height: metadata.height as u32,
+    })
 }
 
 /// load dicom or png/jpeg image
@@ -319,6 +332,71 @@ pub const MAX_POINT_COUNTS: [usize; 13] = [
 
 const RESIZE_PARAM_SIZE: u32 = 1200;
 
+/// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
+/// Returns None if no true values are found.
+fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usize)> {
+    let mut min_x = arr.shape()[1];
+    let mut min_y = arr.shape()[0];
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
+
+    for ((y, x), &val) in arr.indexed_iter() {
+        if val {
+            found = true;
+            if x < min_x {
+                min_x = x;
+            }
+            if y < min_y {
+                min_y = y;
+            }
+            if x > max_x {
+                max_x = x;
+            }
+            if y > max_y {
+                max_y = y;
+            }
+        }
+    }
+    if found {
+        Some((min_x, min_y, max_x, max_y))
+    } else {
+        None
+    }
+}
+
+pub fn calculate_crop_parameters(
+    output3: &ndarray::Array3<f32>,
+    thresh: f32,
+    original_image_height: u32,
+    original_image_width: u32,
+    model_input_height: u32,
+) -> Option<(usize, usize, usize, usize)> {
+    let heatmap2 = output3.fold_axis(Axis(0), 0.0f32, |acc, &x| acc.max(x));
+    let heatmap2_bin = heatmap2.mapv(|x| x > thresh);
+    let bbox = bounding_box(&heatmap2_bin);
+    if let Some((min_x, min_y, max_x, max_y)) = bbox {
+        if (max_x - min_x) < (0.9 * original_image_width as f64) as usize
+            || (max_y - min_y) < (0.9 * original_image_height as f64) as usize
+        {
+            let margin_rate = 0.1;
+            let scale = original_image_height as f64 / model_input_height as f64;
+            let max_x = scale * max_x as f64;
+            let max_y = scale * max_y as f64;
+            let min_x = scale * min_x as f64;
+            let min_y = scale * min_y as f64;
+            let margin_x = original_image_width as f64 * margin_rate;
+            let margin_y = original_image_height as f64 * margin_rate;
+            let min_x = (min_x - margin_x).max(0.0) as usize;
+            let min_y = (min_y - margin_y).max(0.0) as usize;
+            let max_x = (max_x + margin_x).min(original_image_width as f64) as usize;
+            let max_y = (max_y + margin_y).min(original_image_height as f64) as usize;
+            return Some((min_x, min_y, max_x, max_y));
+        }
+    }
+    None
+}
+
 // readonly CROP_LABELS="TL TR BL BR Shoulder Clavicle Pelvis Iliac FemoralHead"
 
 pub fn create_coronal_html(
@@ -405,6 +483,22 @@ pub fn create_sagittal_html(
     Ok(html)
 }
 
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy)]
+pub struct CroppingParams {
+    pub min_x: usize,
+    pub min_y: usize,
+    pub max_x: usize,
+    pub max_y: usize,
+}
+
+#[wasm_bindgen]
+impl CroppingParams {
+    pub fn copy(&self) -> CroppingParams {
+        *self
+    }
+}
+
 pub fn create_result_html(
     output3: &Array3<f32>,
     original_image_width: u32,
@@ -414,13 +508,24 @@ pub fn create_result_html(
     metadata: ImageMetadata,
     threshold: f32,
     scan_direction: ScanDirection,
+    cropping_params: Option<CroppingParams>,
 ) -> Result<String, anyhow::Error> {
     let points = extract_points(output3, threshold)
         .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
     log::debug!("Extracted points: {:?}", points);
-    let lm_scale = original_image_height as f64 / model_input_height as f64;
+    let lm_scale = if let Some(cropping_params) = &cropping_params {
+        let crop_height = cropping_params.max_y - cropping_params.min_y;
+        log::debug!(
+            "Cropped image height: {}, original image height: {}",
+            crop_height,
+            original_image_height
+        );
+        crop_height as f64 / model_input_height as f64
+    } else {
+        original_image_height as f64 / model_input_height as f64
+    };
     log::debug!("LM scale: {}", lm_scale);
-    let lm_data = create_lm(
+    let mut lm_data = create_lm(
         &LABELS,
         "".to_string(),
         original_image_width,
@@ -428,6 +533,14 @@ pub fn create_result_html(
         lm_scale,
         points.as_slice(),
     );
+    if let Some(crop_params) = &cropping_params {
+        log::debug!(
+            "Shifting LabelMeData by min_x: {}, min_y: {}",
+            crop_params.min_x,
+            crop_params.min_y
+        );
+        lm_data.shift(crop_params.min_x as f64, crop_params.min_y as f64);
+    }
     log::debug!("Created LabelMeData: {:?}", lm_data);
 
     match scan_direction {
@@ -465,14 +578,29 @@ pub fn create_input_array(
     bytes: &[u8],
     model_input_height: u32,
     settings: Settings,
+    cropping_params: Option<CroppingParams>,
 ) -> Result<Arr3, JsValue> {
     let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let image = if settings.flip_image {
+    let mut image = if settings.flip_image {
         log::debug!("Flipping image horizontally");
         image.fliph()
     } else {
         image
     };
+    if let Some(cp) = cropping_params {
+        let cropped_image = image.crop(
+            cp.min_x as u32,
+            cp.min_y as u32,
+            (cp.max_x - cp.min_x) as u32,
+            (cp.max_y - cp.min_y) as u32,
+        );
+        log::debug!(
+            "Cropped image size: {}x{}",
+            cropped_image.width(),
+            cropped_image.height()
+        );
+        image = cropped_image;
+    }
     let arr4 =
         to_model_input(image, model_input_height).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Arr3 {
@@ -485,11 +613,49 @@ pub fn create_input_array(
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
+pub fn calculate_crop_parameters_wasm(
+    raw_output: &[f32],
+    tensor_dims: js_sys::Uint32Array,
+    original_image_width: u32,
+    original_image_height: u32,
+) -> Result<Option<CroppingParams>, JsValue> {
+    let output3 = Array3::from_shape_vec(
+        (
+            tensor_dims.get_index(1) as usize,
+            tensor_dims.get_index(2) as usize,
+            tensor_dims.get_index(3) as usize,
+        ),
+        raw_output.to_vec(),
+    )
+    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    // apply sigmoid
+    let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
+
+    let params = calculate_crop_parameters(
+        &output3,
+        0.05,
+        original_image_height,
+        original_image_width,
+        tensor_dims.get_index(2),
+    )
+    .map(|(min_x, min_y, max_x, max_y)| CroppingParams {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    });
+    Ok(params)
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
 pub fn process_output(
     encoded: &[u8],
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
     settings: Settings,
+    cropping_params: Option<CroppingParams>,
 ) -> Result<String, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
@@ -514,6 +680,7 @@ pub fn process_output(
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
 
     log::debug!("Output tensor shape: {:?}", output3.shape());
+    log::debug!("Cropping parameters: {:?}", cropping_params);
 
     let original_width = image.width();
     let original_height = image.height();
@@ -528,6 +695,7 @@ pub fn process_output(
         metadata,
         0.1,
         settings.scan_direction,
+        cropping_params,
     )
     .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
