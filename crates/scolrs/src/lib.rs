@@ -502,11 +502,32 @@ pub struct CoronalPoints {
     pub clavicle: AtMost2<Array2<f64>>,
     pub shoulder: AtMost2<Array2<f64>>,
     pub pelvis: AtMost2<Array2<f64>>,
+    pub iliac: AtMost2<Array2<f64>>,
     pub femoral_head: AtMost2<Array2<f64>>,
     /// Coefficients of the polynomial curve of the spine
     pub c_coefs: Array1<f64>,
 
     pub image_metadata: ImageMetadata,
+}
+
+impl CoronalPoints {
+    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+        let mut points = Vec::new();
+        let tl = self.spine.c7tls.0.slice(s![.., 0, ..]);
+        points.push(("TL".to_string(), tl));
+        let tr = self.spine.c7tls.0.slice(s![.., 1, ..]);
+        points.push(("TR".to_string(), tr));
+        let bl = self.spine.c7tls.0.slice(s![.., 2, ..]);
+        points.push(("BL".to_string(), bl));
+        let br = self.spine.c7tls.0.slice(s![.., 3, ..]);
+        points.push(("BR".to_string(), br));
+        points.push(("Clavicle".to_string(), self.clavicle.0.view()));
+        points.push(("Shoulder".to_string(), self.shoulder.0.view()));
+        points.push(("Iliac".to_string(), self.iliac.0.view()));
+        points.push(("Pelvis".to_string(), self.pelvis.0.view()));
+        points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
+        points
+    }
 }
 
 /// Intermediary representation for [CoronalPoints]
@@ -516,6 +537,7 @@ struct CoronalPointsIR {
     pub clavicle: Vec<Point2d>,
     pub shoulder: Vec<Point2d>,
     pub pelvis: Vec<Point2d>,
+    pub iliac: Vec<Point2d>,
     pub femoral_head: Vec<Point2d>,
 
     pub image_metadata: ImageMetadata,
@@ -553,6 +575,7 @@ impl Scalable for CoronalPoints {
         self.clavicle.0.scale(scale_xy.view());
         self.shoulder.0.scale(scale_xy.view());
         self.pelvis.0.scale(scale_xy.view());
+        self.iliac.0.scale(scale_xy.view());
         self.femoral_head.0.scale(scale_xy.view());
 
         self.c_coefs = self.spine.fit_poly()?;
@@ -643,6 +666,7 @@ impl From<CoronalPointsIR> for LabelMeData {
             ("Clavicle", ir.clavicle),
             ("Shoulder", ir.shoulder),
             ("Pelvis", ir.pelvis),
+            ("Iliac", ir.iliac),
             ("FemoralHead", ir.femoral_head),
         ]);
         data
@@ -667,12 +691,14 @@ impl From<&CoronalPoints> for CoronalPointsIR {
         let clavicle = array2_to_vec_points(cp.clavicle.0.clone());
         let shoulder = array2_to_vec_points(cp.shoulder.0.clone());
         let pelvis = array2_to_vec_points(cp.pelvis.0.clone());
+        let iliac = array2_to_vec_points(cp.iliac.0.clone());
         let femoral_head = array2_to_vec_points(cp.femoral_head.0.clone());
         Self {
             spine,
             clavicle,
             shoulder,
             pelvis,
+            iliac,
             femoral_head,
             image_metadata: cp.image_metadata.clone(),
         }
@@ -1219,6 +1245,22 @@ impl<'de> Deserialize<'de> for SagittalPoints {
     }
 }
 
+impl SagittalPoints {
+    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+        let mut points = Vec::new();
+        let tl = self.spine.c7tls.0.slice(s![.., 0, ..]);
+        points.push(("TL".to_string(), tl));
+        let tr = self.spine.c7tls.0.slice(s![.., 1, ..]);
+        points.push(("TR".to_string(), tr));
+        let bl = self.spine.c7tls.0.slice(s![.., 2, ..]);
+        points.push(("BL".to_string(), bl));
+        let br = self.spine.c7tls.0.slice(s![.., 3, ..]);
+        points.push(("BR".to_string(), br));
+        points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
+        points
+    }
+}
+
 impl Scalable for SagittalPoints {
     type Error = Infallible;
     fn _impl_scale(&mut self) -> Result<(), Self::Error> {
@@ -1751,6 +1793,7 @@ impl TryFrom<LabelMeData> for CoronalPoints {
         let clavicle = _new_at_most2(&data, "Clavicle")?;
         let shoulder = _new_at_most2(&data, "Shoulder")?;
         let pelvis = _new_at_most2(&data, "Pelvis")?;
+        let iliac = _new_at_most2(&data, "Iliac")?;
         let femoral_head = _new_at_most2(&data, "FemoralHead")?;
 
         let c_coefs = spine.fit_poly()?;
@@ -1762,6 +1805,7 @@ impl TryFrom<LabelMeData> for CoronalPoints {
             clavicle,
             pelvis,
             shoulder,
+            iliac,
             femoral_head,
             c_coefs,
             image_metadata: image_data,
@@ -1975,6 +2019,7 @@ impl TryFrom<&LabelMeData> for VertebraeC7TL {
 #[serde(rename_all = "PascalCase")]
 #[clap(rename_all = "PascalCase")]
 pub enum CoronalDraw {
+    AllPoints,
     VertebralLabels,
     VertebralPoints,
     Centroids,
@@ -2082,6 +2127,7 @@ where
 #[clap(rename_all = "PascalCase")]
 #[strum(serialize_all = "PascalCase")]
 pub enum SagittalDraw {
+    AllPoints,
     VertebralLabels,
     VertebralPoints,
     ThoracicKyphosis,

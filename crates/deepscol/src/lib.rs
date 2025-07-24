@@ -415,8 +415,8 @@ pub fn create_coronal_html(
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
+        CoronalDraw::AllPoints,
         CoronalDraw::VertebralLabels,
-        CoronalDraw::VertebralPoints,
         CoronalDraw::CobbPT,
         CoronalDraw::CobbMT,
         CoronalDraw::CobbTLL,

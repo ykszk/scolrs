@@ -993,6 +993,35 @@ impl DrawComponent for VertebralLabels<'_> {
     }
 }
 
+/// All detected points
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
+pub struct AllPoints<'a>(Vec<(String, ArrayView2<'a, f64>)>);
+impl CommonComponent for AllPoints<'_> {}
+impl DrawComponent for AllPoints<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        label_colors: &mut ColorPalette,
+        _line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let mut g_points = self.default_group();
+        for (label, points) in self.0.iter() {
+            let color = label_colors.get_or_new(label);
+            let mut sub_group: element::Group = element::Group::new()
+                .set("stroke", color)
+                .set("fill", color);
+            sub_group = sub_group.add(painter.title(label.as_str()));
+            for point in points.axis_iter(Axis(0)) {
+                let p = painter.point(point);
+                sub_group = sub_group.add(p);
+            }
+            g_points = g_points.add(sub_group);
+        }
+        Ok(g_points)
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]

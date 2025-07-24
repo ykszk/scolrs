@@ -536,6 +536,7 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalDraw::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalDraw::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
 
+            CoronalDraw::AllPoints => Box::new(draw::AllPoints(coronal_points.to_points())),
             CoronalDraw::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
             CoronalDraw::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
             CoronalDraw::Centroids => Box::new(Centroids(&coronal_points.spine)),

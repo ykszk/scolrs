@@ -1,4 +1,4 @@
-use crate::draw::Named;
+use crate::draw::{AllPoints, Named};
 use crate::{
     Curve, SagittalDraw, SagittalMeasure, SagittalPoints, ScaledType, Spine, ValidateLength,
     VertebralIndex,
@@ -613,6 +613,7 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
             SagittalDraw::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalDraw::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
 
+            SagittalDraw::AllPoints => Box::new(AllPoints(sagittal_points.to_points())),
             SagittalDraw::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
             SagittalDraw::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
         }
