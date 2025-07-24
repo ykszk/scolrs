@@ -1397,10 +1397,36 @@ where
     Ok(g)
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ColorPalettes {
     pub label_colors: ColorPalette,
     pub line_colors: ColorPalette,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabelColors {
+    label_colors: HashMap<String, labelme_rs::Color>,
+}
+
+impl Default for ColorPalettes {
+    fn default() -> Self {
+        // embed the content in tests/data/colors.yaml
+        let config: LabelColors =
+            serde_yaml::from_str(include_str!("../../../tests/data/colors.yaml"))
+                .expect("Failed to parse colors.yaml");
+        let label_colors = labelme_rs::LabelColorsHex::from_iter(
+            config.label_colors.into_iter().map(|(k, v)| (k, v.into())),
+        );
+        let label_colors = ColorPalette::new(label_colors);
+        // embed the content in tests/data/line_colors.csv
+        let line_colors =
+            load_line_colors(&include_bytes!("../../../tests/data/line_colors.csv")[..]).unwrap();
+        let line_colors = ColorPalette::new(line_colors);
+        Self {
+            label_colors,
+            line_colors,
+        }
+    }
 }
 
 const VISIBILITY_HIDDEN: &str = "hidden";

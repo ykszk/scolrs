@@ -6113,6 +6113,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
+ "serde_yaml",
  "shadow-rs",
  "strum 0.26.3",
  "svg",
