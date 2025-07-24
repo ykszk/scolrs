@@ -455,8 +455,8 @@ pub fn create_sagittal_html(
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
+        SagittalDraw::AllPoints,
         SagittalDraw::VertebralLabels,
-        SagittalDraw::VertebralPoints,
         SagittalDraw::ThoracicKyphosis,
         SagittalDraw::LumbarLordosis,
     ];

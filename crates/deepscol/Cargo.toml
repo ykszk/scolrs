@@ -21,8 +21,8 @@ name = "dev"
 path = "src/dev.rs"
 
 [features]
-default = ["std"]
-# default = ["wasm"]
+# default = ["std"]
+default = ["wasm"]
 std = ["ort/std", "ort/download-binaries"]
 wasm = ["ort/alternative-backend","wasm-logger", "getrandom", "console_error_panic_hook"]
 

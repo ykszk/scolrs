@@ -512,15 +512,7 @@ pub struct CoronalPoints {
 
 impl CoronalPoints {
     pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
-        let mut points = Vec::new();
-        let tl = self.spine.c7tls.0.slice(s![.., 0, ..]);
-        points.push(("TL".to_string(), tl));
-        let tr = self.spine.c7tls.0.slice(s![.., 1, ..]);
-        points.push(("TR".to_string(), tr));
-        let bl = self.spine.c7tls.0.slice(s![.., 2, ..]);
-        points.push(("BL".to_string(), bl));
-        let br = self.spine.c7tls.0.slice(s![.., 3, ..]);
-        points.push(("BR".to_string(), br));
+        let mut points = self.spine.c7tls.to_points();
         points.push(("Clavicle".to_string(), self.clavicle.0.view()));
         points.push(("Shoulder".to_string(), self.shoulder.0.view()));
         points.push(("Iliac".to_string(), self.iliac.0.view()));
@@ -1247,15 +1239,7 @@ impl<'de> Deserialize<'de> for SagittalPoints {
 
 impl SagittalPoints {
     pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
-        let mut points = Vec::new();
-        let tl = self.spine.c7tls.0.slice(s![.., 0, ..]);
-        points.push(("TL".to_string(), tl));
-        let tr = self.spine.c7tls.0.slice(s![.., 1, ..]);
-        points.push(("TR".to_string(), tr));
-        let bl = self.spine.c7tls.0.slice(s![.., 2, ..]);
-        points.push(("BL".to_string(), bl));
-        let br = self.spine.c7tls.0.slice(s![.., 3, ..]);
-        points.push(("BR".to_string(), br));
+        let mut points = self.spine.c7tls.to_points();
         points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
         points
     }
@@ -1855,6 +1839,22 @@ pub struct C7TLS(pub Array3<f64>);
 /// C7, thoracic and lumber vertebrae
 #[derive(Debug, Clone, PartialEq)]
 pub struct VertebraeC7TL(pub Array3<f64>);
+
+impl C7TLS {
+    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+        let mut points = Vec::new();
+        let tl = self.0.slice(s![.., 0, ..]);
+        points.push(("TL".to_string(), tl));
+        let tr = self.0.slice(s![.., 1, ..]);
+        points.push(("TR".to_string(), tr));
+        // Last elements are sacral bottom corners made up for the convenience so dropping them
+        let bl = self.0.slice(s![..(self.0.shape()[0] - 1), 2, ..]);
+        points.push(("BL".to_string(), bl));
+        let br = self.0.slice(s![..(self.0.shape()[0] - 1), 3, ..]);
+        points.push(("BR".to_string(), br));
+        points
+    }
+}
 
 /// Thoracic and lumber vertebrae
 pub struct VertebraeTL<'a>(pub ArrayView3<'a, f64>);

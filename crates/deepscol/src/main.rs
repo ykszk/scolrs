@@ -4,7 +4,7 @@ use std::vec;
 use anyhow::{Context, Result};
 use clap::Parser;
 use labelme_rs::LabelMeDataWImage;
-use ndarray::{s, Axis};
+use ndarray::s;
 use ndarray_stats::QuantileExt;
 
 use scolrs::{CoronalPointsAndCurve, HasImageMetadata};
