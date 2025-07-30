@@ -230,6 +230,9 @@ pub struct MeasureSubNeckArgs {
     /// Measurements. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<NeckLateralMeasure>>,
+    /// Flatten the vectors of measurements
+    #[clap(long)]
+    pub flatten: bool,
 }
 
 #[derive(Parser, Debug, Default)]

@@ -24,7 +24,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 type Measurement = std::result::Result<f64, MeasureError>;
 type MeasurementVec = std::result::Result<Vec<f64>, MeasureError>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct MeasureResult<V, T>
 where
     V: std::hash::Hash + Eq + std::cmp::Ord,
@@ -44,6 +44,7 @@ where
 
 type SagittalMeasureLine = MeasureLine<SagittalMeasure, f64>;
 type CoronalMeasureLine = MeasureLine<CoronalMeasure, f64>;
+type FlattenedNeckMeasurements = MeasureLine<String, f64>;
 
 fn process_ndjson(args: MeasureArgs) -> Result<()> {
     let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
@@ -90,12 +91,30 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &args.input,
                     &line?,
                 )?;
+                let flatten = measure_sub_neck_args.flatten;
                 let results = measure_neck(data_line.content, measure_sub_neck_args)?;
                 let line = MeasureLine {
                     filename: data_line.filename,
                     content: results,
                 };
-                writeln!(writer, "{}", serde_json::to_string(&line)?)?;
+                if flatten {
+                    let mut flattened = FlattenedNeckMeasurements {
+                        filename: line.filename,
+                        content: Default::default(),
+                    };
+                    flattened.content.unit_of_length = line.content.unit_of_length;
+                    for (k, v) in line.content.measurements {
+                        if let Ok(v) = v {
+                            for (i, value) in v.into_iter().enumerate() {
+                                let key = format!("{}_{}", k, i + 1);
+                                flattened.content.measurements.insert(key, Ok(value));
+                            }
+                        }
+                    }
+                    writeln!(writer, "{}", serde_json::to_string(&flattened)?)?;
+                } else {
+                    writeln!(writer, "{}", serde_json::to_string(&line)?)?;
+                }
             }
         }
     }
