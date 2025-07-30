@@ -43,12 +43,6 @@ impl Settings {
     }
 }
 
-#[cfg(feature = "wasm")]
-#[wasm_bindgen]
-pub fn default_settings() -> Settings {
-    Settings::default()
-}
-
 /// Extract landmark point out of the input heatmaps
 pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec<Point>>, String> {
     let height = arr.shape()[1];

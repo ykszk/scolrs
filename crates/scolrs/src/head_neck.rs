@@ -1236,6 +1236,66 @@ impl NeckMeasureComponent for TPR<'_> {
     }
 }
 
+/// C2-7 Sagittal Vertical Axis
+/// The horizontal distance from the center of the lower end plate of C2 to the posterior-superior corner of C7
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
+pub struct C2C7SVA<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for C2C7SVA<'_> {}
+impl C2C7SVA<'_> {
+    fn prep(&self) -> Result<(Array1<f64>, Array1<f64>), MeasureError> {
+        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]);
+        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let c7 = self.0.corners.0.index_axis(Axis(0), 6);
+        let c7_tr = c7.index_axis(Axis(0), 1);
+        Ok((c2_lower_middle.to_owned(), c7_tr.to_owned()))
+    }
+}
+impl DrawComponent for C2C7SVA<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let (c2_lower_middle, c7_tr) = self.prep()?;
+        // plumb line point from c2
+        let mut c2_plumb_point = c2_lower_middle.clone();
+        c2_plumb_point[1] = c7_tr[1]; // same y
+        let polyline_points = stack![
+            Axis(0),
+            c2_lower_middle.view(),
+            c2_plumb_point.view(),
+            c7_tr.view()
+        ];
+        let line = painter.polyline(polyline_points.view());
+        group = group.add(line);
+        let distance = (c2_lower_middle[0] - c7_tr[0]).abs();
+        let text_position = polyline_points
+            .slice(s![1.., ..])
+            .mean_axis(Axis(0))
+            .unwrap();
+        let text = painter.text(
+            &format!("{:.1}", distance),
+            text_position.view(),
+            Some(self.id()),
+            Some(&self.0.image_metadata.unit),
+        );
+        group = group.add(text);
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for C2C7SVA<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let (c2_lower_middle, c7_tr) = self.prep()?;
+        let distance = (c2_lower_middle[0] - c7_tr[0]).abs();
+        Ok(vec![distance])
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1351,6 +1411,7 @@ pub enum NeckLateralMeasure {
     CranialSlope,
     T1Tilt,
     TPR,
+    C2C7SVA,
 }
 
 impl NeckLateralMeasure {
@@ -1382,6 +1443,7 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::CranialSlope => Box::new(CranialSlope(lateral_points)),
             NeckLateralMeasure::T1Tilt => Box::new(T1Tilt(lateral_points)),
             NeckLateralMeasure::TPR => Box::new(TPR(lateral_points)),
+            NeckLateralMeasure::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
         }
     }
 }
@@ -1405,6 +1467,7 @@ pub enum NeckLateralDraw {
     CranialSlope,
     T1Tilt,
     TPR,
+    C2C7SVA,
 }
 
 impl NeckLateralDraw {
@@ -1434,6 +1497,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::CranialSlope => Box::new(CranialSlope(lateral_points)),
             NeckLateralDraw::T1Tilt => Box::new(T1Tilt(lateral_points)),
             NeckLateralDraw::TPR => Box::new(TPR(lateral_points)),
+            NeckLateralDraw::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
         }
     }
 }
