@@ -226,11 +226,12 @@ where
 {
     fn pull_image_metadata(&mut self) -> Result<(), DicomError> {
         let metadata = self.image_metadata_mut();
-        if metadata.path.ends_with(".dcm")
+        let has_dicom_extension = metadata.path.ends_with(".dcm")
             || metadata.path.ends_with(".DCM")
             || metadata.path.ends_with(".dicom")
-            || metadata.path.ends_with(".DICOM")
-        {
+            || metadata.path.ends_with(".DICOM");
+        let has_no_extension = Path::new(&metadata.path).extension().is_none();
+        if has_dicom_extension || has_no_extension {
             let dicom_file = dicom_object::OpenFileOptions::new()
                 .read_until(dicom_dictionary_std::tags::PIXEL_DATA)
                 .open_file(&metadata.path)?;
