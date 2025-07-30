@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 use svg::node::element;
 
+/// Vertebral corner points in the order: TL, TR, BL, BR
+/// The first point of TL and TR is a dummy point.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VertebralCornerPoints(pub Array3<f64>);
 
@@ -1110,16 +1112,16 @@ impl NeckMeasureComponent for CranialSlope<'_> {
 /// T1 tilt angle (T1 slope)
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct T1Tilt<'a>(pub &'a LateralPoints);
-impl NeckSagittalComponent for T1Tilt<'_> {}
-impl T1Tilt<'_> {
+pub struct T1Slope<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for T1Slope<'_> {}
+impl T1Slope<'_> {
     fn prep(&self) -> Array2<f64> {
         let t1 = self.0.corners.0.index_axis(Axis(0), 6);
         let t1_top_plate = t1.slice(s![..2, ..]);
         t1_top_plate.to_owned()
     }
 }
-impl DrawComponent for T1Tilt<'_> {
+impl DrawComponent for T1Slope<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
@@ -1133,7 +1135,7 @@ impl DrawComponent for T1Tilt<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for T1Tilt<'_> {
+impl NeckMeasureComponent for T1Slope<'_> {
     fn measure(&self) -> Result<Vec<f64>, MeasureError> {
         let t1_top_plate = self.prep();
         tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![angle])
@@ -1296,6 +1298,64 @@ impl NeckMeasureComponent for C2C7SVA<'_> {
     }
 }
 
+/// End plate angle
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct EndPlateAngle<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for EndPlateAngle<'_> {}
+impl EndPlateAngle<'_> {
+    fn prep(&self) -> Result<Array3<f64>, MeasureError> {
+        // (7, 4, 2) -> (14, 2, 2)
+        let endplates = self
+            .0
+            .corners
+            .0
+            .to_owned()
+            .into_shape_with_order((14, 2, 2))
+            .unwrap();
+        // remove the first end plate because it is dummy
+        let endplates = endplates.slice(s![1.., .., ..]).to_owned();
+        Ok(endplates)
+    }
+}
+impl DrawComponent for EndPlateAngle<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let endplates = self.prep()?;
+        for plate in endplates.axis_iter(Axis(0)) {
+            let angle = -crate::draw::tilt_angle(self.id(), plate.view()).unwrap_or_default();
+            let line = painter.line(plate);
+            group = group.add(line);
+            let mid_point = plate.mean_axis(Axis(0)).unwrap();
+            let text = painter.text(
+                &format!("{:.1}°", angle),
+                mid_point.view(),
+                Some(self.id()),
+                None,
+            );
+            group = group.add(text);
+        }
+        Ok(group)
+    }
+}
+impl NeckMeasureComponent for EndPlateAngle<'_> {
+    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+        let endplates = self.prep()?;
+        let mut angles = Vec::new();
+        for plate in endplates.axis_iter(Axis(0)) {
+            let angle = -tilt_angle(self.id(), plate.view())?;
+            angles.push(angle);
+        }
+        Ok(angles)
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1409,9 +1469,10 @@ pub enum NeckLateralMeasure {
     SpinoCranialAngle,
     OccipitocervicalInclination,
     CranialSlope,
-    T1Tilt,
+    T1Slope,
     TPR,
     C2C7SVA,
+    EndPlateAngle,
 }
 
 impl NeckLateralMeasure {
@@ -1441,9 +1502,10 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
                 Box::new(OccipitocervicalInclination(lateral_points))
             }
             NeckLateralMeasure::CranialSlope => Box::new(CranialSlope(lateral_points)),
-            NeckLateralMeasure::T1Tilt => Box::new(T1Tilt(lateral_points)),
+            NeckLateralMeasure::T1Slope => Box::new(T1Slope(lateral_points)),
             NeckLateralMeasure::TPR => Box::new(TPR(lateral_points)),
             NeckLateralMeasure::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
+            NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
         }
     }
 }
@@ -1468,6 +1530,7 @@ pub enum NeckLateralDraw {
     T1Tilt,
     TPR,
     C2C7SVA,
+    EndPlateAngle,
 }
 
 impl NeckLateralDraw {
@@ -1495,9 +1558,10 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
                 Box::new(OccipitocervicalInclination(lateral_points))
             }
             NeckLateralDraw::CranialSlope => Box::new(CranialSlope(lateral_points)),
-            NeckLateralDraw::T1Tilt => Box::new(T1Tilt(lateral_points)),
+            NeckLateralDraw::T1Tilt => Box::new(T1Slope(lateral_points)),
             NeckLateralDraw::TPR => Box::new(TPR(lateral_points)),
             NeckLateralDraw::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
+            NeckLateralDraw::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
         }
     }
 }
