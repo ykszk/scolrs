@@ -105,9 +105,13 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     flattened.content.unit_of_length = line.content.unit_of_length;
                     for (k, v) in line.content.measurements {
                         if let Ok(v) = v {
-                            for (i, value) in v.into_iter().enumerate() {
-                                let key = format!("{}_{}", k, i + 1);
-                                flattened.content.measurements.insert(key, Ok(value));
+                            if v.len() == 1 {
+                                flattened.content.measurements.insert(k, Ok(v[0]));
+                            } else {
+                                for (i, value) in v.into_iter().enumerate() {
+                                    let key = format!("{}_{}", k, i + 1);
+                                    flattened.content.measurements.insert(key, Ok(value));
+                                }
                             }
                         }
                     }
