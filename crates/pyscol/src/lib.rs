@@ -64,7 +64,7 @@ macro_rules! clahe_impl {
             } else {
                 clahe::clahe_ndarray(arr2d, grid_width, grid_height, clip_limit, tile_sample)
             }
-            .map(|a| a.into_pyarray_bound(py))
+            .map(|a| a.into_pyarray(py))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Clahe error: {}", e)))
         }
     };
@@ -138,8 +138,12 @@ fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicIm
         2 => {
             let arr2d = arr.as_array().as_standard_layout().to_owned();
             Ok(DynamicImage::ImageLuma8(
-                GrayImage::from_raw(shape[1] as u32, shape[0] as u32, arr2d.into_raw_vec())
-                    .unwrap(),
+                GrayImage::from_raw(
+                    shape[1] as u32,
+                    shape[0] as u32,
+                    arr2d.into_raw_vec_and_offset().0,
+                )
+                .unwrap(),
             ))
         }
         3 => match shape[2] {
@@ -149,7 +153,7 @@ fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicIm
                     image::RgbImage::from_raw(
                         shape[1] as u32,
                         shape[0] as u32,
-                        arr3d.into_raw_vec(),
+                        arr3d.into_raw_vec_and_offset().0,
                     )
                     .unwrap(),
                 ))
@@ -160,7 +164,7 @@ fn ndarray_to_dynamic_image(arr: PyReadonlyArrayDyn<'_, u8>) -> Result<DynamicIm
                     image::RgbaImage::from_raw(
                         shape[1] as u32,
                         shape[0] as u32,
-                        arr3d.into_raw_vec(),
+                        arr3d.into_raw_vec_and_offset().0,
                     )
                     .unwrap(),
                 ))

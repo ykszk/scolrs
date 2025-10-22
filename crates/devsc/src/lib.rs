@@ -34,7 +34,7 @@ where
 
 pub struct CDF(Array1<usize>);
 
-impl<'a, D: Dimension> From<ArrayView<'a, u8, D>> for CDF {
+impl<D: Dimension> From<ArrayView<'_, u8, D>> for CDF {
     fn from(arr: ArrayView<u8, D>) -> Self {
         let hist = histogram(arr);
         Self(cumsum(hist))

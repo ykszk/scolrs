@@ -18,6 +18,7 @@ from .pyscol import (
 
 __version__ = pyscol_version()
 
+
 class TrimImageFilter(str, Enum):
     Original = ('original',)
     SobelX = 'sobel_x'
@@ -221,7 +222,7 @@ def draw_neck(
 
 
 def wrap_in_html(svg: str, title: str) -> str:
-    return py_wrap_in_html(svg, title)
+    return py_wrap_in_html(svg, title, None)
 
 
 def calc_resize(image_shape: tuple[int, int], resize_param: str) -> tuple[int, int]:
