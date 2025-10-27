@@ -109,6 +109,7 @@ fn process_ndjson(
     reader: Box<dyn BufRead>,
     mut writer: Box<dyn io::Write>,
     pull_spacing: bool,
+    on_error: crate::cli::OnError,
 ) -> Result<()> {
     // shorthands to keep match hands one-line
     let pull = pull_spacing;
@@ -118,30 +119,39 @@ fn process_ndjson(
     type SagPointsLine = SagittalPointsLine;
     for line in reader.lines() {
         let line = line?;
-        match (from, to) {
+        let result = match (from, to) {
             (ConvFormat::Labelme, ConvFormat::LateralPoints) => {
-                conv_and_write_line::<LMDLine, LatPtsLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<LMDLine, LatPtsLine>(&mut writer, line, pull)
             }
             (ConvFormat::LateralPoints, ConvFormat::Labelme) => {
-                conv_and_write_line::<LatPtsLine, LMDLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<LatPtsLine, LMDLine>(&mut writer, line, pull)
             }
             (ConvFormat::Labelme, ConvFormat::ScoliosisCoronal) => {
-                conv_and_write_line::<LMDLine, CorPointsLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<LMDLine, CorPointsLine>(&mut writer, line, pull)
             }
             (ConvFormat::ScoliosisCoronal, ConvFormat::Labelme) => {
-                conv_and_write_line::<CorPointsLine, LMDLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<CorPointsLine, LMDLine>(&mut writer, line, pull)
             }
             (ConvFormat::Labelme, ConvFormat::ScoliosisSagittal) => {
-                conv_and_write_line::<LMDLine, SagPointsLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<LMDLine, SagPointsLine>(&mut writer, line, pull)
             }
             (ConvFormat::ScoliosisSagittal, ConvFormat::Labelme) => {
-                conv_and_write_line::<SagPointsLine, LMDLine>(&mut writer, line, pull)?;
+                conv_and_write_line::<SagPointsLine, LMDLine>(&mut writer, line, pull)
             }
             (from, to) => {
                 if from == to {
                     bail!("No conversion needed")
                 } else {
                     bail!("Invalid conversion from {:?} to {:?}", from, to)
+                }
+            }
+        };
+        if let Err(e) = result {
+            match on_error {
+                crate::cli::OnError::Stop => return Err(e),
+                crate::cli::OnError::Skip => {
+                    log::warn!("Error processing line, skipping: {}", e);
+                    continue;
                 }
             }
         }
@@ -202,7 +212,14 @@ pub fn cmd(args: ConvArgs) -> Result<()> {
     };
 
     if args.ndjson {
-        process_ndjson(args.from, args.to, reader, writer, args.pull_spacing)
+        process_ndjson(
+            args.from,
+            args.to,
+            reader,
+            writer,
+            args.pull_spacing,
+            args.on_error,
+        )
     } else {
         process_json(args.from, args.to, reader, writer, args.pull_spacing)
     }

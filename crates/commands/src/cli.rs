@@ -345,6 +345,14 @@ pub enum ConvFormat {
     ScoliosisSagittal,
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone)]
+pub enum OnError {
+    /// Stop on first error
+    Stop,
+    /// Skip errors
+    Skip,
+}
+
 #[derive(Parser, Debug)]
 pub struct ConvArgs {
     /// Input file
@@ -356,6 +364,9 @@ pub struct ConvArgs {
     /// Input and output in ndjson instead of json
     #[clap(long)]
     pub ndjson: bool,
+    /// On error behavior in ndjson mode
+    #[clap(long, default_value = "stop")]
+    pub on_error: OnError,
     /// From format
     #[clap(short, long, default_value = "Labelme")]
     pub from: ConvFormat,
