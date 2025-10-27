@@ -1252,6 +1252,10 @@ pub fn draw_tilt_angle(
     let l2r = &points.index_axis(Axis(0), 1) - &points.index_axis(Axis(0), 0);
     let mut hor_line = points.clone();
     hor_line[[1, 1]] = points[[0, 1]];
+    if hor_line[[1, 0]] == hor_line[[0, 0]] {
+        // if vertical line, move right a bit
+        hor_line[[1, 0]] += 0.5 * l2r.l2norm();
+    }
     let arc_radius = l2r.l2norm() * 0.8;
     g = painter
         .angle_between(
