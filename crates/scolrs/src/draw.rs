@@ -1027,16 +1027,16 @@ impl DrawComponent for AllPoints<'_> {
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct VertebralPoints<'a>(&'a Spine);
 impl HasCornerPoints for VertebralPoints<'_> {
-    fn top_left(&self) -> ArrayView2<f64> {
+    fn top_left(&'_ self) -> ArrayView2<'_, f64> {
         self.0.c7tls.0.slice(s![.., 0, ..])
     }
-    fn top_right(&self) -> ArrayView2<f64> {
+    fn top_right(&'_ self) -> ArrayView2<'_, f64> {
         self.0.c7tls.0.slice(s![.., 1, ..])
     }
-    fn bottom_left(&self) -> ArrayView2<f64> {
+    fn bottom_left(&'_ self) -> ArrayView2<'_, f64> {
         self.0.c7tls.0.slice(s![..-1, 2, ..])
     }
-    fn bottom_right(&self) -> ArrayView2<f64> {
+    fn bottom_right(&'_ self) -> ArrayView2<'_, f64> {
         self.0.c7tls.0.slice(s![..-1, 3, ..])
     }
 }

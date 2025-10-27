@@ -349,10 +349,10 @@ impl LeftFirst for Array2<f64> {
 }
 
 trait HasCornerPoints {
-    fn top_left(&self) -> ArrayView2<f64>;
-    fn top_right(&self) -> ArrayView2<f64>;
-    fn bottom_left(&self) -> ArrayView2<f64>;
-    fn bottom_right(&self) -> ArrayView2<f64>;
+    fn top_left(&'_ self) -> ArrayView2<'_, f64>;
+    fn top_right(&'_ self) -> ArrayView2<'_, f64>;
+    fn bottom_left(&'_ self) -> ArrayView2<'_, f64>;
+    fn bottom_right(&'_ self) -> ArrayView2<'_, f64>;
 }
 
 fn vec_points_to_array2(nested_vec: &[Point2d]) -> Result<Array2<f64>, ndarray::ShapeError> {
@@ -451,11 +451,11 @@ pub struct Spine {
 
 impl Spine {
     /// Corner points of T1 to Sacral vertebrae
-    pub fn t1_to_sac_vertebrae(&self) -> ArrayView3<f64> {
+    pub fn t1_to_sac_vertebrae(&'_ self) -> ArrayView3<'_, f64> {
         self.v_c7tl.0.slice(s![1.., .., ..])
     }
 
-    pub fn t1_to_sac_centroids(&self) -> ArrayView2<f64> {
+    pub fn t1_to_sac_centroids(&'_ self) -> ArrayView2<'_, f64> {
         self.c_c7tl.slice(s![1.., ..])
     }
 
@@ -512,7 +512,7 @@ pub struct CoronalPoints {
 }
 
 impl CoronalPoints {
-    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+    pub fn to_points(&'_ self) -> Vec<(String, ArrayView2<'_, f64>)> {
         let mut points = self.spine.c7tls.to_points();
         points.push(("Clavicle".to_string(), self.clavicle.0.view()));
         points.push(("Shoulder".to_string(), self.shoulder.0.view()));
@@ -1239,7 +1239,7 @@ impl<'de> Deserialize<'de> for SagittalPoints {
 }
 
 impl SagittalPoints {
-    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+    pub fn to_points(&'_ self) -> Vec<(String, ArrayView2<'_, f64>)> {
         let mut points = self.spine.c7tls.to_points();
         points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
         points
@@ -1723,7 +1723,7 @@ impl Spine {
         self.c7tls.0.slice(s![index + 1, 2.., ..])
     }
 
-    pub fn sacral_sup_plate(&self) -> ArrayView2<f64> {
+    pub fn sacral_sup_plate(&'_ self) -> ArrayView2<'_, f64> {
         self.c7tls
             .0
             .slice(s![self.c7tls.0.len_of(Axis(0)) - 1, 0..2, ..])
@@ -1842,7 +1842,7 @@ pub struct C7TLS(pub Array3<f64>);
 pub struct VertebraeC7TL(pub Array3<f64>);
 
 impl C7TLS {
-    pub fn to_points(&self) -> Vec<(String, ArrayView2<f64>)> {
+    pub fn to_points(&'_ self) -> Vec<(String, ArrayView2<'_, f64>)> {
         let mut points = Vec::new();
         let tl = self.0.slice(s![.., 0, ..]);
         points.push(("TL".to_string(), tl));

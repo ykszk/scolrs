@@ -1429,16 +1429,16 @@ impl NeckMeasureComponent for EndPlateAngle<'_> {
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
 pub struct CervicalPoints<'a>(pub &'a LateralPoints);
 impl HasCornerPoints for CervicalPoints<'_> {
-    fn top_left(&self) -> ArrayView2<f64> {
+    fn top_left(&'_ self) -> ArrayView2<'_, f64> {
         self.0.corners.0.slice(s![1.., 0, ..])
     }
-    fn top_right(&self) -> ArrayView2<f64> {
+    fn top_right(&'_ self) -> ArrayView2<'_, f64> {
         self.0.corners.0.slice(s![1.., 1, ..])
     }
-    fn bottom_left(&self) -> ArrayView2<f64> {
+    fn bottom_left(&'_ self) -> ArrayView2<'_, f64> {
         self.0.corners.0.slice(s![.., 2, ..])
     }
-    fn bottom_right(&self) -> ArrayView2<f64> {
+    fn bottom_right(&'_ self) -> ArrayView2<'_, f64> {
         self.0.corners.0.slice(s![.., 3, ..])
     }
 }
