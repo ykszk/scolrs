@@ -155,6 +155,7 @@ where
         palettes: svg_common.palettes,
         draw: draws,
         hide,
+        overlays: Default::default(),
     };
 
     let document = T::draw(draw_args)?;

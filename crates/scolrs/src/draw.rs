@@ -856,6 +856,19 @@ impl ImageOverlay {
             image_size,
         }
     }
+
+    fn draw_image(&self, painter: &Painter) -> Result<element::Group, DrawError> {
+        let group = self.default_group();
+
+        let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
+        let layer = element::Image::new()
+            .set("x", 0i64)
+            .set("y", 0i64)
+            .set("width", painter.size.0)
+            .set("height", painter.size.1)
+            .set("xlink:href", base64_image_data);
+        Ok(group.add(layer))
+    }
 }
 
 #[cfg(not(feature = "webp"))]
@@ -1502,6 +1515,7 @@ pub struct DrawArguments<'a, T, S> {
     pub resize_param: Option<ResizeParam>,
     pub svg_size: Option<(usize, usize)>,
     pub palettes: ColorPalettes,
+    pub overlays: Vec<ImageOverlay>,
 }
 
 /// Draw the given components on the image.
@@ -1523,6 +1537,7 @@ where
         resize_param,
         svg_size,
         palettes,
+        overlays,
     } = args;
     let style = element::Style::new(draw_param.style());
     let image: Cow<DynamicImage> = match resize_param {
@@ -1538,6 +1553,12 @@ where
     let bbox = painter.bbox;
     let mut document = painter.doc_w_background_and_bbox(&image, bbox)?;
     document = document.add(style);
+
+    // add overlays
+    for overlay in overlays {
+        let g = overlay.draw_image(&painter)?.set("visibility", "hidden");
+        document = document.add(g);
+    }
 
     for g in groups {
         document = document.add(g);

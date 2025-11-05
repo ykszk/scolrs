@@ -3,8 +3,11 @@ use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
 use image::DynamicImage;
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
-use ndarray::{s, Array3, Array4, Axis, NewAxis};
-use scolrs::{draw::draw_sagittal, HasImageMetadata, ImageMetadata, SagittalDraw};
+use ndarray::{s, Array3, Array4, Axis, Dim, NewAxis};
+use scolrs::{
+    draw::{draw_sagittal, ImageOverlay},
+    HasImageMetadata, ImageMetadata, SagittalDraw,
+};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 pub type Point = (f32, f32);
@@ -359,6 +362,18 @@ fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usi
     }
 }
 
+trait MaxAxis {
+    type D;
+    fn axis_max(&self, axis: Axis) -> ndarray::Array<f32, Dim<Self::D>>;
+}
+
+impl MaxAxis for ndarray::ArrayView3<'_, f32> {
+    type D = [usize; 2];
+    fn axis_max(&self, axis: Axis) -> ndarray::Array<f32, Dim<Self::D>> {
+        self.fold_axis(axis, 0.0f32, |acc, &x| acc.max(x))
+    }
+}
+
 pub fn calculate_crop_parameters(
     output3: &ndarray::Array3<f32>,
     thresh: f32,
@@ -366,7 +381,7 @@ pub fn calculate_crop_parameters(
     original_image_width: u32,
     model_input_height: u32,
 ) -> Option<(usize, usize, usize, usize)> {
-    let heatmap2 = output3.fold_axis(Axis(0), 0.0f32, |acc, &x| acc.max(x));
+    let heatmap2 = output3.view().axis_max(Axis(0));
     let heatmap2_bin = heatmap2.mapv(|x| x > thresh);
     let bbox = bounding_box(&heatmap2_bin);
     if let Some((min_x, min_y, max_x, max_y)) = bbox {
@@ -396,6 +411,7 @@ pub fn calculate_crop_parameters(
 pub fn create_coronal_html(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
+    overlays: Vec<ImageOverlay>,
 ) -> Result<String, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
@@ -428,6 +444,7 @@ pub fn create_coronal_html(
         palettes,
         draw: &draws,
         hide: &hide,
+        overlays,
     };
     let document = draw_coronal(draw_args).expect("Failed to draw coronal points and curve");
     let html = wrap_in_html(
@@ -441,6 +458,7 @@ pub fn create_coronal_html(
 pub fn create_sagittal_html(
     cp: scolrs::SagittalPoints,
     lm_data_with_image: LabelMeDataWImage,
+    overlays: Vec<ImageOverlay>,
 ) -> Result<String, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let draws = scolrs::SagittalDraw::all();
@@ -467,6 +485,7 @@ pub fn create_sagittal_html(
         palettes,
         draw: &draws,
         hide: &hide,
+        overlays,
     };
     let document = draw_sagittal(draw_args).expect("Failed to draw sagittal points and curve");
     let html = wrap_in_html(
@@ -503,6 +522,7 @@ pub fn create_result_html(
     threshold: f32,
     scan_direction: ScanDirection,
     cropping_params: Option<CroppingParams>,
+    heatmap: DynamicImage,
 ) -> Result<String, anyhow::Error> {
     let points = extract_points(output3, threshold)
         .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
@@ -537,6 +557,14 @@ pub fn create_result_html(
     }
     log::debug!("Created LabelMeData: {:?}", lm_data);
 
+    let overlays = vec![ImageOverlay::new(
+        "Heatmap".to_string(),
+        "Heatmap".to_string(),
+        None,
+        heatmap,
+        (RESIZE_PARAM_SIZE as usize, RESIZE_PARAM_SIZE as usize),
+    )];
+
     match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
@@ -544,7 +572,7 @@ pub fn create_result_html(
             *cp.image_metadata_mut() = metadata;
             log::debug!("Created CoronalPointsAndCurve successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
-            create_coronal_html(cp, lm_data_with_image)
+            create_coronal_html(cp, lm_data_with_image, overlays)
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
@@ -552,7 +580,7 @@ pub fn create_result_html(
             *cp.image_metadata_mut() = metadata;
             log::debug!("Created SagittalPoints successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
-            create_sagittal_html(cp, lm_data_with_image)
+            create_sagittal_html(cp, lm_data_with_image, overlays)
         }
     }
 }
@@ -673,6 +701,21 @@ pub fn process_output(
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
 
+    // create rgb heatmap using output3
+    // r:0..2, g:2..4, b:4..
+    // TODO: padding and cropping need to be handled
+    let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0));
+    let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0));
+    let b = output3.slice(s![4.., .., ..]).axis_max(Axis(0));
+    let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
+        let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
+        let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
+        let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
+        let a_val = (r_val + g_val + b_val) / 3;
+        image::Rgba([r_val, g_val, b_val, a_val])
+    });
+    let heatmap = DynamicImage::ImageRgba8(heatmap);
+
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
 
@@ -690,6 +733,7 @@ pub fn process_output(
         0.1,
         settings.scan_direction,
         cropping_params,
+        heatmap,
     )
     .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
