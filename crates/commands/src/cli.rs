@@ -412,7 +412,8 @@ pub struct ImplantArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct ConfidenceArgs {
-    pub plane: Plane,
+    /// Input type
+    pub input_type: Plane,
     /// Input json file
     #[arg(value_hint = ValueHint::FilePath)]
     pub input: PathBuf,

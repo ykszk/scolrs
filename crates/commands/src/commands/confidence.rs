@@ -25,16 +25,46 @@ fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Dese
     Ok(())
 }
 
+fn read_npz(path: &Path, key: &str) -> Result<ndarray::Array3<f64>> {
+    let mut npz = ndarray_npz::NpzReader::new(
+        std::fs::File::open(path).with_context(|| format!("Opening {:?}", path))?,
+    )?;
+    let array: ndarray::Array3<f64> = npz.by_name(key).with_context(|| match npz.names() {
+        Ok(names) => {
+            if names.is_empty() {
+                "The provided npz file contains no arrays.".to_string()
+            } else {
+                format!(
+                    "The provided npz file does not contain the key {}. Available keys are {}",
+                    key,
+                    names.join(", ")
+                )
+            }
+        }
+        Err(e) => format!("Failed to read keys from npz file: {}", e),
+    })?;
+    Ok(array)
+}
+
 pub fn cmd(args: ConfidenceArgs) -> Result<()> {
     let input_path = Path::new(&args.input);
-    let mut npz = ndarray_npz::NpzReader::new(
-        std::fs::File::open(&args.confidence_map)
-            .with_context(|| format!("Opening {:?}", &args.confidence_map))?,
-    )?;
-    let heatmaps: ndarray::Array3<f64> = npz
-        .by_name(&args.key)
-        .with_context(|| format!("Reading heatmaps from npz for key {}", &args.key))?;
-    match args.plane {
+    let heatmaps = match args.confidence_map.extension() {
+        Some(ext) if ext == "npz" => read_npz(&args.confidence_map, &args.key)?,
+        Some(ext) if ext == "npy" => {
+            let array: ndarray::Array3<f64> =
+                ndarray_npz::ndarray_npy::read_npy(&args.confidence_map).with_context(|| {
+                    format!("Reading numpy array from {:?}", &args.confidence_map)
+                })?;
+            array
+        }
+        _ => {
+            anyhow::bail!(
+                "Confidence map file must have .npz or .npy extension, got {:?}",
+                args.confidence_map
+            );
+        }
+    };
+    match args.input_type {
         crate::cli::Plane::Coronal => {
             process::<CoronalPoints>(input_path, &heatmaps, &args)?;
         }
