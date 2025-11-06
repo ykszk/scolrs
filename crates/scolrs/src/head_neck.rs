@@ -1,7 +1,7 @@
 use std::{convert::Infallible, ops::MulAssign};
 
 use crate::{
-    angle_from_lines, array2_to_vec_points, array3_to_nested_vec, create_shapes,
+    angle_from_lines, array2_to_vec_points, array3_to_nested_vec_points, create_shapes,
     draw::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
         femoral_incidence_angle, points2line, tilt_angle, CobbAux, ColorPalette, DrawArguments,
@@ -332,7 +332,7 @@ impl Scale2DPoints for Array3<f64> {
 impl From<&LateralPoints> for LateralPointsIR {
     fn from(lateral_points: &LateralPoints) -> Self {
         LateralPointsIR {
-            corners: array3_to_nested_vec(lateral_points.corners.0.to_owned()),
+            corners: array3_to_nested_vec_points(lateral_points.corners.0.to_owned()),
             lamina: array2_to_vec_points(lateral_points.lamina.to_owned()),
             brow: array2_to_vec_points(lateral_points.brow.to_owned()),
             sella: array2_to_vec_points(lateral_points.sella.to_owned()),

@@ -383,10 +383,17 @@ fn array2_to_vec_points(array: Array2<f64>) -> Vec<Point2d> {
     array.axis_iter(Axis(0)).map(|a| (a[0], a[1])).collect()
 }
 
-fn array3_to_nested_vec(array: Array3<f64>) -> Vec<Vec<Point2d>> {
+fn array3_to_nested_vec_points(array: Array3<f64>) -> Vec<Vec<Point2d>> {
     array
         .axis_iter(Axis(0))
         .map(|a| array2_to_vec_points(a.to_owned()))
+        .collect()
+}
+
+fn array2_to_nested_vec(array: ArrayView2<f64>) -> Vec<Vec<f64>> {
+    array
+        .axis_iter(Axis(0))
+        .map(|a| a.to_owned().to_vec())
         .collect()
 }
 
@@ -496,6 +503,17 @@ impl Spine {
     }
 }
 
+/// Confidence scores for each point in coronal radiograph
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoronalPointConfidence {
+    pub c7tls: Array2<f64>,
+    pub clavicle: Array1<f64>,
+    pub shoulder: Array1<f64>,
+    pub pelvis: Array1<f64>,
+    pub iliac: Array1<f64>,
+    pub femoral_head: Array1<f64>,
+}
+
 /// Point sets extracted from a coronal radiograph
 #[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct CoronalPoints {
@@ -508,6 +526,7 @@ pub struct CoronalPoints {
     /// Coefficients of the polynomial curve of the spine
     pub c_coefs: Array1<f64>,
 
+    pub confidences: Option<CoronalPointConfidence>,
     pub image_metadata: ImageMetadata,
 }
 
@@ -523,8 +542,19 @@ impl CoronalPoints {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// Confidence scores for each point in coronal radiograph
+pub struct CoronalPointConfidenceIR {
+    pub c7tls: Vec<Vec<f64>>,
+    pub clavicle: Vec<f64>,
+    pub shoulder: Vec<f64>,
+    pub pelvis: Vec<f64>,
+    pub iliac: Vec<f64>,
+    pub femoral_head: Vec<f64>,
+}
+
 /// Intermediary representation for [CoronalPoints]
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
+#[derive(Serialize, Deserialize, Default, HasImageMetadata)]
 struct CoronalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub clavicle: Vec<Point2d>,
@@ -533,6 +563,7 @@ struct CoronalPointsIR {
     pub iliac: Vec<Point2d>,
     pub femoral_head: Vec<Point2d>,
 
+    pub confidences: Option<CoronalPointConfidenceIR>,
     pub image_metadata: ImageMetadata,
 }
 
@@ -678,14 +709,34 @@ impl TryFrom<CoronalPointsIR> for CoronalPoints {
     }
 }
 
+impl From<&CoronalPointConfidence> for CoronalPointConfidenceIR {
+    fn from(cpc: &CoronalPointConfidence) -> Self {
+        let c7tls = array2_to_nested_vec(cpc.c7tls.view());
+        let clavicle = cpc.clavicle.to_vec();
+        let shoulder = cpc.shoulder.to_vec();
+        let pelvis = cpc.pelvis.to_vec();
+        let iliac = cpc.iliac.to_vec();
+        let femoral_head = cpc.femoral_head.to_vec();
+        Self {
+            c7tls,
+            clavicle,
+            shoulder,
+            pelvis,
+            iliac,
+            femoral_head,
+        }
+    }
+}
+
 impl From<&CoronalPoints> for CoronalPointsIR {
     fn from(cp: &CoronalPoints) -> Self {
-        let spine = array3_to_nested_vec(cp.spine.c7tls.0.clone());
+        let spine = array3_to_nested_vec_points(cp.spine.c7tls.0.clone());
         let clavicle = array2_to_vec_points(cp.clavicle.0.clone());
         let shoulder = array2_to_vec_points(cp.shoulder.0.clone());
         let pelvis = array2_to_vec_points(cp.pelvis.0.clone());
         let iliac = array2_to_vec_points(cp.iliac.0.clone());
         let femoral_head = array2_to_vec_points(cp.femoral_head.0.clone());
+        let confidences = cp.confidences.as_ref().map(CoronalPointConfidenceIR::from);
         Self {
             spine,
             clavicle,
@@ -693,6 +744,7 @@ impl From<&CoronalPoints> for CoronalPointsIR {
             pelvis,
             iliac,
             femoral_head,
+            confidences,
             image_metadata: cp.image_metadata.clone(),
         }
     }
@@ -1210,12 +1262,19 @@ impl CoronalPoints {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SagittalPointConfidence {
+    pub c7tls: Array2<f64>,
+    pub femoral_head: Array1<f64>,
+}
+
 /// Point sets extracted from a sagittal radiograph
 #[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct SagittalPoints {
     pub spine: Spine,
     pub femoral_head: AtMost2<Array2<f64>>,
 
+    pub confidences: Option<SagittalPointConfidence>,
     pub image_metadata: ImageMetadata,
 }
 
@@ -1260,12 +1319,20 @@ impl Scalable for SagittalPoints {
     }
 }
 
+/// Intermediate representation of [`SagittalPointConfidence`] for serde
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+struct SagittalPointConfidenceIR {
+    pub c7tls: Vec<Vec<f64>>,
+    pub femoral_head: Vec<f64>,
+}
+
 /// Intermediate representation of [`SagittalPoints`] for serde
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, HasImageMetadata)]
 struct SagittalPointsIR {
     pub spine: Vec<Vec<Point2d>>,
     pub femoral_head: Vec<Point2d>,
 
+    pub confidences: Option<SagittalPointConfidenceIR>,
     pub image_metadata: ImageMetadata,
 }
 
@@ -1298,13 +1365,26 @@ impl From<SagittalPoints> for LabelMeData {
     }
 }
 
+impl From<&SagittalPointConfidence> for SagittalPointConfidenceIR {
+    fn from(cpc: &SagittalPointConfidence) -> Self {
+        let c7tls = array2_to_nested_vec(cpc.c7tls.view());
+        let femoral_head = cpc.femoral_head.to_vec();
+        Self {
+            c7tls,
+            femoral_head,
+        }
+    }
+}
+
 impl From<&SagittalPoints> for SagittalPointsIR {
     fn from(cp: &SagittalPoints) -> Self {
-        let spine = array3_to_nested_vec(cp.spine.c7tls.0.clone());
+        let spine = array3_to_nested_vec_points(cp.spine.c7tls.0.clone());
         let femoral_head = array2_to_vec_points(cp.femoral_head.0.clone());
+        let confidences = cp.confidences.as_ref().map(SagittalPointConfidenceIR::from);
         Self {
             spine,
             femoral_head,
+            confidences,
             image_metadata: cp.image_metadata.clone(),
         }
     }
@@ -1793,6 +1873,7 @@ impl TryFrom<LabelMeData> for CoronalPoints {
             iliac,
             femoral_head,
             c_coefs,
+            confidences: None,
             image_metadata: image_data,
         })
     }
@@ -1813,12 +1894,13 @@ impl TryFrom<LabelMeData> for SagittalPoints {
         let spine = Spine::try_from(&data)?;
         let femoral_head = _new_at_most2(&data, "FemoralHead")?;
 
-        let image_data = ImageMetadata::from(data);
+        let image_metadata = ImageMetadata::from(data);
 
         Ok(SagittalPoints {
             spine,
             femoral_head,
-            image_metadata: image_data,
+            confidences: None,
+            image_metadata,
         })
     }
 }
