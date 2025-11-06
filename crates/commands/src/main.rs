@@ -32,5 +32,6 @@ fn main() -> Result<()> {
         Command::Html(args) => commands::html::cmd(args),
         Command::Conv(args) => commands::conv::cmd(args),
         Command::Implant(args) => commands::implant::cmd(args),
+        Command::Confidence(args) => commands::confidence::cmd(args),
     }
 }

@@ -35,6 +35,8 @@ pub enum Command {
     Conv(ConvArgs),
     /// Evaluate implant
     Implant(ImplantArgs),
+    /// Extract point confidence from confidence map
+    Confidence(ConfidenceArgs),
 }
 
 #[derive(Parser)]
@@ -406,4 +408,22 @@ pub struct ImplantArgs {
     /// Print paired screw count per vertebra instead of pairing data
     #[clap(short, long, default_value = "group")]
     pub task: ImplantTask,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ConfidenceArgs {
+    pub plane: Plane,
+    /// Input json file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Confidence map npz file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub confidence_map: PathBuf,
+    /// Output file
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+
+    /// Key in the npz file for the confidence map
+    #[clap(long, default_value = "heatmaps")]
+    pub key: String,
 }

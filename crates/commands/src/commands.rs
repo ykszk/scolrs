@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod confidence;
 pub mod conv;
 pub mod curve;
 pub mod html;

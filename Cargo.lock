@@ -6334,6 +6334,7 @@ dependencies = [
  "log",
  "named_derive",
  "ndarray 0.16.1",
+ "ndarray-npz",
  "ndarray-stats 0.6.0",
  "rayon",
  "rstest 0.26.1",

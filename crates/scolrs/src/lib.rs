@@ -501,6 +501,34 @@ impl Spine {
 
         self.c_c7tl = offsetted_rotate_array2(self.c_c7tl.view(), top, rot_mat.view());
     }
+
+    /// Extract point confidence from confidence map
+    /// The order of classes is assumed to be: 'TL', 'TR', 'BL', 'BR', and others
+    pub fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> Array2<f64> {
+        // 3D array with (vertebrae, corners, xy) to (corners, vertebrae, xy)
+        let spine_points = self.c7tls.0.view().permuted_axes([1, 0, 2]);
+
+        // tl, tr, bl, br
+        let tl_conf = extract_confidence(spine_points.index_axis(Axis(0), 0), confidence_map, 0);
+        let tr_conf = extract_confidence(spine_points.index_axis(Axis(0), 1), confidence_map, 1);
+        let bl_conf = extract_confidence(spine_points.index_axis(Axis(0), 2), confidence_map, 2);
+        let br_conf = extract_confidence(spine_points.index_axis(Axis(0), 3), confidence_map, 3);
+        let c7tls = stack![Axis(1), tl_conf, tr_conf, bl_conf, br_conf]
+            .permuted_axes([1, 0])
+            .as_standard_layout()
+            .to_owned();
+        c7tls
+    }
+}
+
+pub trait PointConfidence {
+    type PointConfidenceType;
+    fn get_confidence(&self) -> &Option<Self::PointConfidenceType>;
+    fn get_confidence_mut(&mut self) -> &mut Option<Self::PointConfidenceType>;
+    fn extract_point_confidence(
+        &self,
+        confidence_map: ArrayView3<f64>,
+    ) -> Self::PointConfidenceType;
 }
 
 /// Confidence scores for each point in coronal radiograph
@@ -530,6 +558,31 @@ pub struct CoronalPoints {
     pub image_metadata: ImageMetadata,
 }
 
+trait GetMany {
+    fn get_many(&self, points: Array2<usize>) -> Array1<f64>;
+}
+
+impl GetMany for ArrayView2<'_, f64> {
+    fn get_many(&self, points: Array2<usize>) -> Array1<f64> {
+        let mut result = Array1::zeros(points.len_of(Axis(0)));
+        for (i, point) in points.axis_iter(Axis(0)).enumerate() {
+            let x = point[0];
+            let y = point[1];
+            result[i] = self[[y, x]];
+        }
+        result
+    }
+}
+
+fn extract_confidence(
+    points: ArrayView2<f64>,
+    confidence_map: ArrayView3<f64>,
+    class_idx: usize,
+) -> Array1<f64> {
+    let pts = points.mapv(|x| x.round() as usize);
+    confidence_map.slice(s![.., .., class_idx]).get_many(pts)
+}
+
 impl CoronalPoints {
     pub fn to_points(&'_ self) -> Vec<(String, ArrayView2<'_, f64>)> {
         let mut points = self.spine.c7tls.to_points();
@@ -539,6 +592,43 @@ impl CoronalPoints {
         points.push(("Pelvis".to_string(), self.pelvis.0.view()));
         points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
         points
+    }
+
+    /// Extract point confidence from confidence map
+    /// `confidence_map` is a 3D array with shape (height, width, num_classes)
+    /// The order of classes is assumed to be: 'TL', 'TR', 'BL', 'BR', 'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
+    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+        let c7tls = self.spine.extract_point_confidence(confidence_map);
+
+        let shoulder = extract_confidence(self.shoulder.0.view(), confidence_map, 4);
+        let clavicle = extract_confidence(self.clavicle.0.view(), confidence_map, 5);
+        let pelvis = extract_confidence(self.pelvis.0.view(), confidence_map, 6);
+        let iliac = extract_confidence(self.iliac.0.view(), confidence_map, 7);
+        let femoral_head = extract_confidence(self.femoral_head.0.view(), confidence_map, 8);
+
+        CoronalPointConfidence {
+            c7tls,
+            shoulder,
+            clavicle,
+            pelvis,
+            iliac,
+            femoral_head,
+        }
+    }
+}
+
+impl PointConfidence for CoronalPoints {
+    type PointConfidenceType = CoronalPointConfidence;
+    fn get_confidence(&self) -> &Option<CoronalPointConfidence> {
+        &self.confidences
+    }
+
+    fn get_confidence_mut(&mut self) -> &mut Option<CoronalPointConfidence> {
+        &mut self.confidences
+    }
+
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+        self._extract_point_confidence(confidence_map)
     }
 }
 
@@ -1302,6 +1392,34 @@ impl SagittalPoints {
         let mut points = self.spine.c7tls.to_points();
         points.push(("FemoralHead".to_string(), self.femoral_head.0.view()));
         points
+    }
+
+    fn _extract_point_confidence(
+        &self,
+        confidence_map: ArrayView3<f64>,
+    ) -> SagittalPointConfidence {
+        let c7tls = self.spine.extract_point_confidence(confidence_map);
+        let femoral_head = extract_confidence(self.femoral_head.0.view(), confidence_map, 8);
+        SagittalPointConfidence {
+            c7tls,
+            femoral_head,
+        }
+    }
+}
+
+impl PointConfidence for SagittalPoints {
+    type PointConfidenceType = SagittalPointConfidence;
+
+    fn get_confidence(&self) -> &Option<SagittalPointConfidence> {
+        &self.confidences
+    }
+
+    fn get_confidence_mut(&mut self) -> &mut Option<SagittalPointConfidence> {
+        &mut self.confidences
+    }
+
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> SagittalPointConfidence {
+        self._extract_point_confidence(confidence_map)
     }
 }
 
