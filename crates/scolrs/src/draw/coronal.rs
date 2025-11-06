@@ -8,9 +8,9 @@ use svg::node::element;
 use super::{
     angle_between, draw_difference_in_x, draw_difference_in_y, draw_t1_angle, draw_tilt_angle,
     mean_plate_length, points2line, tilt_angle, Centroids, CobbAux, ColorPalette, CommonComponent,
-    DrawComponent, DrawError, MeasureComponent, MeasureError, Painter, VertebralLabels,
-    VertebralPoints, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
-    CLASS_POLYGON,
+    ConfidenceComponent, DrawComponent, DrawError, MeasureComponent, MeasureError, Painter,
+    VertebralLabels, VertebralPoints, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
+    CLASS_MEASURE, CLASS_POLYGON,
 };
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
@@ -59,7 +59,34 @@ macro_rules! impl_cobb_angle {
                 }
             }
         }
+        impl ConfidenceComponent for $name<'_> {
+            fn confidence(&self) -> Option<f64> {
+                if self.0.confidences.is_none() || self.1.is_none() {
+                    return None;
+                }
+                let confidence = self.0.confidences.as_ref().unwrap();
+                let (curve, _angle) = self.1.as_ref().unwrap();
+                let mut confs = Array1::zeros(4);
+                // tl and tr from sup
+                let start_idx = curve.sup + 1; // +1 to skip c7
+                confs[0] = confidence.c7tls[[start_idx, 0]];
+                confs[1] = confidence.c7tls[[start_idx, 1]];
+
+                // bl and br from inf
+                let end_idx = curve.inf + 1; // +1 to skip c7
+                confs[2] = confidence.c7tls[[end_idx, 2]];
+                confs[3] = confidence.c7tls[[end_idx, 3]];
+                reduce_confidence(&confs)
+            }
+        }
     };
+}
+
+fn reduce_confidence(confidences: &Array1<f64>) -> Option<f64> {
+    if confidences.is_empty() {
+        return None;
+    }
+    Some(confidences.mean().unwrap())
 }
 
 /// Cobb angle for proximal thoracic (PT) curve

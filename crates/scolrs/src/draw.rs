@@ -825,6 +825,10 @@ pub trait MeasureComponent: Named {
     fn measure(&self) -> Result<f64, MeasureError>;
 }
 
+pub trait ConfidenceComponent: Named {
+    fn confidence(&self) -> Option<f64>;
+}
+
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
 pub trait CommonComponent: DrawComponent {
     fn default_group(&self) -> element::Group {
