@@ -1710,6 +1710,22 @@ impl<'de> Deserialize<'de> for CoronalPointsAndCurve {
     }
 }
 
+impl PointConfidence for CoronalPointsAndCurve {
+    type PointConfidenceType = CoronalPointConfidence;
+
+    fn get_confidence(&self) -> &Option<CoronalPointConfidence> {
+        &self.coronal_points.confidences
+    }
+
+    fn get_confidence_mut(&mut self) -> &mut Option<CoronalPointConfidence> {
+        &mut self.coronal_points.confidences
+    }
+
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+        self.coronal_points.extract_point_confidence(confidence_map)
+    }
+}
+
 /// Data required for calculating scoliosis drawing
 #[derive(Debug, Clone, Deserialize)]
 pub struct CoronalPointsAndCurveIR {

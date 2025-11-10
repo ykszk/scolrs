@@ -14,10 +14,11 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    draw::{MeasureComponent, MeasureError},
+    draw::{ConfidenceComponent, MeasureComponent, MeasureError},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
     CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, HasImageMetadata,
-    MeasureAndDraw, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable, ScaledType,
+    MeasureAndDraw, PointConfidence, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
+    ScaledType,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -30,6 +31,7 @@ where
     V: std::hash::Hash + Eq + std::cmp::Ord,
 {
     pub measurements: IndexMap<V, std::result::Result<T, MeasureError>>,
+    pub confidences: Option<IndexMap<V, std::result::Result<f64, MeasureError>>>,
     pub unit_of_length: String,
 }
 
@@ -193,20 +195,47 @@ fn process_json(args: MeasureArgs) -> Result<()> {
 
 fn measure_x<T, U>(data: ScaledType<T>, measures: Vec<U>) -> Result<MeasureResult<U, f64>>
 where
-    T: HasImageMetadata + Scalable,
-    U: std::hash::Hash + Eq + std::cmp::Ord,
-    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn MeasureComponent + 'b>>,
+    T: HasImageMetadata + Scalable + PointConfidence,
+    U: std::hash::Hash + Eq + std::cmp::Ord + Clone,
+    for<'a, 'b> (&'a U, &'b ScaledType<T>):
+        Into<Box<dyn MeasureComponent + 'b>> + Into<Box<dyn ConfidenceComponent + 'b>>,
 {
+    let confidences = if data.0.get_confidence().is_some() {
+        let confs = confidence_x(&data, &measures)?;
+        Some(confs)
+    } else {
+        None
+    };
     let mut measurements: IndexMap<U, Measurement> = Default::default();
     for measure in measures {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
-        measurements.insert(measure, spinal_measure.measure());
+        measurements.insert(measure.clone(), spinal_measure.measure());
     }
     let result = MeasureResult {
         measurements,
+        confidences,
         unit_of_length: data.0.image_metadata().unit.clone(),
     };
     Ok(result)
+}
+
+type ConfResult<U> = IndexMap<U, std::result::Result<f64, MeasureError>>;
+
+fn confidence_x<T, U>(data: &ScaledType<T>, measures: &[U]) -> Result<ConfResult<U>>
+where
+    T: Scalable,
+    U: std::hash::Hash + Eq + std::cmp::Ord + Clone,
+    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
+{
+    let mut measurements: IndexMap<U, std::result::Result<f64, MeasureError>> = Default::default();
+    for measure in measures {
+        let spinal_measure: Box<dyn ConfidenceComponent> = (measure, data).into();
+        let conf = spinal_measure.confidence();
+        if let Some(conf) = conf {
+            measurements.insert(measure.clone(), conf);
+        }
+    }
+    Ok(measurements)
 }
 
 fn measure_sagittal(
@@ -253,6 +282,7 @@ fn process_neck(
     let measures = measure_all(measures)?;
     Ok(NeckMeasurements {
         measurements: measures,
+        confidences: None,
         unit_of_length: scaled_data.0.image_metadata.unit.clone(),
     })
 }

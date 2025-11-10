@@ -10,14 +10,16 @@ use crate::{
         CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
-    Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, Scalable,
-    ScaledType, ScolError, ValidateLength, CORNER_LABELS,
+    Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, PointConfidence,
+    Scalable, ScaledType, ScolError, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
 
 use labelme_rs::{LabelMeData, LabelMeDataLine};
-use ndarray::{concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
+use ndarray::{
+    concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView1, ArrayView2, ArrayView3, Axis,
+};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use strum::VariantArray;
@@ -84,6 +86,12 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LateralPointConfidence {
+    pub corners: Array2<f64>,
+    pub lamina: Array1<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct LateralPoints {
     pub corners: VertebralCornerPoints,
@@ -101,7 +109,17 @@ pub struct LateralPoints {
     pub chin: Array2<f64>,
     pub manubrium: Array2<f64>,
 
+    pub confidences: Option<LateralPointConfidence>,
     pub image_metadata: ImageMetadata,
+}
+
+impl LateralPoints {
+    fn _extract_point_confidence(
+        &self,
+        _confidence_map: ArrayView3<f64>,
+    ) -> LateralPointConfidence {
+        todo!()
+    }
 }
 
 impl Serialize for LateralPoints {
@@ -147,6 +165,22 @@ impl Scalable for LateralPoints {
     }
 }
 
+impl PointConfidence for LateralPoints {
+    type PointConfidenceType = LateralPointConfidence;
+    fn get_confidence(&self) -> &Option<Self::PointConfidenceType> {
+        &self.confidences
+    }
+    fn get_confidence_mut(&mut self) -> &mut Option<Self::PointConfidenceType> {
+        &mut self.confidences
+    }
+    fn extract_point_confidence(
+        &self,
+        confidence_map: ArrayView3<f64>,
+    ) -> Self::PointConfidenceType {
+        self._extract_point_confidence(confidence_map)
+    }
+}
+
 impl TryFrom<LabelMeData> for LateralPoints {
     type Error = ScolError;
 
@@ -165,7 +199,8 @@ impl TryFrom<LabelMeData> for LateralPoints {
         let chin = extract_points(&data, "Chin")?;
         let manubrium = extract_points(&data, "Manubrium")?;
 
-        let image_data = ImageMetadata::from(data);
+        let confidences = None;
+        let image_metadata = ImageMetadata::from(data);
 
         Ok(LateralPoints {
             corners,
@@ -181,7 +216,8 @@ impl TryFrom<LabelMeData> for LateralPoints {
             posterior_hard_palate,
             chin,
             manubrium,
-            image_metadata: image_data,
+            confidences,
+            image_metadata,
         })
     }
 }
@@ -212,6 +248,7 @@ impl TryFrom<&LateralPointsIR> for LateralPoints {
             posterior_hard_palate: vec_points_to_array2(&ir.posterior_hard_palate)?,
             chin: vec_points_to_array2(&ir.chin)?,
             manubrium: vec_points_to_array2(&ir.manubrium)?,
+            confidences: None,
             image_metadata: ir.image_metadata.clone(),
         })
     }
