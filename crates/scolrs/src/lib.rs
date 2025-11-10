@@ -513,10 +513,7 @@ impl Spine {
         let tr_conf = extract_confidence(spine_points.index_axis(Axis(0), 1), confidence_map, 1);
         let bl_conf = extract_confidence(spine_points.index_axis(Axis(0), 2), confidence_map, 2);
         let br_conf = extract_confidence(spine_points.index_axis(Axis(0), 3), confidence_map, 3);
-        let c7tls = stack![Axis(1), tl_conf, tr_conf, bl_conf, br_conf]
-            .permuted_axes([1, 0])
-            .as_standard_layout()
-            .to_owned();
+        let c7tls = stack![Axis(1), tl_conf, tr_conf, bl_conf, br_conf];
         c7tls
     }
 }
@@ -792,9 +789,11 @@ impl TryFrom<CoronalPointsIR> for CoronalPoints {
 
     fn try_from(ir: CoronalPointsIR) -> Result<Self, Self::Error> {
         let image_data = ir.image_metadata.clone();
+        let confidences = ir.confidences.clone();
         let data = LabelMeData::from(ir);
         let mut cp = CoronalPoints::try_from(data)?;
         cp.image_metadata = image_data;
+        cp.confidences = confidences.map(|c| CoronalPointConfidence::from(&c));
         Ok(cp)
     }
 }
@@ -807,6 +806,31 @@ impl From<&CoronalPointConfidence> for CoronalPointConfidenceIR {
         let pelvis = cpc.pelvis.to_vec();
         let iliac = cpc.iliac.to_vec();
         let femoral_head = cpc.femoral_head.to_vec();
+        Self {
+            c7tls,
+            clavicle,
+            shoulder,
+            pelvis,
+            iliac,
+            femoral_head,
+        }
+    }
+}
+
+impl From<&CoronalPointConfidenceIR> for CoronalPointConfidence {
+    fn from(cpc_ir: &CoronalPointConfidenceIR) -> Self {
+        // Convert c7tls from Vec<Vec<f64>> to Array2<f64>
+        let mut c7tls = Array2::<f64>::zeros((cpc_ir.c7tls.len(), 4));
+        for (i, row) in cpc_ir.c7tls.iter().enumerate() {
+            for (j, val) in row.iter().enumerate() {
+                c7tls[[i, j]] = *val;
+            }
+        }
+        let clavicle = Array1::from(cpc_ir.clavicle.clone());
+        let shoulder = Array1::from(cpc_ir.shoulder.clone());
+        let pelvis = Array1::from(cpc_ir.pelvis.clone());
+        let iliac = Array1::from(cpc_ir.iliac.clone());
+        let femoral_head = Array1::from(cpc_ir.femoral_head.clone());
         Self {
             c7tls,
             clavicle,
@@ -1494,6 +1518,23 @@ impl From<&SagittalPointConfidence> for SagittalPointConfidenceIR {
     }
 }
 
+impl From<&SagittalPointConfidenceIR> for SagittalPointConfidence {
+    fn from(cpc_ir: &SagittalPointConfidenceIR) -> Self {
+        // Convert c7tls from Vec<Vec<f64>> to Array2<f64>
+        let mut c7tls = Array2::<f64>::zeros((cpc_ir.c7tls.len(), 4));
+        for (i, row) in cpc_ir.c7tls.iter().enumerate() {
+            for (j, val) in row.iter().enumerate() {
+                c7tls[[i, j]] = *val;
+            }
+        }
+        let femoral_head = Array1::from(cpc_ir.femoral_head.clone());
+        Self {
+            c7tls,
+            femoral_head,
+        }
+    }
+}
+
 impl From<&SagittalPoints> for SagittalPointsIR {
     fn from(cp: &SagittalPoints) -> Self {
         let spine = array3_to_nested_vec_points(cp.spine.c7tls.0.clone());
@@ -1523,8 +1564,10 @@ impl TryFrom<SagittalPointsIR> for SagittalPoints {
 
     fn try_from(ir: SagittalPointsIR) -> Result<Self, Self::Error> {
         let image_data = ir.image_metadata.clone();
+        let confidences = ir.confidences.clone();
         let data = LabelMeData::from(ir);
         let mut sp = SagittalPoints::try_from(data)?;
+        sp.confidences = confidences.map(|c| SagittalPointConfidence::from(&c));
         sp.image_metadata = image_data;
         Ok(sp)
     }

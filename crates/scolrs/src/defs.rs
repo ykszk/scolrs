@@ -86,6 +86,33 @@ pub enum VertebraDiscIndex {
     L6 = 34,
 }
 
+impl VertebraDiscIndex {
+    pub fn is_vertebra(&self) -> bool {
+        (*self as u8) % 2 == 0
+    }
+    pub fn to_vertebral_index(&self) -> Option<VertebralIndex> {
+        if self.is_vertebra() {
+            Some(VertebralIndex::from((*self as u8) / 2))
+        } else {
+            None
+        }
+    }
+    pub fn disc_to_above_vertebral_index(&self) -> Option<VertebralIndex> {
+        if self.is_vertebra() {
+            None
+        } else {
+            Some(VertebralIndex::from((*self as u8) / 2))
+        }
+    }
+    pub fn disc_to_below_vertebral_index(&self) -> Option<VertebralIndex> {
+        if self.is_vertebra() {
+            None
+        } else {
+            Some(VertebralIndex::from(((*self as u8) / 2) + 1))
+        }
+    }
+}
+
 impl From<VertebralIndex> for VertebraDiscIndex {
     fn from(index: VertebralIndex) -> Self {
         let v_i = index as u8;

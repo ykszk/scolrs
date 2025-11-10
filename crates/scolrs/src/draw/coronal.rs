@@ -248,23 +248,36 @@ impl ConfidenceComponent for Avt<'_> {
         if curve_set.pt.is_none() && curve_set.mt.is_none() && curve_set.tll.is_none() {
             return Some(Err(MeasureError::NoCurveFound));
         }
-        let confs = match curve_desc.major_curve {
+        let (apex, c7_sac_conf) = match curve_desc.major_curve {
             Some(crate::lenke::MajorCurve::MT) => {
-                let apex = curve_desc.apices.mt.unwrap() as usize;
-                let apex_confs = confidence.c7tls.index_axis(Axis(0), apex + 1);
+                let apex = curve_desc.apices.mt.unwrap();
                 let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
-                concatenate(Axis(0), &[apex_confs, c7_confs]).unwrap()
+                (apex, c7_confs)
             }
             Some(crate::lenke::MajorCurve::TLL) => {
-                let apex = curve_desc.apices.tll.unwrap() as usize;
-                let apex_confs = confidence.c7tls.index_axis(Axis(0), apex + 1);
+                let apex = curve_desc.apices.tll.unwrap();
                 let sac_confs = confidence
                     .c7tls
                     .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
-                concatenate(Axis(0), &[apex_confs, sac_confs]).unwrap()
+                (apex, sac_confs)
             }
             None => unreachable!(),
         };
+        let apex_confs = if let Some(vert_index) = apex.to_vertebral_index() {
+            let confs = confidence
+                .c7tls
+                .index_axis(Axis(0), vert_index as usize + 1);
+            confs.to_owned()
+        } else {
+            // disk sup is inf plate of the vertebra above
+            let vert_above = apex.disc_to_above_vertebral_index().unwrap();
+            let sup_confs = confidence.c7tls.slice(s![vert_above as usize + 1, 2..]);
+            // disk inf is sup plate of the vertebra below
+            let vert_below = apex.disc_to_below_vertebral_index().unwrap();
+            let inf_confs = confidence.c7tls.slice(s![vert_below as usize + 1, ..2]);
+            concatenate(Axis(0), &[sup_confs, inf_confs]).unwrap()
+        };
+        let confs = concatenate(Axis(0), &[apex_confs.view(), c7_sac_conf.view()]).unwrap();
         let conf = reduce_confidence(confs.view()).unwrap();
         Some(Ok(conf))
     }
