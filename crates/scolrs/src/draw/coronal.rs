@@ -1,7 +1,7 @@
 use crate::draw::{self, Named};
 use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
-use ndarray::{s, stack, Array1, Array2, Axis};
+use ndarray::{concatenate, s, stack, Array1, Array2, ArrayView1, Axis};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
 
@@ -60,7 +60,7 @@ macro_rules! impl_cobb_angle {
             }
         }
         impl ConfidenceComponent for $name<'_> {
-            fn confidence(&self) -> Option<f64> {
+            fn confidence(&self) -> Option<Result<f64, MeasureError>> {
                 if self.0.confidences.is_none() || self.1.is_none() {
                     return None;
                 }
@@ -76,13 +76,13 @@ macro_rules! impl_cobb_angle {
                 let end_idx = curve.inf + 1; // +1 to skip c7
                 confs[2] = confidence.c7tls[[end_idx, 2]];
                 confs[3] = confidence.c7tls[[end_idx, 3]];
-                reduce_confidence(&confs)
+                reduce_confidence(confs.view()).map(Ok)
             }
         }
     };
 }
 
-fn reduce_confidence(confidences: &Array1<f64>) -> Option<f64> {
+fn reduce_confidence(confidences: ArrayView1<f64>) -> Option<f64> {
     if confidences.is_empty() {
         return None;
     }
@@ -240,12 +240,40 @@ impl DrawComponent for Avt<'_> {
         Ok(g)
     }
 }
-
 impl MeasureComponent for Avt<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let (apex_centroid, mid) = Self::prep(self.0, self.1)?;
         let dx = apex_centroid[0] - mid[0];
         Ok(dx)
+    }
+}
+impl ConfidenceComponent for Avt<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let curve_desc = self.1;
+        let curve_set = &curve_desc.curves;
+        if curve_set.pt.is_none() && curve_set.mt.is_none() && curve_set.tll.is_none() {
+            return Some(Err(MeasureError::NoCurveFound));
+        }
+        let confs = match curve_desc.major_curve {
+            Some(crate::lenke::MajorCurve::MT) => {
+                let apex = curve_desc.apices.mt.unwrap() as usize;
+                let apex_confs = confidence.c7tls.index_axis(Axis(0), apex + 1);
+                let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
+                concatenate(Axis(0), &[apex_confs, c7_confs]).unwrap()
+            }
+            Some(crate::lenke::MajorCurve::TLL) => {
+                let apex = curve_desc.apices.tll.unwrap() as usize;
+                let apex_confs = confidence.c7tls.index_axis(Axis(0), apex + 1);
+                let sac_confs = confidence
+                    .c7tls
+                    .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
+                concatenate(Axis(0), &[apex_confs, sac_confs]).unwrap()
+            }
+            None => unreachable!(),
+        };
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -276,6 +304,15 @@ impl MeasureComponent for T1TiltAngle<'_> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle("Vertebra", t1sup)
+    }
+}
+impl ConfidenceComponent for T1TiltAngle<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        // T1 corners
+        let confs = confidence.c7tls.index_axis(Axis(0), 1);
+        let conf = reduce_confidence(confs).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -323,6 +360,18 @@ impl MeasureComponent for CoronalBalance<'_> {
         Ok(dx)
     }
 }
+impl ConfidenceComponent for CoronalBalance<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
+        let sac_confs = confidence
+            .c7tls
+            .index_axis(Axis(0), confidence.c7tls.len_of(Axis(0)) - 1);
+        let confs = concatenate(Axis(0), &[c7_confs, sac_confs.slice(s![..2])]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
+    }
+}
 
 /// Clavicle angle (p. 56)
 #[derive(Named)]
@@ -352,6 +401,15 @@ impl DrawComponent for ClavicleAngle<'_> {
 impl MeasureComponent for ClavicleAngle<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         tilt_angle("Clavicle", self.0.clavicle.0.view())
+    }
+}
+impl ConfidenceComponent for ClavicleAngle<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let confs = confidence.clavicle.view();
+        confs.validate_label_length("Clavicle", 2).ok()?;
+        let conf = reduce_confidence(confs).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -392,6 +450,15 @@ impl MeasureComponent for ShoulderHeight<'_> {
         Ok(dy)
     }
 }
+impl ConfidenceComponent for ShoulderHeight<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let confs = confidence.shoulder.view();
+        confs.validate_label_length("Shoulder", 2).ok()?;
+        let conf = reduce_confidence(confs).unwrap();
+        Some(Ok(conf))
+    }
+}
 
 /// Pelvic Obliquity (p.69)
 #[derive(Named)]
@@ -418,6 +485,15 @@ impl DrawComponent for PelvicObliquity<'_> {
 impl MeasureComponent for PelvicObliquity<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         tilt_angle("Pelvis", self.0.pelvis.0.view())
+    }
+}
+impl ConfidenceComponent for PelvicObliquity<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let confs = confidence.pelvis.view();
+        confs.validate_label_length("Pelvis", 2).ok()?;
+        let conf = reduce_confidence(confs).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -501,6 +577,19 @@ impl MeasureComponent for SacralObliquity<'_> {
         Ok(angle)
     }
 }
+impl ConfidenceComponent for SacralObliquity<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let femoral_confs = confidence.femoral_head.view();
+        femoral_confs.validate_label_length("FemoralHead", 2).ok()?;
+        let sacral_confs = confidence
+            .c7tls
+            .index_axis(Axis(0), confidence.c7tls.len_of(Axis(0)) - 1);
+        let confs = concatenate(Axis(0), &[femoral_confs, sacral_confs.slice(s![..2])]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
+    }
+}
 
 /// Leg Length Discrepancy (p.69)
 #[derive(Named)]
@@ -536,6 +625,15 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
         let points = coronal_points.femoral_head.0.view();
         let dy = points.index_axis(Axis(0), 1)[1] - points.index_axis(Axis(0), 0)[1];
         Ok(dy)
+    }
+}
+impl ConfidenceComponent for LegLengthDiscrepancy<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let confs = confidence.femoral_head.view();
+        confs.validate_label_length("FemoralHead", 2).ok()?;
+        let conf = reduce_confidence(confs).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -574,6 +672,31 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
 
 impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
     for Box<dyn MeasureComponent + 'a>
+{
+    fn from(value: (&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
+        let (measure, coronal_points_and_curve) = value;
+        let coronal_points_and_curve = &coronal_points_and_curve.0;
+        let coronal_points = &coronal_points_and_curve.coronal_points;
+        let curve_set = &coronal_points_and_curve.curves.curves;
+        match measure {
+            CoronalMeasure::CobbPT => Box::new(CobbPT(coronal_points, curve_set.pt.clone())),
+            CoronalMeasure::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
+            CoronalMeasure::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
+
+            CoronalMeasure::Avt => Box::new(Avt(coronal_points, &coronal_points_and_curve.curves)),
+            CoronalMeasure::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
+            CoronalMeasure::CoronalBalance => Box::new(CoronalBalance(coronal_points)),
+            CoronalMeasure::ClavicleAngle => Box::new(ClavicleAngle(coronal_points)),
+            CoronalMeasure::ShoulderHeight => Box::new(ShoulderHeight(coronal_points)),
+            CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
+            CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
+            CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+        }
+    }
+}
+
+impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
+    for Box<dyn ConfidenceComponent + 'a>
 {
     fn from(value: (&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
         let (measure, coronal_points_and_curve) = value;

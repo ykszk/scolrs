@@ -826,7 +826,7 @@ pub trait MeasureComponent: Named {
 }
 
 pub trait ConfidenceComponent: Named {
-    fn confidence(&self) -> Option<f64>;
+    fn confidence(&self) -> Option<Result<f64, MeasureError>>;
 }
 
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
