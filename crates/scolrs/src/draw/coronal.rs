@@ -1,16 +1,16 @@
 use crate::draw::{self, Named};
 use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
-use ndarray::{concatenate, s, stack, Array1, Array2, ArrayView1, Axis};
+use ndarray::{concatenate, s, stack, Array1, Array2, Axis};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
 
 use super::{
     angle_between, draw_difference_in_x, draw_difference_in_y, draw_t1_angle, draw_tilt_angle,
-    mean_plate_length, points2line, tilt_angle, Centroids, CobbAux, ColorPalette, CommonComponent,
-    ConfidenceComponent, DrawComponent, DrawError, MeasureComponent, MeasureError, Painter,
-    VertebralLabels, VertebralPoints, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE,
-    CLASS_MEASURE, CLASS_POLYGON,
+    mean_plate_length, points2line, reduce_confidence, tilt_angle, Centroids, CobbAux,
+    ColorPalette, CommonComponent, ConfidenceComponent, DrawComponent, DrawError, MeasureComponent,
+    MeasureError, Painter, VertebralLabels, VertebralPoints, CLASS_ANGLE, CLASS_ANNOTATION,
+    CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POLYGON,
 };
 
 const CORONAL_COMPONENT_CLASS: &str = "CoronalComponent";
@@ -80,13 +80,6 @@ macro_rules! impl_cobb_angle {
             }
         }
     };
-}
-
-fn reduce_confidence(confidences: ArrayView1<f64>) -> Option<f64> {
-    if confidences.is_empty() {
-        return None;
-    }
-    Some(confidences.mean().unwrap())
 }
 
 /// Cobb angle for proximal thoracic (PT) curve

@@ -1,17 +1,17 @@
 use crate::draw::{AllPoints, Named};
 use crate::{
-    Curve, SagittalDraw, SagittalMeasure, SagittalPoints, ScaledType, Spine, ValidateLength,
-    VertebralIndex,
+    Curve, SagittalDraw, SagittalMeasure, SagittalPointConfidence, SagittalPoints, ScaledType,
+    Spine, ValidateLength, VertebralIndex,
 };
-use ndarray::{stack, Array2, ArrayView2, Axis};
+use ndarray::{concatenate, s, stack, Array2, ArrayView2, Axis};
 use ndarray_stats::DeviationExt;
 use svg::node::element;
 
 use super::{
     angle_between, draw_difference_in_x, draw_incidence_angle, draw_t1_angle,
-    femoral_incidence_angle, mean_plate_length, tilt_angle, CobbAux, ColorPalette, DrawComponent,
-    DrawError, MeasureComponent, MeasureError, Painter, VertebralLabels, VertebralPoints,
-    CLASS_ANGLE, CLASS_DISTANCE, CLASS_MEASURE,
+    femoral_incidence_angle, mean_plate_length, reduce_confidence, tilt_angle, CobbAux,
+    ColorPalette, ConfidenceComponent, DrawComponent, DrawError, MeasureComponent, MeasureError,
+    Painter, VertebralLabels, VertebralPoints, CLASS_ANGLE, CLASS_DISTANCE, CLASS_MEASURE,
 };
 
 const SAGITTAL_COMPONENT_CLASS: &str = "SagittalComponent";
@@ -19,6 +19,18 @@ pub trait SagittalComponent: DrawComponent + MeasureComponent {
     fn default_group(&self) -> element::Group {
         self.default_group_w_classes(&["Component", SAGITTAL_COMPONENT_CLASS])
     }
+}
+
+fn calc_conf_from_sup_and_inf(
+    confidences: &SagittalPointConfidence,
+    sup: usize,
+    inf: usize,
+) -> f64 {
+    let sup_confs = confidences.c7tls.index_axis(Axis(0), sup + 1);
+    let inf_confs = confidences.c7tls.index_axis(Axis(0), inf + 1);
+    let confs = concatenate(Axis(0), &[sup_confs, inf_confs]).unwrap();
+    let conf = reduce_confidence(confs.view()).unwrap();
+    conf
 }
 
 macro_rules! impl_kyophosis {
@@ -67,6 +79,13 @@ macro_rules! impl_kyophosis {
                     })
                     .unwrap();
                 Ok(angle)
+            }
+        }
+        impl ConfidenceComponent for $name<'_> {
+            fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+                let confidence = self.0.confidences.as_ref()?;
+                let conf = calc_conf_from_sup_and_inf(confidence, Self::SUP, Self::INF);
+                Some(Ok(conf))
             }
         }
     };
@@ -177,6 +196,14 @@ impl MeasureComponent for LumbarLordosis<'_> {
         Ok(angle)
     }
 }
+impl ConfidenceComponent for LumbarLordosis<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let (sup, inf) = Self::prep(&self.0.spine);
+        let conf = calc_conf_from_sup_and_inf(confidence, sup, inf);
+        Some(Ok(conf))
+    }
+}
 
 /// T1 slope angle
 #[derive(Named)]
@@ -205,6 +232,14 @@ impl MeasureComponent for T1Slope<'_> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle("Vertebra", t1sup).map(|a| -a)
+    }
+}
+impl ConfidenceComponent for T1Slope<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let confs = confidence.c7tls.slice(s![1, ..2]);
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -250,6 +285,18 @@ impl MeasureComponent for SagittalBalance<'_> {
         let p2 = points.index_axis(Axis(0), 1);
         let dx = p1[0] - p2[0];
         Ok(dx)
+    }
+}
+impl ConfidenceComponent for SagittalBalance<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let sac_sup_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
+        let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
+        let confs = concatenate(Axis(0), &[sac_sup_confs, c7_confs]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -304,6 +351,20 @@ impl MeasureComponent for LumbosacralAngle<'_> {
         Ok(angle)
     }
 }
+impl ConfidenceComponent for LumbosacralAngle<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let sac_sup_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
+        let l5_inf_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 2, 2..]);
+        let confs = concatenate(Axis(0), &[sac_sup_confs, l5_inf_confs]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
+    }
+}
 
 /// Pelvic Incidence (p.97)
 #[derive(Named)]
@@ -333,6 +394,22 @@ impl MeasureComponent for PelvicIncidence<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let plate = self.0.spine.sacral_sup_plate();
         femoral_incidence_angle(plate, &self.0.femoral_head)
+    }
+}
+impl ConfidenceComponent for PelvicIncidence<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        confidence
+            .femoral_head
+            .validate_label_length_more_than("FemoralHead", 1)
+            .ok()?;
+        let femoral_confs = confidence.femoral_head.view();
+        let sac_sup_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
+        let confs = concatenate(Axis(0), &[femoral_confs, sac_sup_confs]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -400,6 +477,12 @@ impl MeasureComponent for PelvicTilt<'_> {
         Ok(angle)
     }
 }
+impl ConfidenceComponent for PelvicTilt<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        // Same as Pelvic Incidence
+        PelvicIncidence(self.0).confidence()
+    }
+}
 
 // Sacral Slope (p.99)
 #[derive(Named)]
@@ -459,6 +542,16 @@ impl MeasureComponent for SacralSlope<'_> {
         Ok(angle)
     }
 }
+impl ConfidenceComponent for SacralSlope<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        let sac_sup_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
+        let conf = reduce_confidence(sac_sup_confs.view()).unwrap();
+        Some(Ok(conf))
+    }
+}
 
 /// L5 Incidence Angle (p.102)
 #[derive(Named)]
@@ -501,6 +594,22 @@ impl MeasureComponent for L5IncidenceAngle<'_> {
             .spine
             .sup_plate(sagittal_points.spine.v_c7tl.0.len_of(Axis(0)) - 2);
         femoral_incidence_angle(plate, &sagittal_points.femoral_head)
+    }
+}
+impl ConfidenceComponent for L5IncidenceAngle<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        let confidence = self.0.confidences.as_ref()?;
+        confidence
+            .femoral_head
+            .validate_label_length_more_than("FemoralHead", 1)
+            .ok()?;
+        let femoral_confs = confidence.femoral_head.view();
+        let l5_sup_confs = confidence
+            .c7tls
+            .slice(s![confidence.c7tls.len_of(Axis(0)) - 2, ..2]);
+        let confs = concatenate(Axis(0), &[femoral_confs, l5_sup_confs]).unwrap();
+        let conf = reduce_confidence(confs.view()).unwrap();
+        Some(Ok(conf))
     }
 }
 
@@ -575,12 +684,17 @@ impl DrawComponent for PelvicRadiusAngle<'_> {
         Ok(g)
     }
 }
-
 impl MeasureComponent for PelvicRadiusAngle<'_> {
     fn measure(&self) -> Result<f64, MeasureError> {
         let (sac_sup_post2ante, post_sac2fem) = Self::prep(self.0)?;
         let angle = angle_between(post_sac2fem.view(), sac_sup_post2ante.view()).to_degrees();
         Ok(angle)
+    }
+}
+impl ConfidenceComponent for PelvicRadiusAngle<'_> {
+    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+        // Same as Pelvic Incidence
+        PelvicIncidence(self.0).confidence()
     }
 }
 
@@ -622,6 +736,38 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
 
 impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
     for Box<dyn MeasureComponent + 'a>
+{
+    fn from(
+        (measure, sagittal_points): (&'b SagittalMeasure, &'a ScaledType<SagittalPoints>),
+    ) -> Self {
+        let sagittal_points = &sagittal_points.0;
+        match measure {
+            SagittalMeasure::ThoracicKyphosis => Box::new(ThoracicKyphosis(sagittal_points)),
+            SagittalMeasure::T1ThoracicKyphosis => Box::new(T1ThoracicKyphosis(sagittal_points)),
+            SagittalMeasure::ProximalThoracicKyphosis => {
+                Box::new(ProximalThoracicKyphosis(sagittal_points))
+            }
+            SagittalMeasure::MidLowerThoracicKyphosis => {
+                Box::new(MidLowerThoracicKyphosis(sagittal_points))
+            }
+            SagittalMeasure::ThoracolumbarSagittalAlignment => {
+                Box::new(ThoracolumbarSagittalAlignment(sagittal_points))
+            }
+            SagittalMeasure::LumbarLordosis => Box::new(LumbarLordosis(sagittal_points)),
+            SagittalMeasure::SagittalBalance => Box::new(SagittalBalance(sagittal_points)),
+            SagittalMeasure::LumbosacralAngle => Box::new(LumbosacralAngle(sagittal_points)),
+            SagittalMeasure::T1Slope => Box::new(T1Slope(sagittal_points)),
+            SagittalMeasure::PelvicIncidence => Box::new(PelvicIncidence(sagittal_points)),
+            SagittalMeasure::PelvicTilt => Box::new(PelvicTilt(sagittal_points)),
+            SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
+            SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
+            SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+        }
+    }
+}
+
+impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
+    for Box<dyn ConfidenceComponent + 'a>
 {
     fn from(
         (measure, sagittal_points): (&'b SagittalMeasure, &'a ScaledType<SagittalPoints>),

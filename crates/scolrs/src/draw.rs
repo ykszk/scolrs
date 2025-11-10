@@ -9,7 +9,7 @@ use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
 pub use named_derive::Named;
-use ndarray::{s, stack, Array2, ArrayBase, ArrayView2, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, ArrayView1, ArrayView2, Axis, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -827,6 +827,13 @@ pub trait MeasureComponent: Named {
 
 pub trait ConfidenceComponent: Named {
     fn confidence(&self) -> Option<Result<f64, MeasureError>>;
+}
+
+fn reduce_confidence(confidences: ArrayView1<f64>) -> Option<f64> {
+    if confidences.is_empty() {
+        return None;
+    }
+    Some(confidences.mean().unwrap())
 }
 
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
