@@ -1,7 +1,14 @@
-use crate::cli::ConfidenceArgs;
-use anyhow::{Context, Result};
-use scolrs::{CoronalPoints, PointConfidence, SagittalPoints};
-use std::path::Path;
+use crate::{cli::ConfidenceArgs, utils::Ndjson};
+use anyhow::{bail, Context, Result};
+use scolrs::{
+    ContentFilename, CoronalPoints, CoronalPointsLine, HasImageMetadata, PointConfidence,
+    SagittalPoints, SagittalPointsLine,
+};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    path::{Path, PathBuf},
+};
 
 fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Deserialize<'de>>(
     input_path: &Path,
@@ -46,7 +53,77 @@ fn read_npz(path: &Path, key: &str) -> Result<ndarray::Array3<f64>> {
     Ok(array)
 }
 
+fn process_line<LineType: ContentFilename + serde::Serialize + for<'de> serde::Deserialize<'de>>(
+    line: &str,
+    args: &ConfidenceArgs,
+    writer: &mut dyn std::io::Write,
+) -> Result<()>
+where
+    LineType::ContentType: PointConfidence + HasImageMetadata,
+{
+    let points_line: LineType = serde_json::from_str(line)?;
+    let line_filename = points_line.filename().to_string();
+    log::info!("Processing line with filename {}", &line_filename);
+    let points = points_line.content_filename().0;
+    if points.get_confidence().is_some() {
+        log::warn!("Overwriting existing confidence values");
+    }
+    let image_path = PathBuf::from(&points.image_metadata().path);
+    let heatmap_path = args
+        .confidence_map
+        .join(image_path.with_extension("npz").file_name().unwrap());
+    let heatmaps = read_npz(&heatmap_path, &args.key)?;
+    let confidence = points.extract_point_confidence(heatmaps.view());
+    let mut output_points = points;
+    *output_points.get_confidence_mut() = Some(confidence);
+    let output_points_line = LineType::new(output_points, line_filename);
+    let output_line = serde_json::to_string(&output_points_line)?;
+    writeln!(writer, "{}", output_line)?;
+    Ok(())
+}
+
+fn process_ndjson(args: ConfidenceArgs) -> Result<()> {
+    if !args.confidence_map.exists() {
+        bail!(
+            "Confidence map directory {:?} does not exist",
+            args.confidence_map
+        );
+    }
+    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
+        Box::new(BufReader::new(std::io::stdin()))
+    } else {
+        Box::new(BufReader::new(
+            File::open(&args.input).with_context(|| format!("Open file {:?}", &args.input))?,
+        ))
+    };
+    let mut writer: Box<dyn std::io::Write> = if args.output.as_os_str() == "-" {
+        Box::new(std::io::stdout())
+    } else {
+        Box::new(std::io::BufWriter::new(
+            File::create(&args.output)
+                .with_context(|| format!("Create file {:?}", &args.output))?,
+        ))
+    };
+    for line in reader.lines() {
+        let line = line?;
+        match args.input_type {
+            crate::cli::Plane::Coronal => {
+                process_line::<CoronalPointsLine>(&line, &args, &mut writer)?;
+            }
+            crate::cli::Plane::Sagittal => {
+                process_line::<SagittalPointsLine>(&line, &args, &mut writer)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn cmd(args: ConfidenceArgs) -> Result<()> {
+    if args.input.as_os_str() == "-" || args.input.is_ndjson() {
+        return process_ndjson(args);
+    }
+
     let input_path = Path::new(&args.input);
     let heatmaps = match args.confidence_map.extension() {
         Some(ext) if ext == "npz" => read_npz(&args.confidence_map, &args.key)?,

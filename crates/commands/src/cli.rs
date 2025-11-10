@@ -414,17 +414,17 @@ pub struct ImplantArgs {
 pub struct ConfidenceArgs {
     /// Input type
     pub input_type: Plane,
-    /// Input json file
-    #[arg(value_hint = ValueHint::FilePath)]
+    /// Input json file or ndjson file. Specify '-' for stdin with ndjson format
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub input: PathBuf,
-    /// Confidence map npz file
-    #[arg(value_hint = ValueHint::FilePath)]
+    /// Confidence map npz file or directory of npz files
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub confidence_map: PathBuf,
-    /// Output file
-    #[arg(value_hint = ValueHint::FilePath)]
+    /// Output file or ndjson file. Specify '-' for stdout with ndjson format
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub output: PathBuf,
 
     /// Key in the npz file for the confidence map
-    #[clap(long, default_value = "heatmaps")]
+    #[clap(long, default_value = "heatmaps.npy")]
     pub key: String,
 }
