@@ -196,7 +196,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
 fn measure_x<T, U>(data: ScaledType<T>, measures: Vec<U>) -> Result<MeasureResult<U, f64>>
 where
     T: HasImageMetadata + Scalable + PointConfidence,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone,
+    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
     for<'a, 'b> (&'a U, &'b ScaledType<T>):
         Into<Box<dyn MeasureComponent + 'b>> + Into<Box<dyn ConfidenceComponent + 'b>>,
 {
@@ -224,11 +224,12 @@ type ConfResult<U> = IndexMap<U, std::result::Result<f64, MeasureError>>;
 fn confidence_x<T, U>(data: &ScaledType<T>, measures: &[U]) -> Result<ConfResult<U>>
 where
     T: Scalable,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone,
+    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
     for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
 {
     let mut measurements: IndexMap<U, std::result::Result<f64, MeasureError>> = Default::default();
     for measure in measures {
+        log::debug!("Calculating confidence for measure {:?}", measure);
         let spinal_measure: Box<dyn ConfidenceComponent> = (measure, data).into();
         let conf = spinal_measure.confidence();
         if let Some(conf) = conf {

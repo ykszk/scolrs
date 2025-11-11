@@ -26,9 +26,10 @@ fn calc_conf_from_sup_and_inf(
     sup: usize,
     inf: usize,
 ) -> f64 {
-    let sup_confs = confidences.c7tls.index_axis(Axis(0), sup + 1);
-    let inf_confs = confidences.c7tls.index_axis(Axis(0), inf + 1);
+    let sup_confs = confidences.c7tls.slice(s![sup + 1, ..2]);
+    let inf_confs = confidences.c7tls.slice(s![inf + 1, 2..]);
     let confs = concatenate(Axis(0), &[sup_confs, inf_confs]).unwrap();
+    log::debug!("Confidences for sup and inf: {:?}", confs);
     let conf = reduce_confidence(confs.view()).unwrap();
     conf
 }
