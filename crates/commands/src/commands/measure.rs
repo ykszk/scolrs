@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::{
-    draw::{ConfidenceComponent, MeasureComponent, MeasureError},
+    draw::{ConfidenceComponent, MeasureComponent, MeasureError, ReductionMethod},
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
     CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, HasImageMetadata,
     MeasureAndDraw, PointConfidence, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
@@ -67,7 +67,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &args.input,
                     &line?,
                 )?;
-                let results = measure_coronal(data_line.content, subcommand)?;
+                let results = measure_coronal(data_line.content, &args, subcommand)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -80,7 +80,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &args.input,
                     &line?,
                 )?;
-                let results = measure_sagittal(data_line.content, subcommand)?;
+                let results = measure_sagittal(data_line.content, &args, subcommand)?;
                 let line = SagittalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -160,14 +160,14 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     } else {
         Box::new(std::io::stdout())
     };
-    match args.subcommand {
+    match args.subcommand.clone() {
         MeasureSubCommands::Coronal(subcommand) => {
             let data = load_labelme_or_native::<CoronalPointsAndCurve, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_coronal(data, subcommand)?;
+            let results = measure_coronal(data, &args, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Sagittal(subcommand) => {
@@ -176,7 +176,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_sagittal(data, subcommand)?;
+            let results = measure_sagittal(data, &args, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Neck(measure_sub_neck_args) => {
@@ -193,7 +193,11 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     Ok(())
 }
 
-fn measure_x<T, U>(data: ScaledType<T>, measures: Vec<U>) -> Result<MeasureResult<U, f64>>
+fn measure_x<T, U>(
+    data: ScaledType<T>,
+    measures: Vec<U>,
+    reduction_method: ReductionMethod,
+) -> Result<MeasureResult<U, f64>>
 where
     T: HasImageMetadata + Scalable + PointConfidence,
     U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
@@ -201,7 +205,7 @@ where
         Into<Box<dyn MeasureComponent + 'b>> + Into<Box<dyn ConfidenceComponent + 'b>>,
 {
     let confidences = if data.0.get_confidence().is_some() {
-        let confs = confidence_x(&data, &measures)?;
+        let confs = confidence_x(&data, &measures, reduction_method)?;
         Some(confs)
     } else {
         None
@@ -221,7 +225,11 @@ where
 
 type ConfResult<U> = IndexMap<U, std::result::Result<f64, MeasureError>>;
 
-fn confidence_x<T, U>(data: &ScaledType<T>, measures: &[U]) -> Result<ConfResult<U>>
+fn confidence_x<T, U>(
+    data: &ScaledType<T>,
+    measures: &[U],
+    reduction_method: ReductionMethod,
+) -> Result<ConfResult<U>>
 where
     T: Scalable,
     U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
@@ -231,7 +239,7 @@ where
     for measure in measures {
         log::debug!("Calculating confidence for measure {:?}", measure);
         let spinal_measure: Box<dyn ConfidenceComponent> = (measure, data).into();
-        let conf = spinal_measure.confidence();
+        let conf = spinal_measure.confidence(reduction_method);
         if let Some(conf) = conf {
             measurements.insert(measure.clone(), conf);
         }
@@ -239,22 +247,34 @@ where
     Ok(measurements)
 }
 
+fn convert_reduce(method: crate::cli::ReductionMethod) -> ReductionMethod {
+    match method {
+        crate::cli::ReductionMethod::Arithmetic => ReductionMethod::ArithmeticMean,
+        crate::cli::ReductionMethod::Geometric => ReductionMethod::GeometricMean,
+        crate::cli::ReductionMethod::Harmonic => ReductionMethod::HarmonicMean,
+    }
+}
+
 fn measure_sagittal(
     sagittal_points: SagittalPoints,
+    args: &MeasureArgs,
     subcommand: MeasureSubSagittallArgs,
 ) -> Result<MeasureResult<SagittalMeasure, f64>> {
     let scaled_data = sagittal_points.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
-    measure_x(scaled_data, measures)
+    let reduce = convert_reduce(args.reduce);
+    measure_x(scaled_data, measures, reduce)
 }
 
 fn measure_coronal(
     data: CoronalPointsAndCurve,
+    args: &MeasureArgs,
     subcommand: MeasureSubCoronalArgs,
 ) -> Result<MeasureResult<CoronalMeasure, f64>, anyhow::Error> {
     let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
-    measure_x(scaled_data, measures)
+    let reduce = convert_reduce(args.reduce);
+    measure_x(scaled_data, measures, reduce)
 }
 
 fn measure_all(
@@ -345,6 +365,7 @@ mod tests {
         // Just test if the command runs without errors
         let data_dir = test_data_directory();
         let suffix = if labelme { "" } else { "_native" };
+        let reduce = crate::cli::ReductionMethod::Geometric;
 
         let input = data_dir
             .join(case_dir)
@@ -355,6 +376,7 @@ mod tests {
             input,
             output: Some(output),
             labelme,
+            reduce,
             subcommand,
         };
         cmd(args)?;
@@ -369,6 +391,7 @@ mod tests {
             input,
             output: Some(output),
             labelme,
+            reduce,
             subcommand,
         };
         cmd(args)?;

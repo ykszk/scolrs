@@ -237,6 +237,17 @@ pub struct MeasureSubNeckArgs {
     pub flatten: bool,
 }
 
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Default)]
+pub enum ReductionMethod {
+    /// Arithmetic mean
+    Arithmetic,
+    /// Geometric mean
+    #[default]
+    Geometric,
+    /// Harmonic mean
+    Harmonic,
+}
+
 #[derive(Parser, Debug, Default)]
 pub struct MeasureArgs {
     /// Input labelme json filename or ndjson. Specify '-' for stdin with ndjson format
@@ -248,6 +259,9 @@ pub struct MeasureArgs {
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
+    /// Reduction method for confidence values
+    #[clap(long, default_value = "geometric")]
+    pub reduce: ReductionMethod,
     #[clap(subcommand)]
     pub subcommand: MeasureSubCommands,
 }

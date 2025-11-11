@@ -1,4 +1,4 @@
-use crate::draw::{AllPoints, Named};
+use crate::draw::{AllPoints, Named, ReductionMethod};
 use crate::{
     Curve, SagittalDraw, SagittalMeasure, SagittalPointConfidence, SagittalPoints, ScaledType,
     Spine, ValidateLength, VertebralIndex,
@@ -25,12 +25,13 @@ fn calc_conf_from_sup_and_inf(
     confidences: &SagittalPointConfidence,
     sup: usize,
     inf: usize,
+    reduction_method: ReductionMethod,
 ) -> f64 {
     let sup_confs = confidences.c7tls.slice(s![sup + 1, ..2]);
     let inf_confs = confidences.c7tls.slice(s![inf + 1, 2..]);
     let confs = concatenate(Axis(0), &[sup_confs, inf_confs]).unwrap();
     log::debug!("Confidences for sup and inf: {:?}", confs);
-    let conf = reduce_confidence(confs.view()).unwrap();
+    let conf = reduce_confidence(confs.view(), reduction_method).unwrap();
     conf
 }
 
@@ -83,9 +84,9 @@ macro_rules! impl_kyophosis {
             }
         }
         impl ConfidenceComponent for $name<'_> {
-            fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+            fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
                 let confidence = self.0.confidences.as_ref()?;
-                let conf = calc_conf_from_sup_and_inf(confidence, Self::SUP, Self::INF);
+                let conf = calc_conf_from_sup_and_inf(confidence, Self::SUP, Self::INF, reduction);
                 Some(Ok(conf))
             }
         }
@@ -198,10 +199,10 @@ impl MeasureComponent for LumbarLordosis<'_> {
     }
 }
 impl ConfidenceComponent for LumbarLordosis<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let (sup, inf) = Self::prep(&self.0.spine);
-        let conf = calc_conf_from_sup_and_inf(confidence, sup, inf);
+        let conf = calc_conf_from_sup_and_inf(confidence, sup, inf, reduction);
         Some(Ok(conf))
     }
 }
@@ -236,10 +237,10 @@ impl MeasureComponent for T1Slope<'_> {
     }
 }
 impl ConfidenceComponent for T1Slope<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.c7tls.slice(s![1, ..2]);
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -289,14 +290,14 @@ impl MeasureComponent for SagittalBalance<'_> {
     }
 }
 impl ConfidenceComponent for SagittalBalance<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
             .c7tls
             .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
         let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
         let confs = concatenate(Axis(0), &[sac_sup_confs, c7_confs]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -353,7 +354,7 @@ impl MeasureComponent for LumbosacralAngle<'_> {
     }
 }
 impl ConfidenceComponent for LumbosacralAngle<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
             .c7tls
@@ -362,7 +363,7 @@ impl ConfidenceComponent for LumbosacralAngle<'_> {
             .c7tls
             .slice(s![confidence.c7tls.len_of(Axis(0)) - 2, 2..]);
         let confs = concatenate(Axis(0), &[sac_sup_confs, l5_inf_confs]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -398,7 +399,7 @@ impl MeasureComponent for PelvicIncidence<'_> {
     }
 }
 impl ConfidenceComponent for PelvicIncidence<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         confidence
             .femoral_head
@@ -409,7 +410,7 @@ impl ConfidenceComponent for PelvicIncidence<'_> {
             .c7tls
             .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
         let confs = concatenate(Axis(0), &[femoral_confs, sac_sup_confs]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -479,9 +480,9 @@ impl MeasureComponent for PelvicTilt<'_> {
     }
 }
 impl ConfidenceComponent for PelvicTilt<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // Same as Pelvic Incidence
-        PelvicIncidence(self.0).confidence()
+        PelvicIncidence(self.0).confidence(reduction)
     }
 }
 
@@ -544,12 +545,12 @@ impl MeasureComponent for SacralSlope<'_> {
     }
 }
 impl ConfidenceComponent for SacralSlope<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
             .c7tls
             .slice(s![confidence.c7tls.len_of(Axis(0)) - 1, ..2]);
-        let conf = reduce_confidence(sac_sup_confs.view()).unwrap();
+        let conf = reduce_confidence(sac_sup_confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -598,7 +599,7 @@ impl MeasureComponent for L5IncidenceAngle<'_> {
     }
 }
 impl ConfidenceComponent for L5IncidenceAngle<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         confidence
             .femoral_head
@@ -609,7 +610,7 @@ impl ConfidenceComponent for L5IncidenceAngle<'_> {
             .c7tls
             .slice(s![confidence.c7tls.len_of(Axis(0)) - 2, ..2]);
         let confs = concatenate(Axis(0), &[femoral_confs, l5_sup_confs]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -693,9 +694,9 @@ impl MeasureComponent for PelvicRadiusAngle<'_> {
     }
 }
 impl ConfidenceComponent for PelvicRadiusAngle<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // Same as Pelvic Incidence
-        PelvicIncidence(self.0).confidence()
+        PelvicIncidence(self.0).confidence(reduction)
     }
 }
 

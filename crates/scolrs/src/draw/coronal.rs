@@ -1,4 +1,4 @@
-use crate::draw::{self, Named};
+use crate::draw::{self, Named, ReductionMethod};
 use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
 use ndarray::{concatenate, s, stack, Array1, Array2, Axis};
@@ -60,7 +60,7 @@ macro_rules! impl_cobb_angle {
             }
         }
         impl ConfidenceComponent for $name<'_> {
-            fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+            fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
                 if self.0.confidences.is_none() || self.1.is_none() {
                     return None;
                 }
@@ -76,7 +76,7 @@ macro_rules! impl_cobb_angle {
                 let end_idx = curve.inf + 1; // +1 to skip c7
                 confs[2] = confidence.c7tls[[end_idx, 2]];
                 confs[3] = confidence.c7tls[[end_idx, 3]];
-                reduce_confidence(confs.view()).map(Ok)
+                reduce_confidence(confs.view(), reduction).map(Ok)
             }
         }
     };
@@ -241,7 +241,7 @@ impl MeasureComponent for Avt<'_> {
     }
 }
 impl ConfidenceComponent for Avt<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let curve_desc = self.1;
         let curve_set = &curve_desc.curves;
@@ -278,7 +278,7 @@ impl ConfidenceComponent for Avt<'_> {
             concatenate(Axis(0), &[sup_confs, inf_confs]).unwrap()
         };
         let confs = concatenate(Axis(0), &[apex_confs.view(), c7_sac_conf.view()]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -313,11 +313,11 @@ impl MeasureComponent for T1TiltAngle<'_> {
     }
 }
 impl ConfidenceComponent for T1TiltAngle<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         // T1 corners
         let confs = confidence.c7tls.index_axis(Axis(0), 1);
-        let conf = reduce_confidence(confs).unwrap();
+        let conf = reduce_confidence(confs, reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -367,14 +367,14 @@ impl MeasureComponent for CoronalBalance<'_> {
     }
 }
 impl ConfidenceComponent for CoronalBalance<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
         let sac_confs = confidence
             .c7tls
             .index_axis(Axis(0), confidence.c7tls.len_of(Axis(0)) - 1);
         let confs = concatenate(Axis(0), &[c7_confs, sac_confs.slice(s![..2])]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -410,11 +410,11 @@ impl MeasureComponent for ClavicleAngle<'_> {
     }
 }
 impl ConfidenceComponent for ClavicleAngle<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.clavicle.view();
         confs.validate_label_length("Clavicle", 2).ok()?;
-        let conf = reduce_confidence(confs).unwrap();
+        let conf = reduce_confidence(confs, reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -457,11 +457,11 @@ impl MeasureComponent for ShoulderHeight<'_> {
     }
 }
 impl ConfidenceComponent for ShoulderHeight<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.shoulder.view();
         confs.validate_label_length("Shoulder", 2).ok()?;
-        let conf = reduce_confidence(confs).unwrap();
+        let conf = reduce_confidence(confs, reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -494,11 +494,11 @@ impl MeasureComponent for PelvicObliquity<'_> {
     }
 }
 impl ConfidenceComponent for PelvicObliquity<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.pelvis.view();
         confs.validate_label_length("Pelvis", 2).ok()?;
-        let conf = reduce_confidence(confs).unwrap();
+        let conf = reduce_confidence(confs, reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -584,7 +584,7 @@ impl MeasureComponent for SacralObliquity<'_> {
     }
 }
 impl ConfidenceComponent for SacralObliquity<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let femoral_confs = confidence.femoral_head.view();
         femoral_confs.validate_label_length("FemoralHead", 2).ok()?;
@@ -592,7 +592,7 @@ impl ConfidenceComponent for SacralObliquity<'_> {
             .c7tls
             .index_axis(Axis(0), confidence.c7tls.len_of(Axis(0)) - 1);
         let confs = concatenate(Axis(0), &[femoral_confs, sacral_confs.slice(s![..2])]).unwrap();
-        let conf = reduce_confidence(confs.view()).unwrap();
+        let conf = reduce_confidence(confs.view(), reduction).unwrap();
         Some(Ok(conf))
     }
 }
@@ -634,11 +634,11 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
     }
 }
 impl ConfidenceComponent for LegLengthDiscrepancy<'_> {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>> {
+    fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.femoral_head.view();
         confs.validate_label_length("FemoralHead", 2).ok()?;
-        let conf = reduce_confidence(confs).unwrap();
+        let conf = reduce_confidence(confs, reduction).unwrap();
         Some(Ok(conf))
     }
 }

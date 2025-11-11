@@ -826,14 +826,31 @@ pub trait MeasureComponent: Named {
 }
 
 pub trait ConfidenceComponent: Named {
-    fn confidence(&self) -> Option<Result<f64, MeasureError>>;
+    fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>>;
 }
 
-fn reduce_confidence(confidences: ArrayView1<f64>) -> Option<f64> {
+#[derive(Clone, Copy)]
+pub enum ReductionMethod {
+    ArithmeticMean,
+    GeometricMean,
+    HarmonicMean,
+}
+
+fn reduce_confidence(confidences: ArrayView1<f64>, method: ReductionMethod) -> Option<f64> {
     if confidences.is_empty() {
         return None;
     }
-    Some(confidences.mean().unwrap())
+    match method {
+        ReductionMethod::ArithmeticMean => Some(confidences.mean().unwrap()),
+        ReductionMethod::GeometricMean => {
+            let product = confidences.iter().product::<f64>();
+            Some(product.powf(1.0 / (confidences.len() as f64)))
+        }
+        ReductionMethod::HarmonicMean => {
+            let sum_reciprocal = confidences.iter().map(|&c| 1.0 / c).sum::<f64>();
+            Some((confidences.len() as f64) / sum_reciprocal)
+        }
+    }
 }
 
 const COMMON_COMPONENT_CLASS: &str = "CommonComponent";
