@@ -511,8 +511,17 @@ impl Spine {
         // tl, tr, bl, br
         let tl_conf = extract_confidence(spine_points.index_axis(Axis(0), 0), confidence_map, 0);
         let tr_conf = extract_confidence(spine_points.index_axis(Axis(0), 1), confidence_map, 1);
-        let bl_conf = extract_confidence(spine_points.index_axis(Axis(0), 2), confidence_map, 2);
-        let br_conf = extract_confidence(spine_points.index_axis(Axis(0), 3), confidence_map, 3);
+        let mut bl_conf =
+            extract_confidence(spine_points.index_axis(Axis(0), 2), confidence_map, 2);
+        let mut br_conf =
+            extract_confidence(spine_points.index_axis(Axis(0), 3), confidence_map, 3);
+        // the last points of bl and br are copied from tl and tr respectively
+        // assign the last element of tl_conf to bl_conf
+        let len = bl_conf.len();
+        bl_conf[len - 1] = tl_conf[len - 1];
+        // likewise for br_conf
+        br_conf[len - 1] = tr_conf[len - 1];
+
         let c7tls = stack![Axis(1), tl_conf, tr_conf, bl_conf, br_conf];
         c7tls
     }
