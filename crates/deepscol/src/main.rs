@@ -139,7 +139,7 @@ fn main() -> Result<()> {
     }
 
     if let Some(output_path) = &args.output_image {
-        if output_path.ends_with(".npz") {
+        if output_path.extension().and_then(|s| s.to_str()) == Some("npz") {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
             //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.

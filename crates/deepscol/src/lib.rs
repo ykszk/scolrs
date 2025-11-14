@@ -382,7 +382,7 @@ pub fn output3_to_heatmap(output3: &ndarray::Array3<f32>) -> DynamicImage {
         let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
         let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
         let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
-        let a_val = (r_val + g_val + b_val) / 3;
+        let a_val = ((r_val as u16 + g_val as u16 + b_val as u16) / 3) as u8;
         image::Rgba([r_val, g_val, b_val, a_val])
     });
     DynamicImage::ImageRgba8(heatmap)

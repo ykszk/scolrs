@@ -936,20 +936,11 @@ impl CommonComponent for ImageOverlay {}
 impl DrawComponent for ImageOverlay {
     fn draw(
         &self,
-        _painter: &mut Painter,
+        painter: &mut Painter,
         _label_colors: &mut ColorPalette,
         _line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        let group = self.default_group();
-
-        let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
-        let layer = element::Image::new()
-            .set("x", self.x_y.0)
-            .set("y", self.x_y.1)
-            .set("width", self.width_height.0)
-            .set("height", self.width_height.1)
-            .set("xlink:href", base64_image_data);
-        Ok(group.add(layer))
+        self.draw_image(painter)
     }
 }
 
