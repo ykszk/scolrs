@@ -865,7 +865,8 @@ pub struct ImageOverlay {
     label: String,
     description: Option<String>,
     image: DynamicImage,
-    image_size: (usize, usize),
+    x_y: (f64, f64),
+    width_height: (f64, f64),
 }
 
 impl ImageOverlay {
@@ -874,26 +875,28 @@ impl ImageOverlay {
         label: String,
         description: Option<String>,
         image: DynamicImage,
-        image_size: (usize, usize),
+        x_y: (f64, f64),
+        width_height: (f64, f64),
     ) -> Self {
         Self {
             id,
             label,
             description,
             image,
-            image_size,
+            x_y,
+            width_height,
         }
     }
 
-    fn draw_image(&self, painter: &Painter) -> Result<element::Group, DrawError> {
+    fn draw_image(&self, _painter: &Painter) -> Result<element::Group, DrawError> {
         let group = self.default_group();
 
         let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
         let layer = element::Image::new()
-            .set("x", 0i64)
-            .set("y", 0i64)
-            .set("width", painter.size.0)
-            .set("height", painter.size.1)
+            .set("x", self.x_y.0)
+            .set("y", self.x_y.1)
+            .set("width", self.width_height.0)
+            .set("height", self.width_height.1)
             .set("xlink:href", base64_image_data);
         Ok(group.add(layer))
     }
@@ -941,10 +944,10 @@ impl DrawComponent for ImageOverlay {
 
         let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
         let layer = element::Image::new()
-            .set("x", 0i64)
-            .set("y", 0i64)
-            .set("width", self.image_size.0)
-            .set("height", self.image_size.1)
+            .set("x", self.x_y.0)
+            .set("y", self.x_y.1)
+            .set("width", self.width_height.0)
+            .set("height", self.width_height.1)
             .set("xlink:href", base64_image_data);
         Ok(group.add(layer))
     }

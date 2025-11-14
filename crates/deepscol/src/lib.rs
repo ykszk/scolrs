@@ -327,7 +327,7 @@ pub const MAX_POINT_COUNTS: [usize; 13] = [
     1,  // S-TR
 ];
 
-const RESIZE_PARAM_SIZE: u32 = 1200;
+pub const RESIZE_PARAM_SIZE: u32 = 1200;
 
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
 /// Returns None if no true values are found.
@@ -372,6 +372,20 @@ impl MaxAxis for ndarray::ArrayView3<'_, f32> {
     fn axis_max(&self, axis: Axis) -> ndarray::Array<f32, Dim<Self::D>> {
         self.fold_axis(axis, 0.0f32, |acc, &x| acc.max(x))
     }
+}
+
+pub fn output3_to_heatmap(output3: &ndarray::Array3<f32>) -> DynamicImage {
+    let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0));
+    let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0));
+    let b = output3.slice(s![4.., .., ..]).axis_max(Axis(0));
+    let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
+        let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
+        let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
+        let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
+        let a_val = (r_val + g_val + b_val) / 3;
+        image::Rgba([r_val, g_val, b_val, a_val])
+    });
+    DynamicImage::ImageRgba8(heatmap)
 }
 
 pub fn calculate_crop_parameters(
@@ -512,10 +526,9 @@ impl CroppingParams {
     }
 }
 
-pub fn create_result_html(
-    output3: &Array3<f32>,
-    original_image_width: u32,
-    original_image_height: u32,
+pub struct ResultHtmlArguments<'a> {
+    output3: &'a Array3<f32>,
+    original_image_size: (u32, u32),
     model_input_height: u32,
     image: DynamicImage,
     metadata: ImageMetadata,
@@ -523,7 +536,20 @@ pub fn create_result_html(
     scan_direction: ScanDirection,
     cropping_params: Option<CroppingParams>,
     heatmap: DynamicImage,
-) -> Result<String, anyhow::Error> {
+}
+
+pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
+    let ResultHtmlArguments {
+        output3,
+        original_image_size: (original_image_width, original_image_height),
+        model_input_height,
+        image,
+        metadata,
+        threshold,
+        scan_direction,
+        cropping_params,
+        heatmap,
+    } = args;
     let points = extract_points(output3, threshold)
         .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
     log::debug!("Extracted points: {:?}", points);
@@ -562,7 +588,8 @@ pub fn create_result_html(
         "Heatmap".to_string(),
         None,
         heatmap,
-        (RESIZE_PARAM_SIZE as usize, RESIZE_PARAM_SIZE as usize),
+        (0.0, 0.0),
+        (original_image_width as f64, original_image_height as f64),
     )];
 
     match scan_direction {
@@ -723,19 +750,19 @@ pub fn process_output(
     let original_height = image.height();
 
     let model_input_height = output3.shape()[1] as u32;
-    let html = create_result_html(
-        &output3,
-        original_width,
-        original_height,
+    let result_args = ResultHtmlArguments {
+        output3: &output3,
+        original_image_size: (original_width, original_height),
         model_input_height,
         image,
         metadata,
-        0.1,
-        settings.scan_direction,
+        threshold: 0.1,
+        scan_direction: settings.scan_direction,
         cropping_params,
         heatmap,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
+    };
+    let html = create_result_html(result_args)
+        .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
 }
 

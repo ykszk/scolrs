@@ -243,7 +243,8 @@ where
             "heatmap".to_string(),
             None,
             overlay_image,
-            (svg_size.0, svg_size.1),
+            (0.0, 0.0),
+            (svg_size.0 as f64, svg_size.1 as f64),
         )
         .draw(&mut painter, &mut label_colors, &mut line_colors)?;
         let g = g.set("visibility", "hidden");

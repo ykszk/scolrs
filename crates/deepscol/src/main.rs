@@ -2,12 +2,18 @@ use std::path::PathBuf;
 use std::vec;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use deepscol::{output3_to_heatmap, RESIZE_PARAM_SIZE};
 use labelme_rs::LabelMeDataWImage;
-use ndarray::s;
-use ndarray_stats::QuantileExt;
 
-use scolrs::{CoronalPointsAndCurve, HasImageMetadata};
+use scolrs::{draw::ImageOverlay, CoronalPointsAndCurve, HasImageMetadata, SagittalPoints};
+
+#[derive(Debug, Clone, Default, ValueEnum)]
+enum Direction {
+    #[default]
+    Coronal,
+    Sagittal,
+}
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -15,7 +21,7 @@ struct Args {
     /// Path to the input image file
     input_image: PathBuf,
     /// Path to save the output heatmaps or image
-    output_image: PathBuf,
+    output_image: Option<PathBuf>,
     /// Save LabelMe format points
     #[arg(long)]
     labelme: Option<PathBuf>,
@@ -28,6 +34,9 @@ struct Args {
     /// Path to the onnx model file
     #[arg(long)]
     model: Option<PathBuf>,
+    /// Direction of the image
+    #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
+    direction: Direction,
 }
 
 fn main() -> Result<()> {
@@ -36,7 +45,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let model_path = &args.model;
     let image_path = &args.input_image;
-    let output_path = &args.output_image;
     // ort::set_api(ort_tract::api());
     let builder = ort::session::Session::builder()
         .expect("Cannot create Session builder.")
@@ -109,8 +117,7 @@ fn main() -> Result<()> {
         );
         crop_min_xy = Some((min_x, min_y));
         // crop the image
-        let mut image = image;
-        let cropped_image = image.crop(
+        let cropped_image = image.crop_imm(
             min_x as u32,
             min_y as u32,
             (max_x - min_x) as u32,
@@ -131,42 +138,26 @@ fn main() -> Result<()> {
         output3 = deepscol::extract_array_from_output(outputs);
     }
 
-    if output_path.ends_with(".npz") {
-        let mut npz = ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
-        //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
-        let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
-            (output3.shape()[0], output3.shape()[1], output3.shape()[2]),
-            output3.clone().into_raw_vec_and_offset().0,
-        )?;
-        let ndarray_output3 = ndarray_output3.mapv(|x| (x * 1000.0) as u16);
-        // save the output
-        npz.add_array("heatmaps", &ndarray_output3)?;
-        npz.finish()?;
-    } else {
-        // let rgb = output3.slice(s![..3, .., ..]).to_owned();
-        let first_channel_image = image::ImageBuffer::from_fn(
-            output3.shape()[2] as u32,
-            output3.shape()[1] as u32,
-            |x, y| {
-                // let r = rgb[[0, y as usize, x as usize]];
-                let r = output3.slice(s![0..2, y as usize, x as usize]); // max value
-                let r = r.max().unwrap_or(&0.0);
-                let r = (r * 255.0) as u8;
-                let g = output3.slice(s![2..4, y as usize, x as usize]);
-                let g = g.max().unwrap_or(&0.0);
-                let g = (g * 255.0) as u8;
-                let b = output3.slice(s![4.., y as usize, x as usize]);
-                let b = b.max().unwrap_or(&0.0);
-                let b = (b * 255.0) as u8;
-
-                image::Rgb([r, g, b])
-            },
-        );
-        first_channel_image
-            .save(output_path)
-            .expect("Failed to save output image");
+    if let Some(output_path) = &args.output_image {
+        if output_path.ends_with(".npz") {
+            let mut npz =
+                ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
+            //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
+            let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
+                (output3.shape()[0], output3.shape()[1], output3.shape()[2]),
+                output3.clone().into_raw_vec_and_offset().0,
+            )?;
+            let ndarray_output3 = ndarray_output3.mapv(|x| (x * 1000.0) as u16);
+            // save the output
+            npz.add_array("heatmaps", &ndarray_output3)?;
+            npz.finish()?;
+        } else {
+            let heatmap = output3_to_heatmap(&output3);
+            heatmap
+                .save(output_path)
+                .expect("Failed to save output image");
+        }
     }
-
     let abs_path = image_path
         .canonicalize()
         .expect("Failed to get absolute path of image")
@@ -203,10 +194,60 @@ fn main() -> Result<()> {
         })?;
     }
     if let Some(html_path) = &args.html {
-        let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
-        *cp.image_metadata_mut() = metadata;
-        let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
-        let html = deepscol::create_coronal_html(cp, lm_data_with_image, Vec::new())?;
+        let heatmap = output3_to_heatmap(&output3);
+        let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
+        let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
+        let (x_y, width_height) = if let Some((min_x, min_y, _max_x, max_y)) = cropping_params {
+            let crop_height = max_y - min_y;
+            let crop_to_input_scale = model_input_height as f64 / crop_height as f64;
+            let scale = orig_svg_scale / crop_to_input_scale;
+            log::debug!(
+                "Calculated heatmap scale: {}, orig_svg_scale: {}, crop_to_input_scale: {}",
+                scale,
+                orig_svg_scale,
+                crop_to_input_scale
+            );
+            let x_y = (min_x as f64 * scale, min_y as f64 * scale);
+            let width_height = (
+                heatmap.width() as f64 * scale,
+                heatmap.height() as f64 * scale,
+            );
+            (x_y, width_height)
+        } else {
+            (
+                (0.0, 0.0),
+                (
+                    heatmap.width() as f64 * orig_svg_scale,
+                    heatmap.height() as f64 * orig_svg_scale,
+                ),
+            )
+        };
+        log::debug!("Creating ImageOverlay with x_y: ({}, {})", x_y.0, x_y.1);
+        let overlays = vec![ImageOverlay::new(
+            "Heatmap".to_string(),
+            "Heatmap".to_string(),
+            None,
+            heatmap,
+            x_y,
+            width_height,
+        )];
+        let html = match args.direction {
+            Direction::Sagittal => {
+                let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
+                *cp.image_metadata_mut() = metadata;
+                let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
+                let html: String = deepscol::create_coronal_html(cp, lm_data_with_image, overlays)?;
+                html
+            }
+            Direction::Coronal => {
+                let mut cp = SagittalPoints::try_from(lm_data.clone())?;
+                *cp.image_metadata_mut() = metadata;
+                let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
+                let html: String =
+                    deepscol::create_sagittal_html(cp, lm_data_with_image, overlays)?;
+                html
+            }
+        };
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }
