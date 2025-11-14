@@ -538,7 +538,37 @@ pub struct ResultHtmlArguments<'a> {
     heatmap: DynamicImage,
 }
 
-pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
+pub fn calc_overlay_params(
+    original_image_width: u32,
+    original_image_height: u32,
+    cropping_params: Option<(usize, usize, usize, usize)>,
+    image_width_height: (u32, u32),
+    model_input_height: u32,
+) -> ((f64, f64), (f64, f64)) {
+    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
+    let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
+    if let Some((min_x, min_y, _max_x, max_y)) = cropping_params {
+        let crop_height = max_y - min_y;
+        let crop_to_input_scale = model_input_height as f64 / crop_height as f64;
+        let scale = orig_svg_scale / crop_to_input_scale;
+        let x_y = (min_x as f64 * scale, min_y as f64 * scale);
+        let width_height = (
+            image_width_height.0 as f64 * scale,
+            image_width_height.1 as f64 * scale,
+        );
+        (x_y, width_height)
+    } else {
+        (
+            (0.0, 0.0),
+            (
+                original_image_width as f64 * orig_svg_scale,
+                original_image_height as f64 * orig_svg_scale,
+            ),
+        )
+    }
+}
+
+fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
     let ResultHtmlArguments {
         output3,
         original_image_size: (original_image_width, original_image_height),
@@ -583,13 +613,20 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     }
     log::debug!("Created LabelMeData: {:?}", lm_data);
 
+    let (x_y, width_height) = calc_overlay_params(
+        original_image_width,
+        original_image_height,
+        cropping_params.map(|cp| (cp.min_x, cp.min_y, cp.max_x, cp.max_y)),
+        (heatmap.width(), heatmap.height()),
+        model_input_height,
+    );
     let overlays = vec![ImageOverlay::new(
         "Heatmap".to_string(),
         "Heatmap".to_string(),
         None,
         heatmap,
-        (0.0, 0.0),
-        (original_image_width as f64, original_image_height as f64),
+        x_y,
+        width_height,
     )];
 
     match scan_direction {
@@ -729,19 +766,7 @@ pub fn process_output(
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
 
     // create rgb heatmap using output3
-    // r:0..2, g:2..4, b:4..
-    // TODO: padding and cropping need to be handled
-    let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0));
-    let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0));
-    let b = output3.slice(s![4.., .., ..]).axis_max(Axis(0));
-    let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
-        let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
-        let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
-        let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
-        let a_val = (r_val + g_val + b_val) / 3;
-        image::Rgba([r_val, g_val, b_val, a_val])
-    });
-    let heatmap = DynamicImage::ImageRgba8(heatmap);
+    let heatmap = output3_to_heatmap(&output3);
 
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);

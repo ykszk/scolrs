@@ -3,7 +3,7 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use deepscol::{output3_to_heatmap, RESIZE_PARAM_SIZE};
+use deepscol::output3_to_heatmap;
 use labelme_rs::LabelMeDataWImage;
 
 use scolrs::{draw::ImageOverlay, CoronalPointsAndCurve, HasImageMetadata, SagittalPoints};
@@ -195,34 +195,13 @@ fn main() -> Result<()> {
     }
     if let Some(html_path) = &args.html {
         let heatmap = output3_to_heatmap(&output3);
-        let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
-        let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
-        let (x_y, width_height) = if let Some((min_x, min_y, _max_x, max_y)) = cropping_params {
-            let crop_height = max_y - min_y;
-            let crop_to_input_scale = model_input_height as f64 / crop_height as f64;
-            let scale = orig_svg_scale / crop_to_input_scale;
-            log::debug!(
-                "Calculated heatmap scale: {}, orig_svg_scale: {}, crop_to_input_scale: {}",
-                scale,
-                orig_svg_scale,
-                crop_to_input_scale
-            );
-            let x_y = (min_x as f64 * scale, min_y as f64 * scale);
-            let width_height = (
-                heatmap.width() as f64 * scale,
-                heatmap.height() as f64 * scale,
-            );
-            (x_y, width_height)
-        } else {
-            (
-                (0.0, 0.0),
-                (
-                    heatmap.width() as f64 * orig_svg_scale,
-                    heatmap.height() as f64 * orig_svg_scale,
-                ),
-            )
-        };
-        log::debug!("Creating ImageOverlay with x_y: ({}, {})", x_y.0, x_y.1);
+        let (x_y, width_height) = deepscol::calc_overlay_params(
+            original_image_width,
+            original_image_height,
+            cropping_params,
+            (heatmap.width(), heatmap.height()),
+            model_input_height,
+        );
         let overlays = vec![ImageOverlay::new(
             "Heatmap".to_string(),
             "Heatmap".to_string(),
