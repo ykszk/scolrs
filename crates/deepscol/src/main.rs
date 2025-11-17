@@ -15,28 +15,36 @@ enum Direction {
     Sagittal,
 }
 
+#[derive(clap::Args)]
+#[group(required = true, multiple = true)]
+struct OutputGroup {
+    /// Path to save the output heatmaps or image
+    #[arg(long)]
+    heatmap: Option<Option<PathBuf>>,
+    /// Save LabelMe format points
+    #[arg(long)]
+    labelme: Option<Option<PathBuf>>,
+    /// Output html
+    #[arg(long)]
+    html: Option<Option<PathBuf>>,
+}
+
 #[derive(Parser)]
-#[command(version, about)]
+#[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
 struct Args {
     /// Path to the input image file
     input_image: PathBuf,
-    /// Path to save the output heatmaps or image
-    output_image: Option<PathBuf>,
-    /// Save LabelMe format points
-    #[arg(long)]
-    labelme: Option<PathBuf>,
     /// Text file of labels for the points in LabelMe format
     #[arg(long)]
     labels: Option<PathBuf>,
-    /// Output html
-    #[arg(long)]
-    html: Option<PathBuf>,
     /// Path to the onnx model file
     #[arg(long)]
     model: Option<PathBuf>,
     /// Direction of the image
     #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
     direction: Direction,
+    #[command(flatten)]
+    output: OutputGroup,
 }
 
 fn main() -> Result<()> {
@@ -138,7 +146,16 @@ fn main() -> Result<()> {
         output3 = deepscol::extract_array_from_output(outputs);
     }
 
-    if let Some(output_path) = &args.output_image {
+    if let Some(output_path) = args.output.heatmap {
+        let output_path = output_path.unwrap_or_else(|| {
+            let mut p = image_path.clone();
+            log::debug!("Generating heatmap path from image path: {:?}", p);
+            p.set_extension("png");
+            if p == *image_path {
+                p.set_extension("heatmap.png");
+            }
+            p
+        });
         if output_path.extension().and_then(|s| s.to_str()) == Some("npz") {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
@@ -182,18 +199,30 @@ fn main() -> Result<()> {
         lm_data.shift(crop_min_xy.0 as f64, crop_min_xy.1 as f64);
     }
 
-    if let Some(labelme_path) = &args.labelme {
+    if let Some(labelme_path) = args.output.labelme {
+        let labelme_path = labelme_path.unwrap_or_else(|| {
+            let mut p = image_path.clone();
+            log::debug!("Generating LabelMe path from image path: {:?}", p);
+            p.set_extension("json");
+            p
+        });
         // Save the LabelMe data to a file
         let labelme_json = serde_json::to_string_pretty(&lm_data)?;
 
-        std::fs::write(labelme_path, labelme_json).with_context(|| {
+        std::fs::write(&labelme_path, labelme_json).with_context(|| {
             format!(
                 "Failed to write LabelMe data to file: {}",
                 labelme_path.display()
             )
         })?;
     }
-    if let Some(html_path) = &args.html {
+    if let Some(html_path) = args.output.html {
+        let html_path = html_path.unwrap_or_else(|| {
+            let mut p = image_path.clone();
+            log::debug!("Generating HTML path from image path: {:?}", p);
+            p.set_extension("html");
+            p
+        });
         let heatmap = output3_to_heatmap(&output3);
         let (x_y, width_height) = deepscol::calc_overlay_params(
             original_image_width,
@@ -211,14 +240,14 @@ fn main() -> Result<()> {
             width_height,
         )];
         let html = match args.direction {
-            Direction::Sagittal => {
+            Direction::Coronal => {
                 let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
                 *cp.image_metadata_mut() = metadata;
                 let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
                 let html: String = deepscol::create_coronal_html(cp, lm_data_with_image, overlays)?;
                 html
             }
-            Direction::Coronal => {
+            Direction::Sagittal => {
                 let mut cp = SagittalPoints::try_from(lm_data.clone())?;
                 *cp.image_metadata_mut() = metadata;
                 let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
