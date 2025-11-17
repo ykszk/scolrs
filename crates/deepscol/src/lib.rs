@@ -542,7 +542,7 @@ pub fn calc_overlay_params(
     original_image_width: u32,
     original_image_height: u32,
     cropping_params: Option<(usize, usize, usize, usize)>,
-    image_width_height: (u32, u32),
+    ol_img_width_height: (u32, u32),
     model_input_height: u32,
 ) -> ((f64, f64), (f64, f64)) {
     let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
@@ -551,10 +551,10 @@ pub fn calc_overlay_params(
         let crop_height = max_y - min_y;
         let crop_to_input_scale = model_input_height as f64 / crop_height as f64;
         let scale = orig_svg_scale / crop_to_input_scale;
-        let x_y = (min_x as f64 * scale, min_y as f64 * scale);
+        let x_y = (min_x as f64 * orig_svg_scale, min_y as f64 * orig_svg_scale);
         let width_height = (
-            image_width_height.0 as f64 * scale,
-            image_width_height.1 as f64 * scale,
+            ol_img_width_height.0 as f64 * scale,
+            ol_img_width_height.1 as f64 * scale,
         );
         (x_y, width_height)
     } else {
