@@ -269,6 +269,26 @@ pub fn create_lm(
         }
     }
     lm_data.scale(scale);
+    lm_data.imageWidth = image_width as usize;
+    lm_data.imageHeight = image_height as usize;
+    // set flag L4, L5, or L6
+    let tl_label_index = labels.iter().position(|&l| l == "TL");
+    if let Some(tl_index) = tl_label_index {
+        let tl_count = points[tl_index].len();
+        match tl_count {
+            18 => {
+                lm_data.flags.insert("L4".to_string(), true);
+            }
+            19 => {
+                lm_data.flags.insert("L5".to_string(), true);
+            }
+            20 => {
+                lm_data.flags.insert("L6".to_string(), true);
+            }
+            _ => log::warn!("Unexpected TL point count: {}", tl_count),
+        };
+    }
+
     lm_data
 }
 
@@ -526,16 +546,14 @@ impl CroppingParams {
     }
 }
 
-pub struct ResultHtmlArguments<'a> {
-    output3: &'a Array3<f32>,
-    original_image_size: (u32, u32),
-    model_input_height: u32,
-    image: DynamicImage,
-    metadata: ImageMetadata,
-    threshold: f32,
-    scan_direction: ScanDirection,
-    cropping_params: Option<CroppingParams>,
-    heatmap: DynamicImage,
+pub struct ResultHtmlArguments {
+    pub points: Vec<Vec<(f32, f32)>>,
+    pub model_input_height: u32,
+    pub image: DynamicImage,
+    pub metadata: ImageMetadata,
+    pub scan_direction: ScanDirection,
+    pub cropping_params: Option<CroppingParams>,
+    pub heatmap: DynamicImage,
 }
 
 pub fn calc_overlay_params(
@@ -568,21 +586,19 @@ pub fn calc_overlay_params(
     }
 }
 
-fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
+pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
     let ResultHtmlArguments {
-        output3,
-        original_image_size: (original_image_width, original_image_height),
+        points,
         model_input_height,
         image,
         metadata,
-        threshold,
         scan_direction,
         cropping_params,
         heatmap,
     } = args;
-    let points = extract_points(output3, threshold)
-        .map_err(|e| anyhow::anyhow!("Failed to extract points: {}", e))?;
     log::debug!("Extracted points: {:?}", points);
+    let original_image_width = image.width();
+    let original_image_height = image.height();
     let lm_scale = if let Some(cropping_params) = &cropping_params {
         let crop_height = cropping_params.max_y - cropping_params.min_y;
         log::debug!(
@@ -771,17 +787,14 @@ pub fn process_output(
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
 
-    let original_width = image.width();
-    let original_height = image.height();
-
     let model_input_height = output3.shape()[1] as u32;
+    let points = extract_points(&output3, 0.1)
+        .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
     let result_args = ResultHtmlArguments {
-        output3: &output3,
-        original_image_size: (original_width, original_height),
+        points,
         model_input_height,
         image,
         metadata,
-        threshold: 0.1,
         scan_direction: settings.scan_direction,
         cropping_params,
         heatmap,

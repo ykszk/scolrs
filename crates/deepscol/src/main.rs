@@ -4,14 +4,13 @@ use std::vec;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol::output3_to_heatmap;
-use labelme_rs::LabelMeDataWImage;
-
-use scolrs::{draw::ImageOverlay, CoronalPointsAndCurve, HasImageMetadata, SagittalPoints};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
     #[default]
+    #[clap(alias = "ap")]
     Coronal,
+    #[clap(alias = "lateral")]
     Sagittal,
 }
 
@@ -224,38 +223,27 @@ fn main() -> Result<()> {
             p
         });
         let heatmap = output3_to_heatmap(&output3);
-        let (x_y, width_height) = deepscol::calc_overlay_params(
-            original_image_width,
-            original_image_height,
-            cropping_params,
-            (heatmap.width(), heatmap.height()),
-            model_input_height,
-        );
-        let overlays = vec![ImageOverlay::new(
-            "Heatmap".to_string(),
-            "Heatmap".to_string(),
-            None,
-            heatmap,
-            x_y,
-            width_height,
-        )];
-        let html = match args.direction {
-            Direction::Coronal => {
-                let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
-                *cp.image_metadata_mut() = metadata;
-                let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
-                let html: String = deepscol::create_coronal_html(cp, lm_data_with_image, overlays)?;
-                html
-            }
-            Direction::Sagittal => {
-                let mut cp = SagittalPoints::try_from(lm_data.clone())?;
-                *cp.image_metadata_mut() = metadata;
-                let lm_data_with_image = LabelMeDataWImage::try_from(lm_data)?;
-                let html: String =
-                    deepscol::create_sagittal_html(cp, lm_data_with_image, overlays)?;
-                html
-            }
+        let scan_direction = match args.direction {
+            Direction::Coronal => deepscol::ScanDirection::Coronal,
+            Direction::Sagittal => deepscol::ScanDirection::Sagittal,
         };
+        let cropping_params =
+            cropping_params.map(|(min_x, min_y, max_x, max_y)| deepscol::CroppingParams {
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            });
+        let html_args = deepscol::ResultHtmlArguments {
+            points,
+            model_input_height,
+            image,
+            metadata,
+            scan_direction,
+            cropping_params,
+            heatmap,
+        };
+        let html = deepscol::create_result_html(html_args)?;
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }
