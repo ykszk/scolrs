@@ -312,10 +312,10 @@ pub const LABELS: [&str; 13] = [
 
 // '{"TL":19, "TR":19, "BL":18, "BR":18, "Shoulder": 2, "Clavicle": 2, "Pelvis": 2, "Iliac": 2, "FemoralHead": 2, "C7-TL": 1, "C7-TR": 1, "S-TL": 1, "S-TR": 1}'
 pub const MAX_POINT_COUNTS: [usize; 13] = [
-    19, // TL
-    19, // TR
-    18, // BL
-    18, // BR
+    20, // TL
+    20, // TR
+    19, // BL
+    19, // BR
     2,  // Shoulder
     2,  // Clavicle
     2,  // Pelvis
