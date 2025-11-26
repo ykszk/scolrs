@@ -218,6 +218,9 @@ pub struct MeasureSubCoronalArgs {
     /// Measurements. By default, all measurements are drawn. Comma separated list
     #[clap(short, long, value_delimiter = ',')]
     pub measures: Option<Vec<CoronalMeasure>>,
+    /// Algorithm for curve identification
+    #[clap(long = "algo", default_value = "score")]
+    pub algorithm: CurveSetAlgorithm,
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -266,9 +269,10 @@ pub struct MeasureArgs {
     pub subcommand: MeasureSubCommands,
 }
 
-#[derive(ValueEnum, Debug, Clone, Copy, PartialEq)]
+#[derive(ValueEnum, Debug, Default, Clone, Copy, PartialEq)]
 pub enum CurveSetAlgorithm {
     /// Weighted sum of the scores. Use --weights to specify the weights
+    #[default]
     Score,
     /// Algorithm based on the position of the curve apex
     Apex,
@@ -285,7 +289,7 @@ pub struct CurveArgs {
     #[clap(long)]
     pub labelme: bool,
     /// Curve set selection algorithm
-    #[clap(long, default_value = "score")]
+    #[clap(long = "algo", default_value = "score")]
     pub algorithm: CurveSetAlgorithm,
     /// Weights for the score algorithm
     #[clap(

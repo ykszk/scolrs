@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::cli::{
-    MeasureArgs, MeasureSubCommands, MeasureSubCoronalArgs, MeasureSubNeckArgs,
+    CurveSetAlgorithm, MeasureArgs, MeasureSubCommands, MeasureSubCoronalArgs, MeasureSubNeckArgs,
     MeasureSubSagittallArgs,
 };
 use crate::utils::Ndjson;
@@ -62,11 +62,18 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
     for line in reader.lines() {
         match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {
-                let data_line = load_labelme_or_native::<CoronalPointsAndCurveLine, LabelMeDataLine>(
-                    args.labelme,
-                    &args.input,
-                    &line?,
-                )?;
+                let mut data_line = load_labelme_or_native::<
+                    CoronalPointsAndCurveLine,
+                    LabelMeDataLine,
+                >(args.labelme, &args.input, &line?)?;
+                if subcommand.algorithm != CurveSetAlgorithm::Score {
+                    let algorithm = scolrs::CurveSetAlgorithm::Apex;
+                    let curves = data_line
+                        .content
+                        .coronal_points
+                        .identify_curves_with_algorithm(&algorithm);
+                    data_line.content.curves = curves;
+                }
                 let results = measure_coronal(data_line.content, &args, subcommand)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
@@ -162,11 +169,18 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     };
     match args.subcommand.clone() {
         MeasureSubCommands::Coronal(subcommand) => {
-            let data = load_labelme_or_native::<CoronalPointsAndCurve, LabelMeData>(
+            let mut data = load_labelme_or_native::<CoronalPointsAndCurve, LabelMeData>(
                 args.labelme,
                 &args.input,
                 &data_str,
             )?;
+            if subcommand.algorithm != CurveSetAlgorithm::Score {
+                let algorithm = scolrs::CurveSetAlgorithm::Apex;
+                let curves = data
+                    .coronal_points
+                    .identify_curves_with_algorithm(&algorithm);
+                data.curves = curves;
+            }
             let results = measure_coronal(data, &args, subcommand)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
