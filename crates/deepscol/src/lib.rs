@@ -6,7 +6,7 @@ use log::debug;
 use ndarray::{s, Array3, Array4, Axis, Dim, NewAxis};
 use scolrs::{
     draw::{draw_sagittal, ImageOverlay},
-    HasImageMetadata, ImageMetadata, SagittalDraw,
+    HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw,
 };
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
@@ -554,6 +554,7 @@ pub struct ResultHtmlArguments {
     pub scan_direction: ScanDirection,
     pub cropping_params: Option<CroppingParams>,
     pub heatmap: DynamicImage,
+    pub model_output: Array3<f32>,
 }
 
 pub fn calc_overlay_params(
@@ -595,6 +596,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         scan_direction,
         cropping_params,
         heatmap,
+        model_output,
     } = args;
     log::debug!("Extracted points: {:?}", points);
     let original_image_width = image.width();
@@ -645,11 +647,40 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         width_height,
     )];
 
+    let crop_adjusted_lm_data = if let Some(cropping_params) = &cropping_params {
+        // shift
+        log::debug!(
+            "Adjusting LabelMeData for cropping params: {:?}",
+            cropping_params
+        );
+        let mut lm_data_adjusted = lm_data.clone();
+        lm_data_adjusted.shift(
+            -(cropping_params.min_x as f64),
+            -(cropping_params.min_y as f64),
+        );
+        // scale
+        let crop_height = cropping_params.max_y - cropping_params.min_y;
+        let scale = model_input_height as f64 / crop_height as f64;
+        log::debug!("Scaling LabelMeData by scale: {}", scale);
+        lm_data_adjusted.scale(scale);
+        lm_data_adjusted
+    } else {
+        lm_data.clone()
+    };
+
+    let model_output_f64 = model_output.mapv(|x| x as f64);
+
     match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
             let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
+            let crop_adjusted_cp = CoronalPointsAndCurve::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
+            *cp.coronal_points.get_confidence_mut() = Some(
+                crop_adjusted_cp
+                    .coronal_points
+                    .extract_point_confidence(model_output_f64.view()),
+            );
             log::debug!("Created CoronalPointsAndCurve successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_coronal_html(cp, lm_data_with_image, overlays)
@@ -657,7 +688,10 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
             let mut cp: scolrs::SagittalPoints = scolrs::SagittalPoints::try_from(lm_data.clone())?;
+            let crop_adjusted_cp = scolrs::SagittalPoints::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
+            *cp.get_confidence_mut() =
+                Some(crop_adjusted_cp.extract_point_confidence(model_output_f64.view()));
             log::debug!("Created SagittalPoints successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_sagittal_html(cp, lm_data_with_image, overlays)

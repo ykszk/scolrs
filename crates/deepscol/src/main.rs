@@ -242,6 +242,7 @@ fn main() -> Result<()> {
             scan_direction,
             cropping_params,
             heatmap,
+            model_output: output3,
         };
         let html = deepscol::create_result_html(html_args)?;
         // Save the HTML to a file
