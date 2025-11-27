@@ -1,4 +1,4 @@
-use crate::draw::{AllPoints, Named, ReductionMethod};
+use crate::draw::{AllPoints, AsMeasure, Named, ReductionMethod};
 use crate::{
     Curve, SagittalDraw, SagittalMeasure, SagittalPointConfidence, SagittalPoints, ScaledType,
     Spine, ValidateLength, VertebralIndex,
@@ -796,6 +796,38 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+        }
+    }
+}
+
+impl AsMeasure for SagittalDraw {
+    type MeasureType = SagittalMeasure;
+    fn as_measure(&self) -> Option<Self::MeasureType> {
+        match self {
+            SagittalDraw::ThoracicKyphosis => Some(SagittalMeasure::ThoracicKyphosis),
+            SagittalDraw::ThoracicKyphosisT1 => Some(SagittalMeasure::T1ThoracicKyphosis),
+            SagittalDraw::ProximalThoracicKyphosis => {
+                Some(SagittalMeasure::ProximalThoracicKyphosis)
+            }
+            SagittalDraw::MidLowerThoracicKyphosis => {
+                Some(SagittalMeasure::MidLowerThoracicKyphosis)
+            }
+            SagittalDraw::ThoracolumbarSagittalAlignment => {
+                Some(SagittalMeasure::ThoracolumbarSagittalAlignment)
+            }
+            SagittalDraw::LumbarLordosis => Some(SagittalMeasure::LumbarLordosis),
+            SagittalDraw::T1Slope => Some(SagittalMeasure::T1Slope),
+            SagittalDraw::SagittalBalance => Some(SagittalMeasure::SagittalBalance),
+            SagittalDraw::LumbosacralAngle => Some(SagittalMeasure::LumbosacralAngle),
+            SagittalDraw::PelvicIncidence => Some(SagittalMeasure::PelvicIncidence),
+            SagittalDraw::PelvicTilt => Some(SagittalMeasure::PelvicTilt),
+            SagittalDraw::SacralSlope => Some(SagittalMeasure::SacralSlope),
+            SagittalDraw::L5IncidenceAngle => Some(SagittalMeasure::L5IncidenceAngle),
+            SagittalDraw::PelvicRadiusAngle => Some(SagittalMeasure::PelvicRadiusAngle),
+
+            SagittalDraw::AllPoints
+            | SagittalDraw::VertebralLabels
+            | SagittalDraw::VertebralPoints => None,
         }
     }
 }

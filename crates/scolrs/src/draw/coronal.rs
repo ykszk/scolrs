@@ -1,4 +1,4 @@
-use crate::draw::{self, Named, ReductionMethod};
+use crate::draw::{self, AsMeasure, Named, ReductionMethod};
 use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
 use ndarray::{concatenate, s, stack, Array1, Array2, Axis};
@@ -204,6 +204,7 @@ impl Avt<'_> {
         Ok((apex_centroid, mid))
     }
 }
+
 impl DrawComponent for Avt<'_> {
     fn draw(
         &self,
@@ -722,6 +723,32 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+        }
+    }
+}
+
+impl AsMeasure for CoronalDraw {
+    type MeasureType = CoronalMeasure;
+    fn as_measure(&self) -> Option<Self::MeasureType> {
+        match self {
+            CoronalDraw::CobbPT => Some(CoronalMeasure::CobbPT),
+            CoronalDraw::CobbMT => Some(CoronalMeasure::CobbMT),
+            CoronalDraw::CobbTLL => Some(CoronalMeasure::CobbTLL),
+            CoronalDraw::AVT => Some(CoronalMeasure::Avt),
+            CoronalDraw::T1TiltAngle => Some(CoronalMeasure::T1TiltAngle),
+            CoronalDraw::CoronalBalance => Some(CoronalMeasure::CoronalBalance),
+            CoronalDraw::ClavicleAngle => Some(CoronalMeasure::ClavicleAngle),
+            CoronalDraw::ShoulderHeight => Some(CoronalMeasure::ShoulderHeight),
+            CoronalDraw::PelvicObliquity => Some(CoronalMeasure::PelvicObliquity),
+            CoronalDraw::SacralObliquity => Some(CoronalMeasure::SacralObliquity),
+            CoronalDraw::LegLengthDiscrepancy => Some(CoronalMeasure::LegLengthDiscrepancy),
+
+            CoronalDraw::AllPoints
+            | CoronalDraw::VertebralLabels
+            | CoronalDraw::VertebralPoints
+            | CoronalDraw::Centroids
+            | CoronalDraw::SpinalLine
+            | CoronalDraw::CurveApex => None,
         }
     }
 }

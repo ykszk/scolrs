@@ -88,7 +88,7 @@ pub enum VertebraDiscIndex {
 
 impl VertebraDiscIndex {
     pub fn is_vertebra(&self) -> bool {
-        (*self as u8) % 2 == 0
+        (*self as u8).is_multiple_of(2)
     }
     pub fn to_vertebral_index(&self) -> Option<VertebralIndex> {
         if self.is_vertebra() {

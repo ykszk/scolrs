@@ -827,11 +827,29 @@ pub trait MeasureComponent: Named {
 
 pub trait ConfidenceComponent: Named {
     fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>>;
+    fn add_confidence_to_group(
+        &self,
+        group: element::Group,
+        reduction_method: ReductionMethod,
+    ) -> element::Group {
+        if let Some(Ok(confidence)) = self.confidence(reduction_method) {
+            group.set("data-confidence", format!("{:.4}", confidence))
+        } else {
+            group
+        }
+    }
 }
 
-#[derive(Clone, Copy)]
+/// Convert draw component to measure component
+pub trait AsMeasure {
+    type MeasureType;
+    fn as_measure(&self) -> Option<Self::MeasureType>;
+}
+
+#[derive(Clone, Copy, Default)]
 pub enum ReductionMethod {
     ArithmeticMean,
+    #[default]
     GeometricMean,
     HarmonicMean,
 }
@@ -1483,7 +1501,8 @@ pub fn draw_components<'a, T, S>(
 ) -> Result<Vec<Box<dyn Node>>, DrawError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq,
+    S: Clone + Copy + PartialEq + AsMeasure,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
@@ -1504,7 +1523,13 @@ where
                 } else {
                     VISIBILITY_VISIBLE
                 };
-                let g = g.set("visibility", visibility);
+                let mut g = g.set("visibility", visibility);
+                if let Some(conf_measure) = measure.as_measure() {
+                    let conf_component: Box<dyn ConfidenceComponent> =
+                        (&conf_measure, &scaled_data).into();
+                    g = conf_component.add_confidence_to_group(g, ReductionMethod::GeometricMean);
+                }
+
                 groups.push(g.into());
             }
             Err(err) => warn!("Failed to draw {}: {:?}", draw_component.id(), err),
@@ -1546,7 +1571,8 @@ pub struct DrawArguments<'a, T, S> {
 pub fn draw_on_image<'a, T, S>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq,
+    S: Clone + Copy + PartialEq + AsMeasure,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {

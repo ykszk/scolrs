@@ -4,10 +4,10 @@ use crate::{
     angle_from_lines, array2_to_vec_points, array3_to_nested_vec_points, create_shapes,
     draw::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
-        femoral_incidence_angle, points2line, tilt_angle, CobbAux, ColorPalette, DrawArguments,
-        DrawComponent, DrawCorners, DrawError, MeasureError, Named, Painter, CLASS_ANGLE,
-        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO,
-        CLASS_TEXT,
+        femoral_incidence_angle, points2line, tilt_angle, AsMeasure, CobbAux, ColorPalette,
+        ConfidenceComponent, DrawArguments, DrawComponent, DrawCorners, DrawError, MeasureError,
+        Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
+        CLASS_POINT, CLASS_RATIO, CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, PointConfidence,
@@ -1614,6 +1614,22 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
         }
+    }
+}
+
+impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
+    for Box<dyn ConfidenceComponent + 'a>
+{
+    fn from(_value: (&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
+        todo!()
+    }
+}
+
+impl AsMeasure for NeckLateralDraw {
+    type MeasureType = NeckLateralMeasure;
+
+    fn as_measure(&self) -> Option<Self::MeasureType> {
+        None // TODO: implement along with confidence!
     }
 }
 

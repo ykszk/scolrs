@@ -401,7 +401,8 @@ impl ScrewSpine {
 }
 
 use crate::draw::{
-    DrawComponent, DrawError, Named, Painter, VertebralLabels, CLASS_ANNOTATION, CLASS_POLYGON,
+    AsMeasure, ConfidenceComponent, DrawComponent, DrawError, Named, Painter, VertebralLabels,
+    CLASS_ANNOTATION, CLASS_POLYGON,
 };
 use svg::node::element;
 
@@ -506,6 +507,23 @@ impl<'a, 'b> From<(&'b ImplantDraw, &'a ScaledType<ScrewSpine>)> for Box<dyn Dra
             ImplantDraw::Screws => Box::new(Screws(screw_spine)),
             ImplantDraw::VertebralLabels => Box::new(VertebralLabels(&screw_spine.spine)),
         }
+    }
+}
+
+pub struct DummyMeasureType;
+impl<'a, 'b> From<(&'b DummyMeasureType, &'a ScaledType<ScrewSpine>)>
+    for Box<dyn ConfidenceComponent + 'a>
+{
+    fn from(_: (&'b DummyMeasureType, &'a ScaledType<ScrewSpine>)) -> Self {
+        unreachable!("ImplantDraw has no measures")
+    }
+}
+
+impl AsMeasure for ImplantDraw {
+    type MeasureType = DummyMeasureType;
+
+    fn as_measure(&self) -> Option<Self::MeasureType> {
+        None
     }
 }
 
