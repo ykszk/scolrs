@@ -580,12 +580,21 @@ impl GetMany for ArrayView2<'_, f64> {
     }
 }
 
+/// Extract confidence scores at given points from the confidence map
+/// `points` is a 2D array with shape (num_points, 2) representing (x, y) coordinates
+/// `confidence_map` is a 3D array with shape (height, width, num_classes)
 fn extract_confidence(
     points: ArrayView2<f64>,
     confidence_map: ArrayView3<f64>,
     class_idx: usize,
 ) -> Array1<f64> {
     let pts = points.mapv(|x| x.round() as usize);
+    log::debug!(
+        "Extracting confidence for class {} at points from confidence map shape {:?}: {:?}",
+        class_idx,
+        confidence_map.shape(),
+        pts
+    );
     confidence_map.slice(s![.., .., class_idx]).get_many(pts)
 }
 

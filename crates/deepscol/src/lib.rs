@@ -665,7 +665,11 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         lm_data_adjusted.scale(scale);
         lm_data_adjusted
     } else {
-        lm_data.clone()
+        let scale = model_input_height as f64 / original_image_height as f64;
+        log::debug!("Scaling LabelMeData by scale: {}", scale);
+        let mut lm_data_adjusted = lm_data.clone();
+        lm_data_adjusted.scale(scale);
+        lm_data_adjusted
     };
 
     let model_output_f64 = model_output.mapv(|x| x as f64);
@@ -676,10 +680,11 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
             let crop_adjusted_cp = CoronalPointsAndCurve::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
+            let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
             *cp.coronal_points.get_confidence_mut() = Some(
                 crop_adjusted_cp
                     .coronal_points
-                    .extract_point_confidence(model_output_f64.view()),
+                    .extract_point_confidence(ch_last_output.view()),
             );
             log::debug!("Created CoronalPointsAndCurve successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
@@ -832,6 +837,7 @@ pub fn process_output(
         scan_direction: settings.scan_direction,
         cropping_params,
         heatmap,
+        model_output: output3,
     };
     let html = create_result_html(result_args)
         .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;

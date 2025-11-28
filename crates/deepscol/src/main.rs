@@ -143,6 +143,8 @@ fn main() -> Result<()> {
         log::info!("Model run completed on cropped input");
         // convert to ndarray
         output3 = deepscol::extract_array_from_output(outputs);
+    } else {
+        log::info!("No cropping applied");
     }
 
     if let Some(output_path) = args.output.heatmap {
