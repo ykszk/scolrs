@@ -4,6 +4,7 @@ use std::vec;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol::output3_to_heatmap;
+use image::GenericImageView;
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
@@ -113,6 +114,7 @@ fn main() -> Result<()> {
     );
 
     let mut crop_min_xy = None;
+    let mut input_image_wh = (original_image_width, original_image_height);
 
     if let Some((min_x, min_y, max_x, max_y)) = cropping_params {
         log::info!(
@@ -130,6 +132,7 @@ fn main() -> Result<()> {
             (max_x - min_x) as u32,
             (max_y - min_y) as u32,
         );
+        input_image_wh = (cropped_image.width(), cropped_image.height());
         let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
         lm_scale = (max_y - min_y) as f64 / model_input_height as f64;
 
@@ -170,7 +173,7 @@ fn main() -> Result<()> {
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
         } else {
-            let heatmap = output3_to_heatmap(&output3);
+            let heatmap = output3_to_heatmap(&output3, input_image_wh);
             heatmap
                 .save(output_path)
                 .expect("Failed to save output image");
@@ -224,7 +227,8 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let heatmap = output3_to_heatmap(&output3);
+        let heatmap = output3_to_heatmap(&output3, input_image_wh);
+        log::debug!("Heatmap image shape: {:?}", heatmap.dimensions());
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,
             Direction::Sagittal => deepscol::ScanDirection::Sagittal,

@@ -239,9 +239,12 @@ where
     if let Some(overlay) = overlay {
         let overlay_image = ndarray_to_dynamic_image(overlay)?;
         let g = scolrs::draw::ImageOverlay::new(
-            "heatmap".to_string(),
-            "heatmap".to_string(),
-            None,
+            "Heatmap".to_string(),
+            "Heatmap".to_string(),
+            Some(
+            "Red: Top left and top right. Green: Bottom left and bottom right. Blue: Other points"
+                .to_string(),
+        ),
             overlay_image,
             (0.0, 0.0),
             (svg_size.0 as f64, svg_size.1 as f64),

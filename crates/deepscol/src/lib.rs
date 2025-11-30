@@ -394,7 +394,13 @@ impl MaxAxis for ndarray::ArrayView3<'_, f32> {
     }
 }
 
-pub fn output3_to_heatmap(output3: &ndarray::Array3<f32>) -> DynamicImage {
+pub fn output3_to_heatmap(
+    output3: &ndarray::Array3<f32>,
+    input_image_wh: (u32, u32),
+) -> DynamicImage {
+    let aspect_ratio = input_image_wh.0 as f32 / input_image_wh.1 as f32;
+    let heatmap_width = (output3.shape()[1] as f32 * aspect_ratio).round() as usize;
+    let output3 = output3.slice(s![.., .., ..heatmap_width]);
     let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0));
     let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0));
     let b = output3.slice(s![4.., .., ..]).axis_max(Axis(0));
@@ -629,7 +635,6 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         );
         lm_data.shift(crop_params.min_x as f64, crop_params.min_y as f64);
     }
-    log::debug!("Created LabelMeData: {:?}", lm_data);
 
     let (x_y, width_height) = calc_overlay_params(
         original_image_width,
@@ -641,7 +646,10 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     let overlays = vec![ImageOverlay::new(
         "Heatmap".to_string(),
         "Heatmap".to_string(),
-        None,
+        Some(
+            "Red: Top left and top right. Green: Bottom left and bottom right. Blue: Other points"
+                .to_string(),
+        ),
         heatmap,
         x_y,
         width_height,
@@ -686,7 +694,6 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
                     .coronal_points
                     .extract_point_confidence(ch_last_output.view()),
             );
-            log::debug!("Created CoronalPointsAndCurve successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_coronal_html(cp, lm_data_with_image, overlays)
         }
@@ -697,7 +704,6 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             *cp.image_metadata_mut() = metadata;
             *cp.get_confidence_mut() =
                 Some(crop_adjusted_cp.extract_point_confidence(model_output_f64.view()));
-            log::debug!("Created SagittalPoints successfully");
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_sagittal_html(cp, lm_data_with_image, overlays)
         }

@@ -1527,7 +1527,7 @@ where
                 if let Some(conf_measure) = measure.as_measure() {
                     let conf_component: Box<dyn ConfidenceComponent> =
                         (&conf_measure, &scaled_data).into();
-                    g = conf_component.add_confidence_to_group(g, ReductionMethod::GeometricMean);
+                    g = conf_component.add_confidence_to_group(g, ReductionMethod::default());
                 }
 
                 groups.push(g.into());
