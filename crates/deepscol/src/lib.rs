@@ -826,8 +826,13 @@ pub fn process_output(
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
 
+    let mut input_image_wh = (image.width(), image.height());
+    if let Some(cp) = &cropping_params {
+        input_image_wh = ((cp.max_x - cp.min_x) as u32, (cp.max_y - cp.min_y) as u32);
+    }
+
     // create rgb heatmap using output3
-    let heatmap = output3_to_heatmap(&output3);
+    let heatmap = output3_to_heatmap(&output3, input_image_wh);
 
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
