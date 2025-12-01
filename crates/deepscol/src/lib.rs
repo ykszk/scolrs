@@ -681,6 +681,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     };
 
     let model_output_f64 = model_output.mapv(|x| x as f64);
+    let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
 
     match scan_direction {
         ScanDirection::Coronal => {
@@ -688,7 +689,6 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
             let crop_adjusted_cp = CoronalPointsAndCurve::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
-            let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
             *cp.coronal_points.get_confidence_mut() = Some(
                 crop_adjusted_cp
                     .coronal_points
@@ -703,7 +703,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let crop_adjusted_cp = scolrs::SagittalPoints::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
             *cp.get_confidence_mut() =
-                Some(crop_adjusted_cp.extract_point_confidence(model_output_f64.view()));
+                Some(crop_adjusted_cp.extract_point_confidence(ch_last_output.view()));
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_sagittal_html(cp, lm_data_with_image, overlays)
         }
