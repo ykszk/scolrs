@@ -308,7 +308,7 @@ pub fn extract_array_from_output(
     output3.mapv(|x| 1.0 / (1.0 + (-x).exp()))
 }
 
-use labelme_rs::LabelMeDataWImage;
+use labelme_rs::{svg::node::element::SVG, LabelMeDataWImage};
 use scolrs::{
     draw::{self, draw_coronal, wrap_in_html},
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw, PointDataWithImage,
@@ -448,11 +448,11 @@ pub fn calculate_crop_parameters(
 
 // readonly CROP_LABELS="TL TR BL BR Shoulder Clavicle Pelvis Iliac FemoralHead"
 
-pub fn create_coronal_html(
+pub fn create_coronal_svg(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
-) -> Result<String, anyhow::Error> {
+) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
     let draws = CoronalDraw::all()
@@ -487,19 +487,14 @@ pub fn create_coronal_html(
         overlays,
     };
     let document = draw_coronal(draw_args).expect("Failed to draw coronal points and curve");
-    let html = wrap_in_html(
-        document.to_string(),
-        &["g.Component".to_string()],
-        "deepscol result".to_string(),
-    )?;
-    Ok(html)
+    Ok(document)
 }
 
-pub fn create_sagittal_html(
+pub fn create_sagittal_svg(
     cp: scolrs::SagittalPoints,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
-) -> Result<String, anyhow::Error> {
+) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let draws = scolrs::SagittalDraw::all();
     let draw_param = scolrs::DrawParam::default();
@@ -528,12 +523,7 @@ pub fn create_sagittal_html(
         overlays,
     };
     let document = draw_sagittal(draw_args).expect("Failed to draw sagittal points and curve");
-    let html = wrap_in_html(
-        document.to_string(),
-        &["g.Component".to_string()],
-        "deepscol result".to_string(),
-    )?;
-    Ok(html)
+    Ok(document)
 }
 
 #[wasm_bindgen]
@@ -561,6 +551,7 @@ pub struct ResultHtmlArguments {
     pub cropping_params: Option<CroppingParams>,
     pub heatmap: DynamicImage,
     pub model_output: Array3<f32>,
+    pub title: String,
 }
 
 pub fn calc_overlay_params(
@@ -603,6 +594,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         cropping_params,
         heatmap,
         model_output,
+        title,
     } = args;
     log::debug!("Extracted points: {:?}", points);
     let original_image_width = image.width();
@@ -683,7 +675,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     let model_output_f64 = model_output.mapv(|x| x as f64);
     let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
 
-    match scan_direction {
+    let document = match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
             let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
@@ -695,7 +687,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
                     .extract_point_confidence(ch_last_output.view()),
             );
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
-            create_coronal_html(cp, lm_data_with_image, overlays)
+            create_coronal_svg(cp, lm_data_with_image, overlays)
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
@@ -705,9 +697,11 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             *cp.get_confidence_mut() =
                 Some(crop_adjusted_cp.extract_point_confidence(ch_last_output.view()));
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
-            create_sagittal_html(cp, lm_data_with_image, overlays)
+            create_sagittal_svg(cp, lm_data_with_image, overlays)
         }
-    }
+    }?;
+    let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
+    Ok(html)
 }
 
 #[cfg(feature = "wasm")]
@@ -798,6 +792,7 @@ pub fn calculate_crop_parameters_wasm(
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn process_output(
+    image_filename: &str,
     encoded: &[u8],
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
@@ -849,6 +844,7 @@ pub fn process_output(
         cropping_params,
         heatmap,
         model_output: output3,
+        title: format!("{} - deepscol result", image_filename),
     };
     let html = create_result_html(result_args)
         .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;

@@ -240,6 +240,10 @@ fn main() -> Result<()> {
                 max_x,
                 max_y,
             });
+        let title = format!(
+            "{} - Deepscol",
+            image_path.file_stem().unwrap_or_default().to_string_lossy()
+        );
         let html_args = deepscol::ResultHtmlArguments {
             points,
             model_input_height,
@@ -249,6 +253,7 @@ fn main() -> Result<()> {
             cropping_params,
             heatmap,
             model_output: output3,
+            title,
         };
         let html = deepscol::create_result_html(html_args)?;
         // Save the HTML to a file
