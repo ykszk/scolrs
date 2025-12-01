@@ -5,7 +5,11 @@ use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
 use ndarray::{s, Array3, Array4, Axis, Dim, NewAxis};
 use scolrs::{
-    draw::{draw_sagittal, ImageOverlay},
+    draw::{
+        draw_generic, draw_sagittal,
+        generic::{GenericDraw, GenericPoints},
+        ImageOverlay,
+    },
     HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw,
 };
 use std::collections::HashMap;
@@ -308,7 +312,7 @@ pub fn extract_array_from_output(
     output3.mapv(|x| 1.0 / (1.0 + (-x).exp()))
 }
 
-use labelme_rs::{svg::node::element::SVG, LabelMeDataWImage};
+use labelme_rs::{svg::node::element::SVG, LabelMeData, LabelMeDataWImage};
 use scolrs::{
     draw::{self, draw_coronal, wrap_in_html},
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw, PointDataWithImage,
@@ -444,6 +448,35 @@ pub fn calculate_crop_parameters(
         }
     }
     None
+}
+
+pub fn create_generic_svg(
+    lm_data: LabelMeData,
+    lm_data_with_image: LabelMeDataWImage,
+    overlays: Vec<ImageOverlay>,
+) -> Result<SVG, anyhow::Error> {
+    let gp = GenericPoints::from(lm_data.clone());
+    let points_with_image = PointDataWithImage::new(gp, lm_data_with_image);
+    let draws = vec![GenericDraw::AllPoints];
+
+    let draw_param = scolrs::DrawParam::default();
+    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
+    let svg_size = None;
+    let palettes = scolrs::draw::ColorPalettes::default();
+    let hide = vec![GenericDraw::AllPoints];
+    let draw_args = draw::GenericDrawArguments {
+        image: points_with_image.data_image.image,
+        data: points_with_image.data,
+        draw_param,
+        resize_param: Some(resize_param),
+        svg_size,
+        palettes,
+        draw: &draws,
+        hide: &hide,
+        overlays,
+    };
+    let document = draw_generic(draw_args).expect("Failed to draw generic points and curve");
+    Ok(document)
 }
 
 // readonly CROP_LABELS="TL TR BL BR Shoulder Clavicle Pelvis Iliac FemoralHead"
@@ -675,6 +708,19 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     let model_output_f64 = model_output.mapv(|x| x as f64);
     let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
 
+    if let Err(e) = scolrs::C7TLS::check_counts(&lm_data) {
+        log::warn!(
+            "Not enough points for Spine falling back to heatmap display: {}",
+            e
+        );
+        let html = create_generic_svg(
+            lm_data.clone(),
+            LabelMeDataWImage::new(lm_data, image),
+            overlays,
+        )?;
+        let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title)?;
+        return Ok(html);
+    }
     let document = match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
@@ -686,7 +732,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
                     .coronal_points
                     .extract_point_confidence(ch_last_output.view()),
             );
-            let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
+            let lm_data_with_image: LabelMeDataWImage = LabelMeDataWImage::new(lm_data, image);
             create_coronal_svg(cp, lm_data_with_image, overlays)
         }
         ScanDirection::Sagittal => {

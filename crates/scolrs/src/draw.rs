@@ -1,3 +1,4 @@
+use crate::draw::generic::{GenericDraw, GenericPoints};
 use crate::implant::ScrewSpine;
 use crate::{
     angle_from_lines, CoronalDraw, CoronalPointsAndCurve, HasCornerPoints, HasImageMetadata,
@@ -21,6 +22,7 @@ use svg::Node;
 pub type LineColors = HashMap<String, String>;
 
 mod coronal;
+pub mod generic;
 mod sagittal;
 
 #[derive(Debug, serde::Deserialize)]
@@ -1617,6 +1619,7 @@ where
 pub type SagittalDrawArguments<'a> = DrawArguments<'a, SagittalPoints, SagittalDraw>;
 pub type CoronalDrawArguments<'a> = DrawArguments<'a, CoronalPointsAndCurve, CoronalDraw>;
 pub type ImplantDrawArguments<'a> = DrawArguments<'a, ScrewSpine, ImplantDraw>;
+pub type GenericDrawArguments<'a> = DrawArguments<'a, GenericPoints, GenericDraw>;
 
 pub fn draw_sagittal(args: SagittalDrawArguments) -> Result<element::SVG, DrawError> {
     draw_on_image(args)
@@ -1627,6 +1630,10 @@ pub fn draw_coronal(args: CoronalDrawArguments) -> Result<element::SVG, DrawErro
 }
 
 pub fn draw_implant(args: ImplantDrawArguments) -> Result<element::SVG, DrawError> {
+    draw_on_image(args)
+}
+
+pub fn draw_generic(args: GenericDrawArguments) -> Result<element::SVG, DrawError> {
     draw_on_image(args)
 }
 

@@ -2207,14 +2207,8 @@ impl<S: Data<Elem = f64>> From<Corners<S>> for Centroids {
     }
 }
 
-impl TryFrom<&LabelMeData> for C7TLS {
-    type Error = ScolError;
-
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let mut corners = CORNER_LABELS
-            .iter()
-            .map(|label| extract_points(data, label))
-            .collect::<Result<Vec<_>, _>>()?;
+impl C7TLS {
+    pub fn check_corner_counts(corners: &[Array2<f64>]) -> Result<(), ScolError> {
         if corners[0].shape()[0] != corners[1].shape()[0] {
             return Err(ScolError::InvalidPointCombo(
                 "TL".into(),
@@ -2245,6 +2239,26 @@ impl TryFrom<&LabelMeData> for C7TLS {
                 corners[2].shape()[0],
             ));
         }
+        Ok(())
+    }
+    pub fn check_counts(data: &LabelMeData) -> Result<(), ScolError> {
+        let corners = CORNER_LABELS
+            .iter()
+            .map(|label| extract_points(data, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        C7TLS::check_corner_counts(&corners)
+    }
+}
+
+impl TryFrom<&LabelMeData> for C7TLS {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let mut corners = CORNER_LABELS
+            .iter()
+            .map(|label| extract_points(data, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        C7TLS::check_corner_counts(&corners)?;
 
         // Add the last point of TL to BL and TR to BR
         let last = corners[0]
