@@ -401,14 +401,14 @@ pub fn output3_to_heatmap(
     let aspect_ratio = input_image_wh.0 as f32 / input_image_wh.1 as f32;
     let heatmap_width = (output3.shape()[1] as f32 * aspect_ratio).round() as usize;
     let output3 = output3.slice(s![.., .., ..heatmap_width]);
-    let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0));
-    let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0));
-    let b = output3.slice(s![4.., .., ..]).axis_max(Axis(0));
+    let r = output3.slice(s![0..2, .., ..]).axis_max(Axis(0)); // TL and TR
+    let g = output3.slice(s![2..4, .., ..]).axis_max(Axis(0)); // BL and BR
+    let b = output3.slice(s![4..9, .., ..]).axis_max(Axis(0)); // Other points
     let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
         let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
         let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
         let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
-        let a_val = ((r_val as u16 + g_val as u16 + b_val as u16) / 3) as u8;
+        let a_val = r_val.max(g_val).max(b_val);
         image::Rgba([r_val, g_val, b_val, a_val])
     });
     DynamicImage::ImageRgba8(heatmap)
