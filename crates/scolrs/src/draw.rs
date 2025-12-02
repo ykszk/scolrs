@@ -1690,7 +1690,17 @@ pub fn wrap_in_html(
         context.insert("label", &element.value().attr("data-label").unwrap_or(id));
         context.insert(
             "description",
-            &element.value().attr("data-description").unwrap_or(""),
+            &element
+                .value()
+                .attr("data-description")
+                .map(|desc| {
+                    if let Some(conf) = element.value().attr("data-confidence") {
+                        format!("{} (Confidence: {})", desc, conf)
+                    } else {
+                        desc.to_string()
+                    }
+                })
+                .unwrap_or_default(),
         );
         let visibility = element.value().attr("visibility").unwrap_or("visible");
         let checked = if visibility == "visible" {
