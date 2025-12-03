@@ -129,7 +129,7 @@ impl_kyophosis!(T1ThoracicKyphosis, true);
 /// Mid/Lower thoracic (T5-T12) kyphosis (p.65).
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-#[label("Mid/LowerThoracicKyphosis")]
+#[label("Mid/Lower Thoracic Kyphosis")]
 pub struct MidLowerThoracicKyphosis<'a>(&'a SagittalPoints);
 impl SagittalComponent for MidLowerThoracicKyphosis<'_> {}
 impl MidLowerThoracicKyphosis<'_> {
@@ -731,7 +731,7 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
 
             SagittalDraw::LSTV => {
                 let spine_w_conf = sagittal_points.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
 
             SagittalDraw::AllPoints => Box::new(AllPoints(sagittal_points.to_points())),
@@ -771,7 +771,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
             SagittalMeasure::LSTV => {
                 let spine_w_conf = sagittal_points.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
         }
     }
@@ -808,7 +808,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
 
             SagittalMeasure::LSTV => {
                 let spine_w_conf = sagittal_points.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
         }
     }

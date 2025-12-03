@@ -47,6 +47,9 @@ fn first_doc_line(attrs: &[Attribute]) -> proc_macro2::TokenStream {
 }
 
 /// Derive `Named` for a struct with `draw_type` and `label` attributes.
+/// - `draw_type` attribute must be an array of const references to &str.
+/// - `label` attribute must be a string literal. If not provided, the struct name
+///   will be used as the label, split into words at camel case boundaries.
 #[proc_macro_derive(Named, attributes(draw_type, label))]
 pub fn derive_named(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -87,7 +90,26 @@ pub fn derive_named(input: TokenStream) -> TokenStream {
         .iter()
         .find(|attr| attr.path().is_ident("label"))
         .map_or_else(
-            || quote! { stringify!(#name) },
+            || {
+                // Take struct name and split camel case into words
+                let struct_name = name.to_string();
+                let words: Vec<String> = struct_name
+                    .chars()
+                    .fold(Vec::new(), |mut acc, c| {
+                        if c.is_uppercase() && !acc.is_empty() {
+                            acc.push(String::new());
+                        }
+                        if acc.is_empty() {
+                            acc.push(String::new());
+                        }
+                        acc.last_mut().unwrap().push(c);
+                        acc
+                    })
+                    .into_iter()
+                    .collect();
+                let label = words.join(" ");
+                quote! { #label }
+            },
             |attr| {
                 let lit: LitStr = attr
                     .parse_args()

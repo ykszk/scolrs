@@ -1116,9 +1116,10 @@ pub struct SpineWithConfidence<'a> {
 /// Lumbosacral transitional vertebrae
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
-pub struct LSTV<'a>(pub SpineWithConfidence<'a>);
-impl CommonComponent for LSTV<'_> {}
-impl DrawComponent for LSTV<'_> {
+#[label("LSTV")]
+pub struct Lstv<'a>(pub SpineWithConfidence<'a>);
+impl CommonComponent for Lstv<'_> {}
+impl DrawComponent for Lstv<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
@@ -1154,7 +1155,7 @@ impl DrawComponent for LSTV<'_> {
         Ok(g)
     }
 }
-impl MeasureComponent for LSTV<'_> {
+impl MeasureComponent for Lstv<'_> {
     // The number of lumbar vertebrae
     fn measure(&self) -> Result<f64, MeasureError> {
         let vertebra_count = self.0.spine.c7tls.0.len_of(Axis(0));
@@ -1169,7 +1170,7 @@ impl MeasureComponent for LSTV<'_> {
         }
     }
 }
-impl ConfidenceComponent for LSTV<'_> {
+impl ConfidenceComponent for Lstv<'_> {
     fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // reduce confidence from all corner points
         let confidence = self.0.confidences.as_ref()?;

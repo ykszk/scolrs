@@ -477,7 +477,7 @@ pub trait NeckMeasureComponent: Named {
     fn measure(&self) -> Result<Vec<f64>, MeasureError>;
 }
 
-/// Sacral Avaialble Spaces
+/// Space Available for the Spinal Cord
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
 #[label("SACs")]
@@ -599,10 +599,10 @@ impl NeckMeasureComponent for Sacs<'_> {
     }
 }
 
-/// Atlanto-dental interval
+/// Atlantodental Interval
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
-#[label("ADI")]
+#[label("Atlantodental Interval")]
 pub struct Adi<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for Adi<'_> {}
 impl Adi<'_> {
@@ -675,6 +675,7 @@ impl NeckExt for LateralPoints {
 /// Angle between McGregor's line and C2 lower endplate
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[label("Occiput-C2 Angle")]
 pub struct OC2<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for OC2<'_> {}
 impl OC2<'_> {
@@ -1183,6 +1184,7 @@ impl NeckMeasureComponent for T1Slope<'_> {
 /// canal-to-body ratio: https://radiopaedia.org/articles/canal-to-body-ratio-of-torg-and-pavlov
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_RATIO])]
+#[label("Torg-Pavlov Ratio")]
 pub struct TPR<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for TPR<'_> {}
 impl DrawComponent for TPR<'_> {
@@ -1309,10 +1311,11 @@ fn sagittal_vertical_axis(
     group.add(text)
 }
 
-/// C2-7 Sagittal Vertical Axis
+/// C2-C7 Sagittal Vertical Axis
 /// The horizontal distance from the center of the lower end plate of C2 to the posterior-superior corner of C7
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
+#[label("C2-C7 SVA")]
 pub struct C2C7SVA<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for C2C7SVA<'_> {}
 impl C2C7SVA<'_> {
@@ -1353,6 +1356,7 @@ impl NeckMeasureComponent for C2C7SVA<'_> {
 /// External Auditory Canal Sagittal Vertical Axis
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
+#[label("EAC SVA")]
 pub struct EACSVA<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for EACSVA<'_> {}
 impl EACSVA<'_> {

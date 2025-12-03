@@ -85,6 +85,7 @@ macro_rules! impl_cobb_angle {
 /// Cobb angle for proximal thoracic (PT) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[label("Cobb PT")]
 struct CobbPT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbPT<'_> {}
 impl_cobb_angle!(CobbPT);
@@ -92,6 +93,7 @@ impl_cobb_angle!(CobbPT);
 /// Cobb angle for main thoracic (MT) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[label("Cobb MT")]
 struct CobbMT<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbMT<'_> {}
 impl_cobb_angle!(CobbMT);
@@ -99,6 +101,7 @@ impl_cobb_angle!(CobbMT);
 /// Cobb angle for thoracolumbar/lumbar (TL/L) curve
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[label("Cobb TL/L")]
 struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbTLL<'_> {}
 impl_cobb_angle!(CobbTLL);
@@ -173,6 +176,7 @@ impl DrawComponent for SpinalLine<'_> {
 /// Apical Vertebral Translation (AVT) (p. 51)
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
+#[label("AVT")]
 pub struct Avt<'a>(&'a CoronalPoints, &'a CurveDesc);
 impl CoronalComponent for Avt<'_> {}
 impl Avt<'_> {
@@ -670,7 +674,7 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
 
             CoronalDraw::LSTV => {
                 let spine_w_conf = coronal_set.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
 
             CoronalDraw::AllPoints => Box::new(draw::AllPoints(coronal_points.to_points())),
@@ -706,7 +710,7 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
 
             CoronalMeasure::LSTV => {
                 let spine_w_conf = coronal_points_and_curve.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
         }
     }
@@ -736,7 +740,7 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
 
             CoronalMeasure::LSTV => {
                 let spine_w_conf = coronal_points_and_curve.to_spine_with_confidence();
-                Box::new(draw::LSTV(spine_w_conf))
+                Box::new(draw::Lstv(spine_w_conf))
             }
         }
     }
