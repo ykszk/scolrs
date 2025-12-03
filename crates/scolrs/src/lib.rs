@@ -31,6 +31,8 @@ pub mod lenke;
 use head_neck::Scale2DPoints;
 use shadow_rs::shadow;
 
+use crate::draw::SpineWithConfidence;
+
 shadow!(build);
 pub const VERSION: &str = shadow_rs::concatcp!(
     build::PKG_VERSION,
@@ -1447,6 +1449,13 @@ impl SagittalPoints {
             femoral_head,
         }
     }
+
+    pub fn to_spine_with_confidence(&'_ self) -> SpineWithConfidence<'_> {
+        SpineWithConfidence {
+            spine: &self.spine,
+            confidences: self.confidences.as_ref().map(|c| c.c7tls.view()),
+        }
+    }
 }
 
 impl PointConfidence for SagittalPoints {
@@ -1832,9 +1841,16 @@ impl CoronalPointsAndCurve {
         }
     }
 
-    // pub fn update_curve(&mut self) {
-    //     self.curves = self.coronal_points.identify_curves();
-    // }
+    pub fn to_spine_with_confidence(&'_ self) -> SpineWithConfidence<'_> {
+        SpineWithConfidence {
+            spine: &self.coronal_points.spine,
+            confidences: self
+                .coronal_points
+                .confidences
+                .as_ref()
+                .map(|c| c.c7tls.view()),
+        }
+    }
 }
 
 impl Scalable for CoronalPointsAndCurve {
@@ -2328,6 +2344,7 @@ pub enum CoronalDraw {
     PelvicObliquity,
     SacralObliquity,
     LegLengthDiscrepancy,
+    LSTV,
 }
 
 #[derive(
@@ -2360,6 +2377,7 @@ pub enum CoronalMeasure {
     PelvicObliquity,
     SacralObliquity,
     LegLengthDiscrepancy,
+    LSTV,
 }
 
 #[derive(
@@ -2436,6 +2454,7 @@ pub enum SagittalDraw {
     L5IncidenceAngle,
     PelvicRadiusAngle,
     LumbosacralAngle,
+    LSTV,
 }
 
 #[derive(
@@ -2471,6 +2490,7 @@ pub enum SagittalMeasure {
     L5IncidenceAngle,
     PelvicRadiusAngle,
     LumbosacralAngle,
+    LSTV,
 }
 
 #[cfg(test)]

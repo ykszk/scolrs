@@ -668,6 +668,11 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalDraw::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalDraw::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
 
+            CoronalDraw::LSTV => {
+                let spine_w_conf = coronal_set.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
+
             CoronalDraw::AllPoints => Box::new(draw::AllPoints(coronal_points.to_points())),
             CoronalDraw::VertebralLabels => Box::new(VertebralLabels(&coronal_points.spine)),
             CoronalDraw::VertebralPoints => Box::new(VertebralPoints(&coronal_points.spine)),
@@ -698,6 +703,11 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+
+            CoronalMeasure::LSTV => {
+                let spine_w_conf = coronal_points_and_curve.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
         }
     }
 }
@@ -723,6 +733,11 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalMeasure::PelvicObliquity => Box::new(PelvicObliquity(coronal_points)),
             CoronalMeasure::SacralObliquity => Box::new(SacralObliquity(coronal_points)),
             CoronalMeasure::LegLengthDiscrepancy => Box::new(LegLengthDiscrepancy(coronal_points)),
+
+            CoronalMeasure::LSTV => {
+                let spine_w_conf = coronal_points_and_curve.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
         }
     }
 }
@@ -742,6 +757,7 @@ impl AsMeasure for CoronalDraw {
             CoronalDraw::PelvicObliquity => Some(CoronalMeasure::PelvicObliquity),
             CoronalDraw::SacralObliquity => Some(CoronalMeasure::SacralObliquity),
             CoronalDraw::LegLengthDiscrepancy => Some(CoronalMeasure::LegLengthDiscrepancy),
+            CoronalDraw::LSTV => Some(CoronalMeasure::LSTV),
 
             CoronalDraw::AllPoints
             | CoronalDraw::VertebralLabels

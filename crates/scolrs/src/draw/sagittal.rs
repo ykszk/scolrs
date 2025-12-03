@@ -1,4 +1,4 @@
-use crate::draw::{AllPoints, AsMeasure, Named, ReductionMethod};
+use crate::draw::{self, AllPoints, AsMeasure, Named, ReductionMethod};
 use crate::{
     Curve, SagittalDraw, SagittalMeasure, SagittalPointConfidence, SagittalPoints, ScaledType,
     Spine, ValidateLength, VertebralIndex,
@@ -729,6 +729,11 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
             SagittalDraw::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalDraw::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
 
+            SagittalDraw::LSTV => {
+                let spine_w_conf = sagittal_points.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
+
             SagittalDraw::AllPoints => Box::new(AllPoints(sagittal_points.to_points())),
             SagittalDraw::VertebralLabels => Box::new(VertebralLabels(&sagittal_points.spine)),
             SagittalDraw::VertebralPoints => Box::new(VertebralPoints(&sagittal_points.spine)),
@@ -764,6 +769,10 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+            SagittalMeasure::LSTV => {
+                let spine_w_conf = sagittal_points.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
         }
     }
 }
@@ -796,6 +805,11 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
             SagittalMeasure::SacralSlope => Box::new(SacralSlope(sagittal_points)),
             SagittalMeasure::L5IncidenceAngle => Box::new(L5IncidenceAngle(sagittal_points)),
             SagittalMeasure::PelvicRadiusAngle => Box::new(PelvicRadiusAngle(sagittal_points)),
+
+            SagittalMeasure::LSTV => {
+                let spine_w_conf = sagittal_points.to_spine_with_confidence();
+                Box::new(draw::LSTV(spine_w_conf))
+            }
         }
     }
 }
@@ -824,6 +838,7 @@ impl AsMeasure for SagittalDraw {
             SagittalDraw::SacralSlope => Some(SagittalMeasure::SacralSlope),
             SagittalDraw::L5IncidenceAngle => Some(SagittalMeasure::L5IncidenceAngle),
             SagittalDraw::PelvicRadiusAngle => Some(SagittalMeasure::PelvicRadiusAngle),
+            SagittalDraw::LSTV => Some(SagittalMeasure::LSTV),
 
             SagittalDraw::AllPoints
             | SagittalDraw::VertebralLabels

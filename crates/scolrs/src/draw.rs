@@ -1108,6 +1108,85 @@ impl DrawComponent for VertebralPoints<'_> {
     }
 }
 
+pub struct SpineWithConfidence<'a> {
+    pub spine: &'a Spine,
+    pub confidences: Option<ArrayView2<'a, f64>>,
+}
+
+/// Lumbosacral transitional vertebrae
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_TEXT])]
+pub struct LSTV<'a>(pub SpineWithConfidence<'a>);
+impl CommonComponent for LSTV<'_> {}
+impl DrawComponent for LSTV<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let label = self.id();
+        let line_color = line_colors.get_or_new(label);
+        let mut g = self.default_group().set("stroke", line_color);
+        // Draw vertebra above sacrum
+        let vertebra_count = self.0.spine.c7tls.0.len_of(Axis(0));
+        let mut corners = self
+            .0
+            .spine
+            .c7tls
+            .0
+            .index_axis(Axis(0), vertebra_count - 2)
+            .to_owned();
+        // Change point-order from (tl, tr, bl, br) to (tl, tr, br, bl)
+        corners.swap((2, 0), (3, 0)); // bl.x <-> br.x
+        corners.swap((2, 1), (3, 1)); // bl.y <-> br.y
+
+        let polygon = painter.polygon(corners.view());
+        g = g.add(polygon);
+        let (text, title) = match vertebra_count {
+            20 => ("L6", "lumbarization"),
+            19 => ("L5", "normal"),
+            18 => ("L4", "sacralization"),
+            _ => ("N/A", "N/A"),
+        };
+        let text = painter.text(text, corners.mean_axis(Axis(0)).unwrap(), Some(title), None);
+        g = g.add(text);
+        Ok(g)
+    }
+}
+impl MeasureComponent for LSTV<'_> {
+    // The number of lumbar vertebrae
+    fn measure(&self) -> Result<f64, MeasureError> {
+        let vertebra_count = self.0.spine.c7tls.0.len_of(Axis(0));
+        match vertebra_count {
+            20 => Ok(6.0),
+            19 => Ok(5.0), // C7 + [T1-T12] + [L1-L5] + S1
+            18 => Ok(4.0),
+            _ => Err(MeasureError::UnableToMeasure(format!(
+                "Invalid vertebra count: {}",
+                vertebra_count
+            ))),
+        }
+    }
+}
+impl ConfidenceComponent for LSTV<'_> {
+    fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>> {
+        // reduce confidence from all corner points
+        let confidence = self.0.confidences.as_ref()?;
+        let confidence_1d = confidence
+            .view()
+            .into_shape_with_order(confidence.len())
+            .unwrap();
+        // exclude last two elements (sacral bl and sacrum br)
+        let conf = reduce_confidence(
+            confidence_1d.slice(s![..(confidence.len() - 2)]),
+            reduction_method,
+        )
+        .unwrap();
+        Some(Ok(conf))
+    }
+}
+
 pub trait DrawCorners {
     fn draw_corners(
         &self,
