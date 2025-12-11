@@ -576,15 +576,15 @@ impl Painter {
                         plate.slice(s![1, ..]),
                         projed_aux.view(),
                     );
-                    let line = self.line(ndarray::stack![Axis(0), p1, p2]);
-                    group = group.add(line);
                     let pa_a = &aux_cross - &projed_aux;
-                    let line = self.line(ndarray::stack![
+                    let polyline_points = ndarray::stack![
                         Axis(0),
+                        p1,
+                        p2,
                         aux_param.perpendicular_scale * pa_a + &projed_aux,
                         projed_aux
-                    ]);
-                    group = group.add(line);
+                    ];
+                    group = group.add(self.polyline(polyline_points));
                 }
                 let angle = if aux_param.flip_sign { -angle } else { angle };
                 let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
