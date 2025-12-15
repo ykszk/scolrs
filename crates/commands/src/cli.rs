@@ -37,6 +37,8 @@ pub enum Command {
     Implant(ImplantArgs),
     /// Extract point confidence from confidence map
     Confidence(ConfidenceArgs),
+    /// Fit Active Shape Model to heatmap
+    Asm(AsmArgs),
 }
 
 #[derive(Parser)]
@@ -445,4 +447,35 @@ pub struct ConfidenceArgs {
     /// Key in the npz file for the confidence map
     #[clap(long, default_value = "heatmaps.npy")]
     pub key: String,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct AsmArgs {
+    /// Input ASM model in json
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub asm_model: PathBuf,
+    /// Input heatmap npz file
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub heatmaps: PathBuf,
+    /// Key in the npz file for the heatmap
+    #[clap(long, default_value = "heatmaps.npy")]
+    pub key: String,
+    /// Output shape parameters in npy
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// Number of modes to use
+    #[clap(long, default_value_t = 10)]
+    pub n_mode: usize,
+    /// Lambda for regularization
+    #[clap(long, default_value_t = 0.01)]
+    pub lambda: f64,
+    /// Learning rate for Adam optimizer
+    #[clap(long, default_value_t = 0.1)]
+    pub learning_rate: f64,
+    /// Maximum number of iterations
+    #[clap(long, default_value_t = 1000)]
+    pub max_iterations: usize,
+    /// Patience for early stopping
+    #[clap(long, default_value_t = 8)]
+    pub patience: usize,
 }

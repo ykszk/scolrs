@@ -1,3 +1,4 @@
+pub mod asm;
 pub mod catalog;
 pub mod confidence;
 pub mod conv;

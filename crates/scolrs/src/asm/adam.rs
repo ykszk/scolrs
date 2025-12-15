@@ -38,7 +38,7 @@ impl Adam {
     }
 
     /// Perform one optimization step
-    pub fn step(&mut self, params: &mut Array1<f64>, gradients: &Array1<f64>) {
+    pub fn step(&mut self, params: &mut Array1<f64>, gradients: ArrayView1<f64>) {
         assert_eq!(params.len(), gradients.len());
         assert_eq!(params.len(), self.m.len());
 
@@ -49,10 +49,10 @@ impl Adam {
         let bias_correction2 = 1.0 - self.beta2.powi(self.t as i32);
 
         // Update biased first moment estimate
-        self.m = &self.m * self.beta1 + gradients * (1.0 - self.beta1);
+        self.m = &self.m * self.beta1 + &gradients * (1.0 - self.beta1);
 
         // Update biased second moment estimate
-        self.v = &self.v * self.beta2 + &(gradients * gradients) * (1.0 - self.beta2);
+        self.v = &self.v * self.beta2 + &(&gradients * &gradients) * (1.0 - self.beta2);
 
         // Compute bias-corrected estimates and update parameters
         let m_hat = &self.m / bias_correction1;

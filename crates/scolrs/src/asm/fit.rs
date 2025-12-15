@@ -1,48 +1,5 @@
-use crate::asm::{
-    adam, adam::EarlyTermination, adam::TerminationCriterion, alignment::SimilarityTransform,
-};
-use ndarray::{s, Array1, Array2, ArrayView2, Axis};
-
-struct ActiveShapeModel {
-    mean_shape: Array1<f64>,   // 2n vector: [x1, y1, x2, y2, ..., xn, yn]
-    eigenvectors: Array2<f64>, // 2n x k matrix
-    n_landmarks: usize,        // number of landmarks
-    n_modes: usize,            // number of shape modes (k)
-}
-
-impl ActiveShapeModel {
-    fn shape(&self, shape_params: &Array1<f64>) -> Array1<f64> {
-        &self.mean_shape + self.eigenvectors.dot(shape_params)
-    }
-
-    /// Pre-apply global transform to the active shape model
-    fn global_transform(&mut self, tr: &SimilarityTransform) {
-        // mean
-        let mean_2d = self
-            .mean_shape
-            .to_owned()
-            .into_shape_with_order((self.mean_shape.len() / 2, 2))
-            .unwrap();
-        let transformed_mean: Array2<f64> = tr.transform(&mean_2d);
-        self.mean_shape = transformed_mean
-            .into_shape_with_order(self.mean_shape.len())
-            .unwrap();
-        // // eigenvectors
-        for i in 0..self.eigenvectors.len_of(Axis(0)) {
-            let ev_2d = self
-                .eigenvectors
-                .slice(s![i, ..])
-                .to_owned()
-                .into_shape_with_order((self.eigenvectors.len_of(Axis(1)) / 2, 2))
-                .unwrap();
-            let transformed_ev: Array2<f64> = tr.transform(&ev_2d);
-            let ev_flat = transformed_ev
-                .into_shape_with_order(self.eigenvectors.len_of(Axis(1)))
-                .unwrap();
-            self.eigenvectors.slice_mut(s![i, ..]).assign(&ev_flat);
-        }
-    }
-}
+use crate::asm::{adam, adam::EarlyTermination, model::ActiveShapeModel};
+use ndarray::{s, Array1, ArrayView1, ArrayView2, ArrayView3, Axis};
 
 fn bilinear_interpolate_with_gradient(
     heatmap: &ArrayView2<f64>,
@@ -87,56 +44,62 @@ fn bilinear_interpolate_with_gradient(
 
 fn compute_objective_and_gradient(
     asm: &ActiveShapeModel,
-    heatmap: &ArrayView2<f64>,
-    shape_params: &Array1<f64>,
+    heatmaps: ArrayView3<f64>,
+    shape_params: ArrayView1<f64>,
     // lambda: f64,
 ) -> (f64, Array1<f64>) {
     // Compute current shape: x = mean_shape + P * b
-    let current_shape = asm.shape(shape_params);
-
+    let nested_points = asm.deform(shape_params);
     let mut objective = 0.0;
-    let mut gradient = Array1::zeros(asm.n_modes);
+    let mut gradient = Array1::zeros(shape_params.len());
 
-    // Loop over all landmarks
-    for i in 0..asm.n_landmarks {
-        let x_i = current_shape[2 * i];
-        let y_i = current_shape[2 * i + 1];
+    for (channel_idx, heatmap) in heatmaps.axis_iter(ndarray::Axis(2)).enumerate() {
+        // current shape for this channel
+        let current_shape = &nested_points[channel_idx];
 
-        // Get heatmap value and spatial gradients at landmark position
-        let (h_value, grad_x, grad_y) = bilinear_interpolate_with_gradient(heatmap, x_i, y_i);
+        // Compute objective and gradient for this channel
+        for (i, point) in current_shape.axis_iter(Axis(0)).enumerate() {
+            let x_i = point[0];
+            let y_i = point[1];
 
-        // Accumulate objective (negative because we want to maximize heatmap response)
-        objective -= h_value;
+            // Get heatmap value and spatial gradients at landmark position
+            let (h_value, grad_x, grad_y) =
+                bilinear_interpolate_with_gradient(&heatmap.view(), x_i, y_i);
 
-        // Compute gradient for each shape parameter b_m
-        for m in 0..asm.n_modes {
-            // P[2i-1, m] corresponds to x component
-            // P[2i, m] corresponds to y component
-            let p_x = asm.eigenvectors[[2 * i, m]];
-            let p_y = asm.eigenvectors[[2 * i + 1, m]];
+            // Accumulate objective (negative because we want to maximize heatmap response)
+            objective -= h_value;
 
-            // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[2i-1,m] + dH/dy_i * P[2i,m])
-            gradient[m] -= grad_x * p_x + grad_y * p_y;
+            // Compute gradient for each shape parameter b_m
+            for m in 0..shape_params.len() {
+                // P[2i-1, m] corresponds to x component
+                // P[2i, m] corresponds to y component
+                let p_x = asm.pca_scaled_components[[2 * i, m]];
+                let p_y = asm.pca_scaled_components[[2 * i + 1, m]];
+
+                // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[2i-1,m] + dH/dy_i * P[2i,m])
+                gradient[m] -= grad_x * p_x + grad_y * p_y;
+            }
         }
     }
 
     (objective, gradient)
 }
 
-fn fit_asm_to_heatmap(
+pub fn fit_asm_to_heatmap(
     asm: &ActiveShapeModel,
+    n_mode: usize,
     termination: &mut EarlyTermination,
-    heatmap: &Array2<f64>,
+    heatmaps: ArrayView3<f64>,
     lambda: f64,
     learning_rate: f64,
 ) -> (Array1<f64>, Vec<(f64, f64)>) {
     // Initialize shape parameters to zero (mean shape)
-    let mut shape_params = Array1::zeros(asm.n_modes);
+    let mut shape_params = Array1::zeros(n_mode);
     let mut best_params = shape_params.clone();
     let mut best_objective = f64::INFINITY;
 
     // Initialize Adam optimizer
-    let mut optimizer = adam::Adam::new(asm.n_modes, learning_rate);
+    let mut optimizer = adam::Adam::new(n_mode, learning_rate);
 
     let mut obj_history = Vec::new();
 
@@ -144,7 +107,7 @@ fn fit_asm_to_heatmap(
     loop {
         // Compute objective and gradient
         let (data_objective, data_gradient) =
-            compute_objective_and_gradient(asm, &heatmap.view(), &shape_params);
+            compute_objective_and_gradient(asm, heatmaps, shape_params.view());
         let reg_objective = lambda * shape_params.dot(&shape_params);
         let objective = data_objective + reg_objective;
         let reg_gradient = 2.0 * lambda * &shape_params;
@@ -167,64 +130,9 @@ fn fit_asm_to_heatmap(
         }
 
         // Update parameters using Adam
-        optimizer.step(&mut shape_params, &gradient);
+        let partial_gradient = gradient.slice(s![..n_mode]);
+        optimizer.step(&mut shape_params, partial_gradient);
     }
 
     (best_params, obj_history)
-}
-
-fn get_fitted_shape(asm: &ActiveShapeModel, shape_params: &Array1<f64>) -> Array1<f64> {
-    // Return the actual landmark positions: x = mean_shape + P * b
-    &asm.mean_shape + asm.eigenvectors.dot(shape_params)
-}
-
-// Example usage
-fn main() {
-    // Assume we have loaded:
-    // - asm: ActiveShapeModel with mean_shape and eigenvectors
-    // - heatmap: Array2<f64> with shape (height, width)
-
-    let n_landmarks = 68; // example: 68 facial landmarks
-    let n_modes = 10; // use first 10 principal components
-
-    // Create mock ASM (in practice, load from training data)
-    let asm = ActiveShapeModel {
-        mean_shape: Array1::zeros(2 * n_landmarks),
-        eigenvectors: Array2::zeros((2 * n_landmarks, n_modes)),
-        n_landmarks,
-        n_modes,
-    };
-
-    // Create mock heatmap (in practice, load from neural network output)
-    let heatmap = Array2::zeros((256, 256));
-
-    // Fit ASM to heatmap
-    let lambda = 0.01; // regularization weight
-    let learning_rate = 0.001; // Adam learning rate
-    let max_iterations = 1000;
-    let patience = 8;
-    let min_delta = 0.0;
-    let mut termination = adam::EarlyTermination::new(TerminationCriterion::Any(vec![
-        TerminationCriterion::NoImprovement {
-            patience,
-            min_delta,
-        },
-        TerminationCriterion::MaxIterations(max_iterations),
-    ]));
-
-    let (optimal_params, obj_history) =
-        fit_asm_to_heatmap(&asm, &mut termination, &heatmap, lambda, learning_rate);
-
-    // Get final fitted landmark positions
-    let fitted_shape = get_fitted_shape(&asm, &optimal_params);
-
-    println!("Fitted shape parameters: {:?}", optimal_params);
-    println!("Objective history: {:?}", obj_history);
-
-    // Extract individual landmarks
-    for i in 0..n_landmarks {
-        let x = fitted_shape[2 * i];
-        let y = fitted_shape[2 * i + 1];
-        println!("Landmark {}: ({:.2}, {:.2})", i, x, y);
-    }
 }
