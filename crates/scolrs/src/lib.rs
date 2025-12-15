@@ -30,6 +30,7 @@ pub mod implant;
 pub mod lenke;
 use head_neck::Scale2DPoints;
 use shadow_rs::shadow;
+pub mod asm;
 
 use crate::draw::SpineWithConfidence;
 
