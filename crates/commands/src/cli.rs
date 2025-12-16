@@ -449,20 +449,45 @@ pub struct ConfidenceArgs {
     pub key: String,
 }
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Debug, Args)]
+#[group(required = true, multiple = true)]
+pub struct AsmOutput {
+    /// Labelme json with fitted points
+    #[clap(long = "output")]
+    pub lm_out: Option<PathBuf>,
+    /// Shape parameters in json
+    #[clap(long)]
+    pub params: Option<PathBuf>,
+    /// Optimization history in json
+    #[clap(long)]
+    pub history: Option<PathBuf>,
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone, Default)]
+pub enum ChannelOrder {
+    #[default]
+    Last,
+    First,
+}
+
+#[derive(Parser, Debug)]
 pub struct AsmArgs {
     /// Input ASM model in json
-    #[clap(long, value_hint = ValueHint::FilePath)]
+    #[clap(value_hint = ValueHint::FilePath)]
     pub asm_model: PathBuf,
     /// Input heatmap npz file
-    #[clap(long, value_hint = ValueHint::FilePath)]
+    #[clap(value_hint = ValueHint::FilePath)]
     pub heatmaps: PathBuf,
     /// Key in the npz file for the heatmap
     #[clap(long, default_value = "heatmaps.npy")]
     pub key: String,
-    /// Output shape parameters in npy
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub output: PathBuf,
+    /// Labelme point data containing reference points
+    /// Reference points have label "Reference-{index}" where index is 0-based point index
+    #[clap(name="LM", value_hint = ValueHint::FilePath)]
+    pub lm_in: PathBuf,
+    /// Output Labelme json with fitted points
+    #[clap(flatten)]
+    pub output: AsmOutput,
     /// Number of modes to use
     #[clap(long, default_value_t = 10)]
     pub n_mode: usize,
@@ -478,4 +503,10 @@ pub struct AsmArgs {
     /// Patience for early stopping
     #[clap(long, default_value_t = 8)]
     pub patience: usize,
+    /// Channel order in the heatmap npz file
+    #[clap(long, default_value = "last")]
+    pub channel_order: ChannelOrder,
+    /// Sigma for gaussian smoothing of heatmaps
+    #[clap(long)]
+    pub sigma: Option<f64>,
 }

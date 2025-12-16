@@ -97,13 +97,23 @@ impl Adam {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ObjectiveType {
+    Minimize,
+    Maximize,
+}
+
 /// Early termination criteria
 #[derive(Debug, Clone)]
 pub enum TerminationCriterion {
     /// Stop when loss is below threshold
     LossThreshold(f64),
     /// Stop when loss improvement over N iterations is below threshold
-    NoImprovement { patience: usize, min_delta: f64 },
+    NoImprovement {
+        patience: usize,
+        min_delta: f64,
+        objective: ObjectiveType,
+    },
     /// Stop after maximum iterations
     MaxIterations(usize),
     /// Combine multiple criteria (stops when any is met)
@@ -143,8 +153,14 @@ impl EarlyTermination {
             TerminationCriterion::NoImprovement {
                 patience,
                 min_delta,
+                objective,
             } => {
-                if loss < self.best_loss - min_delta {
+                let is_improvement = match objective {
+                    ObjectiveType::Minimize => loss < self.best_loss - min_delta,
+                    ObjectiveType::Maximize => loss > self.best_loss + min_delta,
+                };
+
+                if is_improvement {
                     self.best_loss = loss;
                     self.iterations_without_improvement = 0;
                     false

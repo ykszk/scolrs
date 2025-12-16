@@ -27,13 +27,13 @@ pub enum ModelError {
 #[derive(Debug, Clone)]
 pub struct ActiveShapeModel {
     /// PCA mean vector (flattened 2D points)
-    pub pca_mean: Array1<f64>,
+    pub mean: Array1<f64>,
 
     /// PCA components matrix (eigenvectors)
-    pub pca_components: Array2<f64>,
+    pub components: Array2<f64>,
 
     /// PCA components scaled by sqrt(explained_variance)
-    pub pca_scaled_components: Array2<f64>,
+    pub scaled_components: Array2<f64>,
 
     /// Explained variance for each component
     pub explained_variance: Array1<f64>,
@@ -49,6 +49,9 @@ pub struct ActiveShapeModel {
 
     /// Labels for each landmark
     pub labels: Vec<String>,
+
+    /// Point labels used for alignment
+    pub reference_labels: Vec<String>,
 
     /// Number of points per landmark group
     pub point_counts: Vec<usize>,
@@ -74,6 +77,8 @@ pub struct ModelParams {
     pub template_reference: Vec<Option<(f64, f64)>>,
     /// Labels for landmarks
     pub labels: Vec<String>,
+    /// Point labels used for alignment
+    pub reference_labels: Vec<String>,
     /// Number of points per landmark group
     pub point_counts: Vec<usize>,
 }
@@ -92,10 +97,11 @@ impl ActiveShapeModel {
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
         } = params;
         // Calculate scaled components
-        let pca_scaled_components =
+        let scaled_components =
             &components * &explained_variance.mapv(|v| v.sqrt()).insert_axis(Axis(1));
 
         // Calculate split indices: [0, 2*count[0], 2*count[0]+2*count[1], ...]
@@ -107,14 +113,15 @@ impl ActiveShapeModel {
         }
 
         Self {
-            pca_mean: mean,
-            pca_components: components,
-            pca_scaled_components,
+            mean,
+            components,
+            scaled_components,
             explained_variance,
             explained_variance_ratio,
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
             split,
         }
@@ -153,18 +160,18 @@ impl ActiveShapeModel {
     /// # Returns
     /// * Result containing flattened points or ModelError
     pub fn inverse_transform(&self, deformation: ArrayView1<f64>) -> Array1<f64> {
-        if deformation.len() == self.pca_components.nrows() {
+        if deformation.len() == self.components.nrows() {
             // tfed = mean + deformation @ scaled_components
-            return &self.pca_mean + deformation.dot(&self.pca_scaled_components);
+            return &self.mean + deformation.dot(&self.scaled_components);
         }
-        let deformation = if deformation.len() < self.pca_components.nrows() {
+        let deformation = if deformation.len() < self.components.nrows() {
             // Handle case where deformation has fewer dimensions than components
             log::debug!(
                 "Deformation dimension {} is less than PCA components dimension {}, padding with zeros",
                 deformation.len(),
-                self.pca_components.nrows()
+                self.components.nrows()
             );
-            let mut full_deformation = Array1::zeros(self.pca_components.nrows());
+            let mut full_deformation = Array1::zeros(self.components.nrows());
             full_deformation
                 .slice_mut(s![..deformation.len()])
                 .assign(&deformation);
@@ -174,12 +181,27 @@ impl ActiveShapeModel {
             log::debug!(
                 "Deformation dimension {} is greater than PCA components dimension {}, truncating",
                 deformation.len(),
-                self.pca_components.nrows()
+                self.components.nrows()
             );
-            let truncated_deformation = deformation.slice(s![..self.pca_components.nrows()]);
+            let truncated_deformation = deformation.slice(s![..self.components.nrows()]);
             truncated_deformation.to_owned()
         };
-        &self.pca_mean + deformation.dot(&self.pca_scaled_components)
+        &self.mean + deformation.dot(&self.scaled_components)
+    }
+
+    pub fn inverse_transform_with_padding(&self, deformation: ArrayView1<f64>) -> Array1<f64> {
+        if deformation.len() > self.components.nrows() {
+            panic!(
+                "Deformation dimension {} is greater than PCA components dimension {}",
+                deformation.len(),
+                self.components.nrows()
+            );
+        }
+        let mut full_deformation = Array1::zeros(self.components.nrows());
+        full_deformation
+            .slice_mut(s![..deformation.len()])
+            .assign(&deformation);
+        &self.mean + full_deformation.dot(&self.scaled_components)
     }
 
     /// Apply deformation and return unraveled point groups
@@ -194,6 +216,11 @@ impl ActiveShapeModel {
         self.unravel(&transformed)
     }
 
+    pub fn pad_deform(&self, deformation: ArrayView1<f64>) -> Vec<Array2<f64>> {
+        let transformed = self.inverse_transform_with_padding(deformation);
+        self.unravel(&transformed)
+    }
+
     /// Transform point coordinates to PCA parameters
     ///
     /// # Arguments
@@ -202,16 +229,16 @@ impl ActiveShapeModel {
     /// # Returns
     /// * Result containing PCA parameters or ModelError
     pub fn transform(&self, points: &Array1<f64>) -> Result<Array1<f64>, ModelError> {
-        if points.len() != self.pca_mean.len() {
+        if points.len() != self.mean.len() {
             return Err(ModelError::PointsDimensionMismatch(
                 points.len(),
-                self.pca_mean.len(),
+                self.mean.len(),
             ));
         }
 
         // (points - mean) @ components.T / sqrt(explained_variance)
-        let centered = points - &self.pca_mean;
-        let projected = centered.dot(&self.pca_components.t());
+        let centered = points - &self.mean;
+        let projected = centered.dot(&self.components.t());
         let scaled = &projected / &self.explained_variance.mapv(|v| v.sqrt());
 
         Ok(scaled)
@@ -240,12 +267,12 @@ impl ActiveShapeModel {
 
     /// Get the number of PCA components
     pub fn n_components(&self) -> usize {
-        self.pca_components.nrows()
+        self.components.nrows()
     }
 
     /// Get the dimensionality of the mean shape (number of coordinates)
     pub fn n_dims(&self) -> usize {
-        self.pca_mean.len()
+        self.mean.len()
     }
 
     /// Get the number of landmark groups
@@ -257,27 +284,27 @@ impl ActiveShapeModel {
     pub fn global_transform(&mut self, tr: &SimilarityTransform) {
         // mean
         let mean_2d = self
-            .pca_mean
+            .mean
             .to_owned()
-            .into_shape_with_order((self.pca_mean.len() / 2, 2))
+            .into_shape_with_order((self.mean.len() / 2, 2))
             .unwrap();
         let transformed_mean: Array2<f64> = tr.transform(&mean_2d);
-        self.pca_mean = transformed_mean
-            .into_shape_with_order(self.pca_mean.len())
+        self.mean = transformed_mean
+            .into_shape_with_order(self.mean.len())
             .unwrap();
         // // eigenvectors
-        for i in 0..self.pca_components.len_of(Axis(0)) {
+        for i in 0..self.components.len_of(Axis(0)) {
             let ev_2d = self
-                .pca_components
+                .components
                 .slice(s![i, ..])
                 .to_owned()
-                .into_shape_with_order((self.pca_components.len_of(Axis(1)) / 2, 2))
+                .into_shape_with_order((self.components.len_of(Axis(1)) / 2, 2))
                 .unwrap();
             let transformed_ev: Array2<f64> = tr.transform(&ev_2d);
             let ev_flat = transformed_ev
-                .into_shape_with_order(self.pca_components.len_of(Axis(1)))
+                .into_shape_with_order(self.components.len_of(Axis(1)))
                 .unwrap();
-            self.pca_components.slice_mut(s![i, ..]).assign(&ev_flat);
+            self.components.slice_mut(s![i, ..]).assign(&ev_flat);
         }
     }
 }
@@ -286,23 +313,24 @@ impl ActiveShapeModel {
 #[derive(Debug, Clone, Deserialize)]
 struct ActiveShapeModelDe {
     // Use `Vec`s instead of `Array`s for deserialization
-    pca_mean: Vec<f64>,
-    pca_components: Vec<Vec<f64>>,
+    mean: Vec<f64>,
+    components: Vec<Vec<f64>>,
     explained_variance: Vec<f64>,
     explained_variance_ratio: Vec<f64>,
     template_points: Vec<Vec<f64>>,
     template_reference: Vec<Option<(f64, f64)>>,
     labels: Vec<String>,
+    reference_labels: Vec<String>,
     point_counts: Vec<usize>,
 }
 
 // Implement conversion from deserialized struct to ActiveShapeModel
 impl From<ActiveShapeModelDe> for ActiveShapeModel {
     fn from(de: ActiveShapeModelDe) -> Self {
-        let mean = Array1::from(de.pca_mean);
+        let mean = Array1::from(de.mean);
         let components = Array2::from_shape_vec(
-            (de.pca_components.len(), de.pca_components[0].len()),
-            de.pca_components.into_iter().flatten().collect(),
+            (de.components.len(), de.components[0].len()),
+            de.components.into_iter().flatten().collect(),
         )
         .unwrap();
         let explained_variance = Array1::from(de.explained_variance);
@@ -319,6 +347,7 @@ impl From<ActiveShapeModelDe> for ActiveShapeModel {
             explained_variance_ratio,
             template_points,
             template_reference: de.template_reference,
+            reference_labels: de.reference_labels,
             labels: de.labels,
             point_counts: de.point_counts,
         })
@@ -352,6 +381,7 @@ mod tests {
         let template_points = array![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         let template_reference = vec![Some((0.0, 0.0)), Some((1.0, 0.0)), Some((0.0, 1.0))];
         let labels = vec!["p1".to_string(), "p2".to_string(), "p3".to_string()];
+        let reference_labels = vec!["r1".to_string(), "r2".to_string(), "r3".to_string()];
         let point_counts = vec![3];
 
         let model = ActiveShapeModel::new(ModelParams {
@@ -362,6 +392,7 @@ mod tests {
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
         });
 
@@ -379,6 +410,7 @@ mod tests {
         let template_points = array![[0.0, 0.0], [1.0, 0.0]];
         let template_reference = vec![];
         let labels = vec![];
+        let reference_labels = vec![];
         let point_counts = vec![3, 1]; // First group has 3 points, second has 1
 
         let model = ActiveShapeModel::new(ModelParams {
@@ -389,6 +421,7 @@ mod tests {
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
         });
 
@@ -409,6 +442,7 @@ mod tests {
         let template_points = array![[0.0, 0.0], [1.0, 0.0]];
         let template_reference = vec![];
         let labels = vec![];
+        let reference_labels = vec![];
         let point_counts = vec![2];
 
         let model = ActiveShapeModel::new(ModelParams {
@@ -419,6 +453,7 @@ mod tests {
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
         });
 
@@ -439,6 +474,7 @@ mod tests {
         let template_points = array![[0.0, 0.0], [1.0, 0.0]];
         let template_reference = vec![];
         let labels = vec![];
+        let reference_labels = vec![];
         let point_counts = vec![2];
 
         let model = ActiveShapeModel::new(ModelParams {
@@ -449,6 +485,7 @@ mod tests {
             template_points,
             template_reference,
             labels,
+            reference_labels,
             point_counts,
         });
 

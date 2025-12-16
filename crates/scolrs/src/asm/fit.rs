@@ -49,13 +49,12 @@ fn compute_objective_and_gradient(
     // lambda: f64,
 ) -> (f64, Array1<f64>) {
     // Compute current shape: x = mean_shape + P * b
-    let nested_points = asm.deform(shape_params);
+    let nested_points = asm.pad_deform(shape_params);
     let mut objective = 0.0;
     let mut gradient = Array1::zeros(shape_params.len());
 
-    for (channel_idx, heatmap) in heatmaps.axis_iter(ndarray::Axis(2)).enumerate() {
-        // current shape for this channel
-        let current_shape = &nested_points[channel_idx];
+    for (channel_idx, current_shape) in nested_points.iter().enumerate() {
+        let heatmap = heatmaps.index_axis(ndarray::Axis(2), channel_idx);
 
         // Compute objective and gradient for this channel
         for (i, point) in current_shape.axis_iter(Axis(0)).enumerate() {
@@ -65,6 +64,16 @@ fn compute_objective_and_gradient(
             // Get heatmap value and spatial gradients at landmark position
             let (h_value, grad_x, grad_y) =
                 bilinear_interpolate_with_gradient(&heatmap.view(), x_i, y_i);
+            log::trace!(
+                "Point {} as channel {}: position=({:.2}, {:.2}), heatmap value={:.4}, grad=({:.4}, {:.4})",
+                i,
+                channel_idx,
+                x_i,
+                y_i,
+                h_value,
+                grad_x,
+                grad_y
+            );
 
             // Accumulate objective (negative because we want to maximize heatmap response)
             objective -= h_value;
@@ -73,14 +82,19 @@ fn compute_objective_and_gradient(
             for m in 0..shape_params.len() {
                 // P[2i-1, m] corresponds to x component
                 // P[2i, m] corresponds to y component
-                let p_x = asm.pca_scaled_components[[2 * i, m]];
-                let p_y = asm.pca_scaled_components[[2 * i + 1, m]];
+                let p_x = asm.scaled_components[[2 * i, m]];
+                let p_y = asm.scaled_components[[2 * i + 1, m]];
 
                 // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[2i-1,m] + dH/dy_i * P[2i,m])
                 gradient[m] -= grad_x * p_x + grad_y * p_y;
             }
         }
     }
+    log::trace!(
+        "Computed objective: {:.6}, gradient: {:?}",
+        objective,
+        gradient
+    );
 
     (objective, gradient)
 }
@@ -95,7 +109,7 @@ pub fn fit_asm_to_heatmap(
 ) -> (Array1<f64>, Vec<(f64, f64)>) {
     // Initialize shape parameters to zero (mean shape)
     let mut shape_params = Array1::zeros(n_mode);
-    let mut best_params = shape_params.clone();
+    let mut best_params = Array1::zeros(n_mode);
     let mut best_objective = f64::INFINITY;
 
     // Initialize Adam optimizer
@@ -108,14 +122,25 @@ pub fn fit_asm_to_heatmap(
         // Compute objective and gradient
         let (data_objective, data_gradient) =
             compute_objective_and_gradient(asm, heatmaps, shape_params.view());
-        let reg_objective = lambda * shape_params.dot(&shape_params);
-        let objective = data_objective + reg_objective;
+        let reg_objective = shape_params.dot(&shape_params);
+        let objective = data_objective + lambda * reg_objective;
         let reg_gradient = 2.0 * lambda * &shape_params;
         let gradient = &data_gradient + &reg_gradient;
         obj_history.push((data_objective, reg_objective));
+        log::debug!(
+            "Iteration {}: Data Obj = {:.6}, Reg Obj = {:.6}, Total Obj = {:.6}",
+            optimizer.timestep(),
+            data_objective,
+            reg_objective,
+            objective
+        );
 
         if objective < best_objective {
-            log::debug!("New best objective: {}", objective);
+            log::info!(
+                "New best objective at {}: {}",
+                optimizer.timestep(),
+                objective
+            );
             best_objective = objective;
             best_params = shape_params.clone();
         }
@@ -124,7 +149,7 @@ pub fn fit_asm_to_heatmap(
             log::info!(
                 "Early stopping at iteration {} with objective {}",
                 optimizer.timestep(),
-                objective
+                best_objective
             );
             break;
         }

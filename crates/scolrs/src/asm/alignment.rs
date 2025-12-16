@@ -231,21 +231,21 @@ impl MovablePoints {
     /// Calculate transform with missing reference points handled
     ///
     /// # Arguments
-    /// * `src_points` - Source points to align
+    /// * `src_ref_points` - Source reference points to align
     /// * `inverse` - If true, calculate inverse transform
     ///
     /// # Returns
     /// * Result containing the SimilarityTransform
     pub fn calculate_transform_with_missing(
         &self,
-        src_points: &MovablePoints,
+        src_ref_points: &[Option<(f64, f64)>],
         inverse: bool,
     ) -> Result<SimilarityTransform, AlignmentError> {
         // Find valid indices where both src and dst have non-None values
-        let valid_indices: Vec<usize> = (0..src_points.reference_points.len())
+        let valid_indices: Vec<usize> = (0..src_ref_points.len())
             .filter(|&i| {
                 i < self.reference_points.len()
-                    && src_points.reference_points[i].is_some()
+                    && src_ref_points[i].is_some()
                     && self.reference_points[i].is_some()
             })
             .collect();
@@ -256,7 +256,7 @@ impl MovablePoints {
 
         let src: Vec<(f64, f64)> = valid_indices
             .iter()
-            .filter_map(|&i| src_points.reference_points[i])
+            .filter_map(|&i| src_ref_points[i])
             .collect();
         let dst: Vec<(f64, f64)> = valid_indices
             .iter()
@@ -299,7 +299,7 @@ impl MovablePoints {
         &self,
         src_points: &MovablePoints,
     ) -> Result<(Array2<f64>, SimilarityTransform), AlignmentError> {
-        let tf = self.calculate_transform_with_missing(src_points, false)?;
+        let tf = self.calculate_transform_with_missing(&src_points.reference_points, false)?;
         let transformed_points = tf.transform(&src_points.points);
         Ok((transformed_points, tf))
     }
