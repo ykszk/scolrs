@@ -52,6 +52,7 @@ fn compute_objective_and_gradient(
     // Compute current shape: x = mean_shape + P * b
     let nested_points = asm.pad_deform(shape_params);
     let mut objective = 0.0;
+    let mut n_objs = 0; // for averaging objective
     let mut gradient = Array1::zeros(shape_params.len());
 
     for (channel_idx, current_shape) in nested_points.iter().enumerate() {
@@ -78,6 +79,7 @@ fn compute_objective_and_gradient(
 
             // Accumulate objective (negative because we want to maximize heatmap response)
             objective -= h_value;
+            n_objs += 1;
 
             // Compute gradient for each shape parameter b_m
             for m in 0..gradient.len() {
@@ -92,6 +94,7 @@ fn compute_objective_and_gradient(
         }
     }
 
+    objective /= n_objs as f64;
     (objective, gradient)
 }
 
