@@ -1,5 +1,6 @@
 use crate::asm::{adam, adam::EarlyTermination, model::ActiveShapeModel};
 use ndarray::{s, Array1, ArrayView1, ArrayView2, ArrayView3, Axis};
+use serde::{Deserialize, Serialize};
 
 fn bilinear_interpolate_with_gradient(
     heatmap: &ArrayView2<f64>,
@@ -85,13 +86,39 @@ fn compute_objective_and_gradient(
                 let p_x = asm.scaled_components[[m, 2 * i]];
                 let p_y = asm.scaled_components[[m, 2 * i + 1]];
 
-                // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[2i-1,m] + dH/dy_i * P[2i,m])
+                // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[m, 2i] + dH/dy_i * P[m, 2i+1])
                 gradient[m] -= grad_x * p_x + grad_y * p_y;
             }
         }
     }
 
     (objective, gradient)
+}
+
+pub struct HistoryItem {
+    pub data_objective: f64,
+    pub reg_objective: f64,
+    pub shape_params: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct History {
+    pub data_objectives: Vec<f64>,
+    pub reg_objectives: Vec<f64>,
+    pub shape_params: Vec<Vec<f64>>,
+}
+
+impl History {
+    pub fn from_items(items: Vec<HistoryItem>) -> Self {
+        let data_objectives = items.iter().map(|item| item.data_objective).collect();
+        let reg_objectives = items.iter().map(|item| item.reg_objective).collect();
+        let shape_params = items.into_iter().map(|item| item.shape_params).collect();
+        History {
+            data_objectives,
+            reg_objectives,
+            shape_params,
+        }
+    }
 }
 
 pub fn fit_asm_to_heatmap(
@@ -101,7 +128,7 @@ pub fn fit_asm_to_heatmap(
     heatmaps: ArrayView3<f64>,
     lambda: f64,
     learning_rate: f64,
-) -> (Array1<f64>, Vec<(f64, f64)>) {
+) -> (Array1<f64>, History) {
     // Initialize shape parameters to zero (mean shape)
     let mut shape_params = Array1::zeros(n_mode);
     let mut best_params = Array1::zeros(n_mode);
@@ -112,7 +139,6 @@ pub fn fit_asm_to_heatmap(
 
     let mut obj_history = Vec::new();
 
-    // for iteration in 0..max_iterations {
     loop {
         // Compute objective and gradient
         let (data_objective, data_gradient) =
@@ -121,7 +147,11 @@ pub fn fit_asm_to_heatmap(
         let objective = data_objective + lambda * reg_objective;
         let reg_gradient = 2.0 * lambda * &shape_params;
         let gradient = &data_gradient + &reg_gradient;
-        obj_history.push((data_objective, reg_objective));
+        obj_history.push(HistoryItem {
+            data_objective,
+            reg_objective,
+            shape_params: shape_params.to_vec(),
+        });
         log::debug!(
             "Iteration {}: Data Obj = {:.6}, Reg Obj = {:.6}, Total Obj = {:.6}",
             optimizer.timestep(),
@@ -154,5 +184,5 @@ pub fn fit_asm_to_heatmap(
         optimizer.step(&mut shape_params, partial_gradient);
     }
 
-    (best_params, obj_history)
+    (best_params, History::from_items(obj_history))
 }
