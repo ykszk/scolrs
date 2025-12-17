@@ -465,6 +465,9 @@ pub enum AsmSubCommands {
 
     /// Reconstruct points from shape parameters
     Recon(AsmReconstructArgs),
+
+    /// Print configuration file
+    Config(AsmConfigArgs),
 }
 
 #[derive(Debug, Args)]
@@ -565,6 +568,13 @@ pub struct AsmReconstructArgs {
     #[clap(value_hint = ValueHint::FilePath)]
     pub lm_in: PathBuf,
     /// Output Labelme json with reconstructed points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+pub struct AsmConfigArgs {
+    /// Output configuration file in toml
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 }

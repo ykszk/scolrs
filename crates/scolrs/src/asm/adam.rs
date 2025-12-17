@@ -1,4 +1,5 @@
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
+use serde::{Deserialize, Serialize};
 
 /// Adam (Adaptive Moment Estimation) optimizer with early termination
 #[derive(Debug, Clone)]
@@ -97,10 +98,17 @@ impl Adam {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ObjectiveType {
     Minimize,
     Maximize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoImprovementConfig {
+    pub patience: usize,
+    pub min_delta: f64,
+    pub objective: ObjectiveType,
 }
 
 /// Early termination criteria
@@ -109,11 +117,7 @@ pub enum TerminationCriterion {
     /// Stop when loss is below threshold
     LossThreshold(f64),
     /// Stop when loss improvement over N iterations is below threshold
-    NoImprovement {
-        patience: usize,
-        min_delta: f64,
-        objective: ObjectiveType,
-    },
+    NoImprovement(NoImprovementConfig),
     /// Stop after maximum iterations
     MaxIterations(usize),
     /// Combine multiple criteria (stops when any is met)
@@ -130,6 +134,29 @@ pub struct EarlyTermination {
     iteration: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EarlyTerminationConfig {
+    pub loss_threshold: Option<f64>,
+    pub no_improvement: Option<NoImprovementConfig>,
+    pub max_iterations: Option<usize>,
+    pub all: bool,
+}
+
+impl Default for EarlyTerminationConfig {
+    fn default() -> Self {
+        Self {
+            loss_threshold: None,
+            no_improvement: Some(NoImprovementConfig {
+                patience: 8,
+                min_delta: 0.0,
+                objective: ObjectiveType::Minimize,
+            }),
+            max_iterations: Some(1000),
+            all: false,
+        }
+    }
+}
+
 impl EarlyTermination {
     pub fn new(criterion: TerminationCriterion) -> Self {
         Self {
@@ -138,6 +165,30 @@ impl EarlyTermination {
             iterations_without_improvement: 0,
             iteration: 0,
         }
+    }
+
+    pub fn from_config(config: EarlyTerminationConfig) -> Self {
+        let mut criteria = Vec::new();
+
+        if let Some(threshold) = config.loss_threshold {
+            criteria.push(TerminationCriterion::LossThreshold(threshold));
+        }
+
+        if let Some(no_improvement) = config.no_improvement {
+            criteria.push(TerminationCriterion::NoImprovement(no_improvement));
+        }
+
+        if let Some(max_iter) = config.max_iterations {
+            criteria.push(TerminationCriterion::MaxIterations(max_iter));
+        }
+
+        let criterion = if config.all {
+            TerminationCriterion::All(criteria)
+        } else {
+            TerminationCriterion::Any(criteria)
+        };
+
+        Self::new(criterion)
     }
 
     /// Check if training should terminate
@@ -150,11 +201,11 @@ impl EarlyTermination {
         match criterion {
             TerminationCriterion::LossThreshold(threshold) => loss < *threshold,
 
-            TerminationCriterion::NoImprovement {
+            TerminationCriterion::NoImprovement(NoImprovementConfig {
                 patience,
                 min_delta,
                 objective,
-            } => {
+            }) => {
                 let is_improvement = match objective {
                     ObjectiveType::Minimize => loss < self.best_loss - min_delta,
                     ObjectiveType::Maximize => loss > self.best_loss + min_delta,

@@ -142,14 +142,32 @@ impl History {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FitConfig {
+    pub lambda: f64,
+    pub learning_rate: f64,
+}
+
+impl Default for FitConfig {
+    fn default() -> Self {
+        Self {
+            lambda: 0.01,
+            learning_rate: 0.1,
+        }
+    }
+}
+
 pub fn fit_asm_to_heatmap(
     asm: &ActiveShapeModel,
     initial_params: ArrayView1<f64>,
     termination: &mut EarlyTermination,
     heatmaps: ArrayView3<f64>,
-    lambda: f64,
-    learning_rate: f64,
+    config: FitConfig,
 ) -> (Array1<f64>, History) {
+    let FitConfig {
+        lambda,
+        learning_rate,
+    } = config;
     // Initialize shape parameters to zero (mean shape)
     let mut shape_params = initial_params.to_owned();
     let mut best_params = initial_params.to_owned();

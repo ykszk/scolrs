@@ -1,19 +1,23 @@
 use anyhow::Context;
 use ndarray::{s, Array1, Array2, Axis};
 
-use crate::cli::{AsmArgs, AsmFitArgs, AsmReconstructArgs, AsmSubCommands};
+use crate::cli::{AsmArgs, AsmConfigArgs, AsmFitArgs, AsmReconstructArgs, AsmSubCommands};
 use labelme_rs::{LabelMeData, Shape};
 use ndarray_ndimage as ndi;
 use scolrs::asm::{
-    adam::EarlyTermination, adam::TerminationCriterion, fit::fit_asm_to_heatmap,
+    self,
+    adam::{EarlyTermination, EarlyTerminationConfig},
+    fit::{fit_asm_to_heatmap, FitConfig},
     model::ActiveShapeModel,
 };
+use serde::{Deserialize, Serialize};
 use serde_json;
 
 pub fn cmd(args: AsmArgs) -> anyhow::Result<()> {
     match args.command {
-        AsmSubCommands::Fit(fit_args) => cmd_fit(fit_args),
-        AsmSubCommands::Recon(recon_args) => cmd_recon(recon_args),
+        AsmSubCommands::Fit(args) => cmd_fit(args),
+        AsmSubCommands::Recon(args) => cmd_recon(args),
+        AsmSubCommands::Config(args) => cmd_config(args),
     }
 }
 
@@ -145,46 +149,34 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
     asm.global_transform(&tr_asm_to_ref);
 
-    // Fit ASM to heatmap
-    let patience = args.patience;
-    let min_delta = 0.0;
-
-    let n_mode = if let Some(variance) = args.pc_mode.variance {
-        let mut cum_var = asm.explained_variance_ratio.clone();
-        cum_var.accumulate_axis_inplace(Axis(0), |&prev, curr| *curr += prev);
-        log::debug!(
-            "Cumulative explained variance ratio: {:?}",
-            cum_var.to_vec()
-        );
-        let n_mode = cum_var
-            .iter()
-            .position(|&v| v >= variance)
-            .map(|p| p + 1)
-            .unwrap_or(asm.explained_variance_ratio.len());
-        log::info!(
-            "Using {} modes to reach variance of {}%",
-            n_mode,
-            variance * 100.0
-        );
-        n_mode
+    let mode_config = if let Some(variance) = args.pc_mode.variance {
+        asm::model::ModeConfig::Variance(variance)
     } else {
-        args.pc_mode.n_mode
+        asm::model::ModeConfig::N(args.pc_mode.n_mode)
     };
+    let n_mode = asm.calculate_mode(mode_config);
 
     let mut initial_params = Array1::zeros(n_mode);
     if args.sigmas.is_empty() {
         unreachable!("At least one sigma value must be provided for heatmap smoothing.")
     };
     let mut histories = Vec::new();
+    let termination_config = asm::adam::EarlyTerminationConfig {
+        loss_threshold: None,
+        no_improvement: Some(asm::adam::NoImprovementConfig {
+            patience: args.patience,
+            min_delta: 0.0,
+            objective: asm::adam::ObjectiveType::Minimize,
+        }),
+        max_iterations: Some(args.max_iterations),
+        all: false,
+    };
+    let fit_config = FitConfig {
+        lambda: args.lambda,
+        learning_rate: args.learning_rate,
+    };
     for sigma in args.sigmas {
-        let mut termination = EarlyTermination::new(TerminationCriterion::Any(vec![
-            TerminationCriterion::NoImprovement {
-                patience,
-                min_delta,
-                objective: scolrs::asm::adam::ObjectiveType::Minimize,
-            },
-            TerminationCriterion::MaxIterations(args.max_iterations),
-        ]));
+        let mut termination = EarlyTermination::from_config(termination_config.clone());
         log::info!("Fitting ASM with heatmap smoothing sigma = {}", sigma);
         let smoothed_heatmaps = if sigma > 0.0 {
             let smoothed = smooth_heatmaps(&heatmaps, sigma);
@@ -198,8 +190,7 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
             initial_params.view(),
             &mut termination,
             smoothed_heatmaps.view(),
-            args.lambda,
-            args.learning_rate,
+            fit_config.clone(),
         );
         log::info!(
             "Fitting with sigma {} completed in {} iterations.",
@@ -239,7 +230,7 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         println!("Saved fitted labelme data to {:?}", output_path);
     }
     if let Some(history_path) = args.output.history {
-        let obj_history = scolrs::asm::fit::History::concat(histories);
+        let obj_history = asm::fit::History::concat(histories);
         // save objective history to json
         let output_file = std::fs::File::create(&history_path)
             .with_context(|| format!("Creating output file {:?}", history_path))?;
@@ -301,5 +292,39 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
     serde_json::to_writer_pretty(output_file, &output_lm)
         .with_context(|| format!("Writing labelme data to {:?}", args.output))?;
     println!("Saved reconstructed labelme data to {:?}", args.output);
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsmConfig {
+    pub fit: FitConfig,
+    pub termination: EarlyTerminationConfig,
+    pub sigmas: Vec<f64>,
+    pub mode: asm::model::ModeConfig,
+}
+
+impl Default for AsmConfig {
+    fn default() -> Self {
+        let sigmas = vec![10.0, 5.0, 0.1];
+        Self {
+            sigmas,
+            fit: FitConfig::default(),
+            termination: EarlyTerminationConfig::default(),
+            mode: asm::model::ModeConfig::default(),
+        }
+    }
+}
+
+fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {
+    let config = AsmConfig::default();
+    let output_file = std::fs::File::create(&args.output)
+        .with_context(|| format!("Creating configuration file {:?}", args.output))?;
+    let toml_str = toml::to_string_pretty(&config)?;
+    std::io::Write::write_all(
+        &mut std::io::BufWriter::new(output_file),
+        toml_str.as_bytes(),
+    )
+    .with_context(|| format!("Writing configuration to {:?}", args.output))?;
+    println!("Saved configuration file to {:?}", args.output);
     Ok(())
 }

@@ -1,5 +1,5 @@
 use ndarray::{s, Array1, Array2, ArrayView1, Axis};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::asm::alignment::{MovablePoints, SimilarityTransform};
@@ -18,6 +18,19 @@ pub enum ModelError {
 
     #[error("Invalid model data: {0}")]
     InvalidData(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModeConfig {
+    N(usize),
+    Variance(f64),
+}
+
+impl Default for ModeConfig {
+    fn default() -> Self {
+        ModeConfig::Variance(0.99)
+    }
 }
 
 /// Active Shape Model (ASM) for statistical shape modeling and fitting
@@ -124,6 +137,35 @@ impl ActiveShapeModel {
             reference_labels,
             point_counts,
             split,
+        }
+    }
+
+    pub fn calculate_mode(&self, config: ModeConfig) -> usize {
+        match config {
+            ModeConfig::N(n) => {
+                if n > self.components.nrows() {
+                    log::warn!(
+                        "Requested number of components {} exceeds available components {}, using maximum available.",
+                        n,
+                        self.components.nrows()
+                    );
+                    self.components.nrows()
+                } else {
+                    n
+                }
+            }
+            ModeConfig::Variance(var) => {
+                let mut cumulative_variance = 0.0;
+                let mut count = 0;
+                for &explained in self.explained_variance_ratio.iter() {
+                    cumulative_variance += explained;
+                    count += 1;
+                    if cumulative_variance >= var {
+                        break;
+                    }
+                }
+                count
+            }
         }
     }
 
