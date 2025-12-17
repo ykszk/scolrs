@@ -449,6 +449,24 @@ pub struct ConfidenceArgs {
     pub key: String,
 }
 
+#[derive(Args, Debug)]
+pub struct AsmArgs {
+    #[clap(subcommand)]
+    pub command: AsmSubCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AsmSubCommands {
+    /// Fit Active Shape Model to heatmap
+    Fit(AsmFitArgs),
+
+    /// Project points to ASM space
+    // Project(AsmProjectArgs), // Future work
+
+    /// Reconstruct points from shape parameters
+    Recon(AsmReconstructArgs),
+}
+
 #[derive(Debug, Args)]
 #[group(required = true, multiple = true)]
 pub struct AsmOutput {
@@ -471,7 +489,7 @@ pub enum ChannelOrder {
 }
 
 #[derive(Parser, Debug)]
-pub struct AsmArgs {
+pub struct AsmFitArgs {
     /// Input ASM model in json
     #[clap(value_hint = ValueHint::FilePath)]
     pub asm_model: PathBuf,
@@ -509,4 +527,32 @@ pub struct AsmArgs {
     /// Sigma for gaussian smoothing of heatmaps
     #[clap(long)]
     pub sigma: Option<f64>,
+}
+
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct AsmParams {
+    /// Shape parameters in json file
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
+    pub param_file: Option<PathBuf>,
+
+    /// Shape parameters as a comma separated list
+    #[clap(short, long)]
+    pub list: Option<Vec<f64>>,
+}
+
+#[derive(Parser, Debug)]
+pub struct AsmReconstructArgs {
+    /// Input ASM model in json
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub asm_model: PathBuf,
+    /// Input shape parameters
+    #[clap(flatten)]
+    pub params: AsmParams,
+    /// Labelme json with reference points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub lm_in: PathBuf,
+    /// Output Labelme json with reconstructed points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
 }

@@ -2,7 +2,7 @@ use ndarray::{s, Array1, Array2, ArrayView1, Axis};
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::asm::alignment::SimilarityTransform;
+use crate::asm::alignment::{MovablePoints, SimilarityTransform};
 
 /// Errors that can occur during Active Shape Model operations
 #[derive(Debug, Error)]
@@ -125,6 +125,14 @@ impl ActiveShapeModel {
             point_counts,
             split,
         }
+    }
+
+    pub fn to_movable_points(&self) -> MovablePoints {
+        MovablePoints::new(
+            self.template_points.clone(),
+            self.template_reference.clone(),
+            self.point_counts.clone(),
+        )
     }
 
     /// Unravel flattened points into a list of arrays per landmark group
