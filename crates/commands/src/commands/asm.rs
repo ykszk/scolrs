@@ -1,5 +1,5 @@
 use anyhow::Context;
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{s, Array1, Array2, Axis};
 
 use crate::cli::{AsmArgs, AsmFitArgs, AsmReconstructArgs, AsmSubCommands};
 use labelme_rs::{LabelMeData, Shape};
@@ -70,7 +70,7 @@ fn smooth_heatmaps(
 ) -> ndarray::ArrayBase<ndarray::OwnedRepr<f64>, ndarray::Dim<[usize; 3]>> {
     let mut smoothed_heatmaps = heatmaps.clone();
     for (ch_idx, channel) in heatmaps.axis_iter(Axis(2)).enumerate() {
-        let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 5);
+        let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 3);
         smoothed_heatmaps
             .index_axis_mut(ndarray::Axis(2), ch_idx)
             .assign(&smoothed);
@@ -103,6 +103,23 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
             log::debug!("Permuting heatmap axes from (C, H, W) to (H, W, C)");
             heatmaps.permuted_axes([1, 2, 0])
         }
+    };
+    let n_required_channels = asm.labels.len();
+    let heatmaps = if heatmaps.len_of(Axis(2)) > n_required_channels {
+        log::info!(
+            "Heatmaps have {0} channels, but ASM requires only {1} channels. Using the first {1} channels.",
+            heatmaps.len_of(Axis(2)),
+            n_required_channels,
+        );
+        heatmaps.slice_move(s![.., .., 0..n_required_channels])
+    } else if heatmaps.len_of(Axis(2)) < n_required_channels {
+        anyhow::bail!(
+            "Heatmaps have {} channels, but ASM requires {} channels.",
+            heatmaps.len_of(Axis(2)),
+            n_required_channels
+        );
+    } else {
+        heatmaps
     };
     let ref_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.lm_in)
@@ -155,13 +172,11 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     };
 
     let mut initial_params = Array1::zeros(n_mode);
-    let sigmas = if args.sigmas.is_empty() {
-        vec![1.0]
-    } else {
-        args.sigmas.clone()
+    if args.sigmas.is_empty() {
+        unreachable!("At least one sigma value must be provided for heatmap smoothing.")
     };
     let mut histories = Vec::new();
-    for sigma in sigmas {
+    for sigma in args.sigmas {
         let mut termination = EarlyTermination::new(TerminationCriterion::Any(vec![
             TerminationCriterion::NoImprovement {
                 patience,
@@ -224,17 +239,7 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         println!("Saved fitted labelme data to {:?}", output_path);
     }
     if let Some(history_path) = args.output.history {
-        // combine histories
-        let mut obj_history = scolrs::asm::fit::History {
-            data_objectives: Vec::new(),
-            reg_objectives: Vec::new(),
-            shape_params: Vec::new(),
-        };
-        for history in histories {
-            obj_history.data_objectives.extend(history.data_objectives);
-            obj_history.reg_objectives.extend(history.reg_objectives);
-            obj_history.shape_params.extend(history.shape_params);
-        }
+        let obj_history = scolrs::asm::fit::History::concat(histories);
         // save objective history to json
         let output_file = std::fs::File::create(&history_path)
             .with_context(|| format!("Creating output file {:?}", history_path))?;

@@ -122,6 +122,24 @@ impl History {
             shape_params,
         }
     }
+
+    pub fn concat(histories: Vec<History>) -> Self {
+        let mut data_objectives = Vec::new();
+        let mut reg_objectives = Vec::new();
+        let mut shape_params = Vec::new();
+
+        for history in histories {
+            data_objectives.extend(history.data_objectives);
+            reg_objectives.extend(history.reg_objectives);
+            shape_params.extend(history.shape_params);
+        }
+
+        History {
+            data_objectives,
+            reg_objectives,
+            shape_params,
+        }
+    }
 }
 
 pub fn fit_asm_to_heatmap(

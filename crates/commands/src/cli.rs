@@ -537,7 +537,7 @@ pub struct AsmFitArgs {
     #[clap(long, default_value = "last")]
     pub channel_order: ChannelOrder,
     /// Sigma for gaussian smoothing of heatmaps
-    #[clap(long)]
+    #[clap(long, value_delimiter = ',', default_value = "1.0")]
     pub sigmas: Vec<f64>,
 }
 
