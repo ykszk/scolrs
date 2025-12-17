@@ -79,22 +79,17 @@ fn compute_objective_and_gradient(
             objective -= h_value;
 
             // Compute gradient for each shape parameter b_m
-            for m in 0..shape_params.len() {
-                // P[2i-1, m] corresponds to x component
-                // P[2i, m] corresponds to y component
-                let p_x = asm.scaled_components[[2 * i, m]];
-                let p_y = asm.scaled_components[[2 * i + 1, m]];
+            for m in 0..gradient.len() {
+                // P[m, 2i-1] corresponds to x component
+                // P[m, 2i] corresponds to y component
+                let p_x = asm.scaled_components[[m, 2 * i]];
+                let p_y = asm.scaled_components[[m, 2 * i + 1]];
 
                 // Chain rule: dJ/db_m = -sum_i (dH/dx_i * P[2i-1,m] + dH/dy_i * P[2i,m])
                 gradient[m] -= grad_x * p_x + grad_y * p_y;
             }
         }
     }
-    log::trace!(
-        "Computed objective: {:.6}, gradient: {:?}",
-        objective,
-        gradient
-    );
 
     (objective, gradient)
 }
