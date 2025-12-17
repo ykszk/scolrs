@@ -488,6 +488,18 @@ pub enum ChannelOrder {
     First,
 }
 
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct PCMode {
+    /// Number of modes to use
+    #[clap(short, long, default_value_t = 10)]
+    pub n_mode: usize,
+
+    /// Variance to cover with the modes (overrides n_mode) [0.0-1.0]
+    #[clap(short, long)]
+    pub variance: Option<f64>,
+}
+
 #[derive(Parser, Debug)]
 pub struct AsmFitArgs {
     /// Input ASM model in json
@@ -507,8 +519,8 @@ pub struct AsmFitArgs {
     #[clap(flatten)]
     pub output: AsmOutput,
     /// Number of modes to use
-    #[clap(long, default_value_t = 10)]
-    pub n_mode: usize,
+    #[clap(flatten)]
+    pub pc_mode: PCMode,
     /// Lambda for regularization
     #[clap(long, default_value_t = 0.01)]
     pub lambda: f64,
@@ -526,7 +538,7 @@ pub struct AsmFitArgs {
     pub channel_order: ChannelOrder,
     /// Sigma for gaussian smoothing of heatmaps
     #[clap(long)]
-    pub sigma: Option<f64>,
+    pub sigmas: Vec<f64>,
 }
 
 #[derive(Debug, Args)]

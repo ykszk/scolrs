@@ -1,5 +1,5 @@
 use anyhow::Context;
-use ndarray::{Array2, Axis};
+use ndarray::{Array1, Array2, Axis};
 
 use crate::cli::{AsmArgs, AsmFitArgs, AsmReconstructArgs, AsmSubCommands};
 use labelme_rs::{LabelMeData, Shape};
@@ -64,6 +64,20 @@ fn create_shapes_from_fitted_points(fitted_shape: &[Array2<f64>], labels: &[Stri
     shapes
 }
 
+fn smooth_heatmaps(
+    heatmaps: &ndarray::ArrayBase<ndarray::OwnedRepr<f64>, ndarray::Dim<[usize; 3]>>,
+    sigma: f64,
+) -> ndarray::ArrayBase<ndarray::OwnedRepr<f64>, ndarray::Dim<[usize; 3]>> {
+    let mut smoothed_heatmaps = heatmaps.clone();
+    for (ch_idx, channel) in heatmaps.axis_iter(Axis(2)).enumerate() {
+        let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 5);
+        smoothed_heatmaps
+            .index_axis_mut(ndarray::Axis(2), ch_idx)
+            .assign(&smoothed);
+    }
+    smoothed_heatmaps
+}
+
 pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     // Create ASM from json file
     let reader = std::fs::File::open(&args.asm_model)
@@ -84,34 +98,12 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         args.heatmaps
     );
     let heatmaps = match args.channel_order {
-        crate::cli::ChannelOrder::Last => {
-            // log::debug!("Permuting heatmap axes from (H, W, C) to (C, H, W)");
-            // heatmaps.permuted_axes([2, 0, 1])
-            heatmaps
-        }
+        crate::cli::ChannelOrder::Last => heatmaps,
         crate::cli::ChannelOrder::First => {
             log::debug!("Permuting heatmap axes from (C, H, W) to (H, W, C)");
             heatmaps.permuted_axes([1, 2, 0])
         }
     };
-    let heatmaps = if let Some(sigma) = args.sigma {
-        log::debug!(
-            "Applying Gaussian smoothing to heatmaps with sigma={}",
-            sigma
-        );
-        let mut smoothed_heatmaps = heatmaps.clone();
-        for (ch_idx, channel) in heatmaps.axis_iter(Axis(2)).enumerate() {
-            let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 5);
-            smoothed_heatmaps
-                .index_axis_mut(ndarray::Axis(2), ch_idx)
-                .assign(&smoothed);
-        }
-        log::debug!("Finished Gaussian smoothing of heatmaps");
-        smoothed_heatmaps
-    } else {
-        heatmaps
-    };
-
     let ref_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.lm_in)
             .with_context(|| format!("Opening labelme file {:?}", args.lm_in))?,
@@ -139,23 +131,71 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     // Fit ASM to heatmap
     let patience = args.patience;
     let min_delta = 0.0;
-    let mut termination = EarlyTermination::new(TerminationCriterion::Any(vec![
-        TerminationCriterion::NoImprovement {
-            patience,
-            min_delta,
-            objective: scolrs::asm::adam::ObjectiveType::Minimize,
-        },
-        TerminationCriterion::MaxIterations(args.max_iterations),
-    ]));
 
-    let (optimal_params, obj_history) = fit_asm_to_heatmap(
-        &asm,
-        args.n_mode,
-        &mut termination,
-        heatmaps.view(),
-        args.lambda,
-        args.learning_rate,
-    );
+    let n_mode = if let Some(variance) = args.pc_mode.variance {
+        let mut cum_var = asm.explained_variance_ratio.clone();
+        cum_var.accumulate_axis_inplace(Axis(0), |&prev, curr| *curr += prev);
+        log::debug!(
+            "Cumulative explained variance ratio: {:?}",
+            cum_var.to_vec()
+        );
+        let n_mode = cum_var
+            .iter()
+            .position(|&v| v >= variance)
+            .map(|p| p + 1)
+            .unwrap_or(asm.explained_variance_ratio.len());
+        log::info!(
+            "Using {} modes to reach variance of {}%",
+            n_mode,
+            variance * 100.0
+        );
+        n_mode
+    } else {
+        args.pc_mode.n_mode
+    };
+
+    let mut initial_params = Array1::zeros(n_mode);
+    let sigmas = if args.sigmas.is_empty() {
+        vec![1.0]
+    } else {
+        args.sigmas.clone()
+    };
+    let mut histories = Vec::new();
+    for sigma in sigmas {
+        let mut termination = EarlyTermination::new(TerminationCriterion::Any(vec![
+            TerminationCriterion::NoImprovement {
+                patience,
+                min_delta,
+                objective: scolrs::asm::adam::ObjectiveType::Minimize,
+            },
+            TerminationCriterion::MaxIterations(args.max_iterations),
+        ]));
+        log::info!("Fitting ASM with heatmap smoothing sigma = {}", sigma);
+        let smoothed_heatmaps = if sigma > 0.0 {
+            let smoothed = smooth_heatmaps(&heatmaps, sigma);
+            log::debug!("Smoothed heatmaps with sigma {}", sigma);
+            smoothed
+        } else {
+            heatmaps.clone()
+        };
+        let (fitted_params, obj_history) = fit_asm_to_heatmap(
+            &asm,
+            initial_params.view(),
+            &mut termination,
+            smoothed_heatmaps.view(),
+            args.lambda,
+            args.learning_rate,
+        );
+        log::info!(
+            "Fitting with sigma {} completed in {} iterations.",
+            sigma,
+            obj_history.data_objectives.len()
+        );
+        // Update initial_params for next sigma
+        initial_params.assign(&fitted_params);
+        histories.push(obj_history);
+    }
+    let optimal_params = initial_params;
 
     // Get final fitted landmark positions
     let fitted_shape = asm.pad_deform(optimal_params.view());
@@ -184,6 +224,18 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         println!("Saved fitted labelme data to {:?}", output_path);
     }
     if let Some(history_path) = args.output.history {
+        // combine histories
+        let mut obj_history = scolrs::asm::fit::History {
+            data_objectives: Vec::new(),
+            reg_objectives: Vec::new(),
+            shape_params: Vec::new(),
+        };
+        for history in histories {
+            obj_history.data_objectives.extend(history.data_objectives);
+            obj_history.reg_objectives.extend(history.reg_objectives);
+            obj_history.shape_params.extend(history.shape_params);
+        }
+        // save objective history to json
         let output_file = std::fs::File::create(&history_path)
             .with_context(|| format!("Creating output file {:?}", history_path))?;
         serde_json::to_writer_pretty(output_file, &obj_history)

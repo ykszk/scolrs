@@ -1,5 +1,5 @@
 use crate::asm::{adam, adam::EarlyTermination, model::ActiveShapeModel};
-use ndarray::{s, Array1, ArrayView1, ArrayView2, ArrayView3, Axis};
+use ndarray::{Array1, ArrayView1, ArrayView2, ArrayView3, Axis};
 use serde::{Deserialize, Serialize};
 
 fn bilinear_interpolate_with_gradient(
@@ -123,19 +123,19 @@ impl History {
 
 pub fn fit_asm_to_heatmap(
     asm: &ActiveShapeModel,
-    n_mode: usize,
+    initial_params: ArrayView1<f64>,
     termination: &mut EarlyTermination,
     heatmaps: ArrayView3<f64>,
     lambda: f64,
     learning_rate: f64,
 ) -> (Array1<f64>, History) {
     // Initialize shape parameters to zero (mean shape)
-    let mut shape_params = Array1::zeros(n_mode);
-    let mut best_params = Array1::zeros(n_mode);
+    let mut shape_params = initial_params.to_owned();
+    let mut best_params = initial_params.to_owned();
     let mut best_objective = f64::INFINITY;
 
     // Initialize Adam optimizer
-    let mut optimizer = adam::Adam::new(n_mode, learning_rate);
+    let mut optimizer = adam::Adam::new(initial_params.len(), learning_rate);
 
     let mut obj_history = Vec::new();
 
@@ -180,8 +180,7 @@ pub fn fit_asm_to_heatmap(
         }
 
         // Update parameters using Adam
-        let partial_gradient = gradient.slice(s![..n_mode]);
-        optimizer.step(&mut shape_params, partial_gradient);
+        optimizer.step(&mut shape_params, gradient.view());
     }
 
     (best_params, History::from_items(obj_history))
