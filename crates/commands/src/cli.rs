@@ -491,18 +491,6 @@ pub enum ChannelOrder {
     First,
 }
 
-#[derive(Debug, Args)]
-#[group(required = true, multiple = false)]
-pub struct PCMode {
-    /// Number of modes to use
-    #[clap(short, long, default_value_t = 10)]
-    pub n_mode: usize,
-
-    /// Variance to cover with the modes (overrides n_mode) [0.0-1.0]
-    #[clap(short, long)]
-    pub variance: Option<f64>,
-}
-
 #[derive(Parser, Debug)]
 pub struct AsmFitArgs {
     /// Input ASM model in json

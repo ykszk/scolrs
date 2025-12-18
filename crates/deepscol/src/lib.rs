@@ -459,7 +459,7 @@ pub fn create_generic_svg(
     let points_with_image = PointDataWithImage::new(gp, lm_data_with_image);
     let draws = vec![GenericDraw::AllPoints];
 
-    let draw_param = scolrs::DrawParam::default();
+    let draw_param = scolrs::draw::DrawParam::default();
     let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
@@ -493,7 +493,7 @@ pub fn create_coronal_svg(
         .filter(|d| !non_draws.contains(d))
         .collect::<Vec<_>>();
 
-    let draw_param = scolrs::DrawParam::default();
+    let draw_param = scolrs::draw::DrawParam::default();
     let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();
@@ -530,7 +530,7 @@ pub fn create_sagittal_svg(
 ) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let draws = scolrs::SagittalDraw::all();
-    let draw_param = scolrs::DrawParam::default();
+    let draw_param = scolrs::draw::DrawParam::default();
     let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
     let svg_size = None;
     let palettes = scolrs::draw::ColorPalettes::default();

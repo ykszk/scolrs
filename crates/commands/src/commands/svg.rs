@@ -15,10 +15,13 @@ use rayon::prelude::*;
 use scolrs::draw::{wrap_in_html, DrawArguments};
 use scolrs::head_neck::draw_neck;
 use scolrs::{
-    draw::{draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError},
+    draw::{
+        draw_coronal, draw_implant, draw_sagittal, ColorPalette, ColorPalettes, DrawError,
+        DrawParam,
+    },
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralDraw},
     implant::{LabelMeOptionalDetectron2, LabelMeOptionalDetectron2Line, ScrewSpine},
-    ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine, DrawParam,
+    ContentFilename, CoronalDraw, CoronalPointsAndCurve, CoronalPointsAndCurveLine,
     HasImageMetadata, ImageMetadata, ImplantDraw, MeasureAndDraw, PointDataWithImage, SagittalDraw,
     SagittalPoints, SagittalPointsLine, Scalable,
 };
@@ -313,7 +316,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
 
 #[derive(Clone)]
 struct ReadSvgArgCommon {
-    draw_param: scolrs::DrawParam,
+    draw_param: scolrs::draw::DrawParam,
     resize_param: Option<labelme_rs::ResizeParam>,
     svg_size_param: Option<labelme_rs::ResizeParam>,
     palettes: ColorPalettes,
@@ -343,14 +346,14 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<(ReadSvgArgCommon, SvgSubComma
                 .with_context(|| format!("Load label color {:?}", filename))?,
         )
     } else {
-        ColorPalette::new(labelme_rs::LabelColorsHex::default())
+        ColorPalette::default()
     };
     let line_colors = if let Some(filename) = args.line_colors {
         let reader = std::fs::File::open(&filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
         ColorPalette::new(scolrs::draw::load_line_colors(reader)?)
     } else {
-        ColorPalette::new(scolrs::draw::LineColors::default())
+        ColorPalette::default()
     };
 
     let palettes = ColorPalettes {

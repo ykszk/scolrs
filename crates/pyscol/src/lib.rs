@@ -12,12 +12,12 @@ use numpy::{
 use pyo3::prelude::*;
 use scolrs::{
     draw::{
-        draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, MeasureError,
-        Painter,
+        draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, DrawParam,
+        MeasureError, Painter,
     },
     head_neck::{LateralPoints, NeckLateralDraw},
-    CoronalDraw, CoronalPointsAndCurve, DrawParam, HasImageMetadata, MeasureAndDraw,
-    PointDataWithImage, SagittalDraw, SagittalPoints, Scalable, ScaledType,
+    CoronalDraw, CoronalPointsAndCurve, HasImageMetadata, MeasureAndDraw, PointDataWithImage,
+    SagittalDraw, SagittalPoints, Scalable, ScaledType,
 };
 use svg::node::element;
 

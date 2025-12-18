@@ -5,7 +5,7 @@ use crate::{
     ImplantDraw, L2Norm, SagittalDraw, SagittalPoints, Scalable, ScaledType, ValidateLength,
     CORNER_LABELS,
 };
-use crate::{Curve, DrawParam, Spine, VERTEBRAL_LABELS};
+use crate::{Curve, Spine, VERTEBRAL_LABELS};
 use labelme_rs::image::DynamicImage;
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
@@ -79,6 +79,134 @@ pub const TAB10_NEW_TAB10: [&str; 18] = [
     "#16becf", "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14e", "#edc949", "#af7aa1",
     "#ff9da7", "#9c755f",
 ];
+
+fn default_point_radius() -> f64 {
+    1.5
+}
+fn default_line_width() -> f64 {
+    1.0
+}
+fn default_font_size() -> String {
+    "24px".into()
+}
+fn default_unit_font_size() -> String {
+    "12px".into()
+}
+fn default_text_stroke() -> String {
+    "black".into()
+}
+fn default_text_stroke_width() -> f64 {
+    1.0
+}
+fn default_text_fill() -> String {
+    "white".into()
+}
+
+/// Drawing parameters
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DrawParam {
+    /// Point radius
+    #[serde(default = "default_point_radius")]
+    pub point_radius: f64,
+    /// Line width
+    #[serde(default = "default_line_width")]
+    pub line_width: f64,
+
+    /// `stroke` for texts
+    #[serde(default = "default_font_size")]
+    pub font_size: String,
+    /// `stroke` for small texts (e.g. unit)
+    #[serde(default = "default_unit_font_size")]
+    pub unit_font_size: String,
+    /// `stroke` for texts
+    #[serde(default = "default_text_stroke")]
+    pub text_stroke: String,
+    /// `stroke-width` for texts
+    #[serde(default = "default_text_stroke_width")]
+    pub text_stroke_width: f64,
+    /// `fill` for texts
+    #[serde(default = "default_text_fill")]
+    pub text_fill: String,
+}
+
+impl Default for DrawParam {
+    fn default() -> Self {
+        Self {
+            point_radius: default_point_radius(),
+            line_width: default_line_width(),
+            font_size: default_font_size(),
+            unit_font_size: default_unit_font_size(),
+            text_stroke: default_text_stroke(),
+            text_stroke_width: default_text_stroke_width(),
+            text_fill: default_text_fill(),
+        }
+    }
+}
+
+impl DrawParam {
+    pub fn text_style(&self) -> String {
+        format!(
+            "text {{font-size: {}; font-family:sans-serif; stroke: {}; stroke-width: {}; fill: {}; text-anchor: middle; dominant-baseline: central}}",
+            self.font_size,
+            self.text_stroke,
+            self.text_stroke_width,
+            self.text_fill
+        ) + &format!(
+            "\ntspan.unit {{font-size: {}; dominant-baseline: hanging}}",
+            self.unit_font_size,
+        )
+    }
+    pub fn line_style(&self) -> String {
+        format!(
+            "line, polyline, polygon, rect, path {{stroke-width: {}; fill: none}}",
+            self.line_width
+        )
+    }
+    pub fn point_style(&self) -> String {
+        format!("circle {{stroke-width: {}}}", self.line_width)
+    }
+    pub fn style(&self) -> String {
+        format!(
+            "{}\n{}\n{}",
+            self.text_style(),
+            self.line_style(),
+            self.point_style()
+        )
+    }
+
+    fn scale_font_size(font_size: &str, scale: f64) -> std::result::Result<String, String> {
+        let re = regex::Regex::new(r"^([\d.]+)(\D+)").unwrap();
+        if let Some(caps) = re.captures(font_size.trim()) {
+            let value = caps
+                .get(1)
+                .unwrap()
+                .as_str()
+                .parse::<f64>()
+                .map_err(|e| e.to_string())?;
+            let unit = caps.get(2).map(|v| v.as_str()).unwrap_or_default();
+            Ok(format!("{}{}", value * scale, unit))
+        } else {
+            Err(format!("Invalid font size format: {}", font_size))
+        }
+    }
+
+    pub fn scale(&mut self, scale: f64) -> std::result::Result<(), String> {
+        if scale == 0.0 {
+            return Ok(());
+        }
+
+        if scale < 0.0 {
+            return Err("Negative scale".into());
+        }
+
+        self.point_radius *= scale;
+        self.line_width *= scale;
+        self.text_stroke_width *= scale;
+        self.font_size = Self::scale_font_size(&self.font_size, scale)?;
+        self.unit_font_size = Self::scale_font_size(&self.unit_font_size, scale)?;
+        Ok(())
+    }
+}
 
 pub struct Painter {
     pub param: DrawParam,
@@ -348,7 +476,7 @@ impl Painter {
         element::Circle::new()
             .set("cx", point[0])
             .set("cy", point[1])
-            .set("r", self.param.radius)
+            .set("r", self.param.point_radius)
     }
 
     pub fn line<S>(&mut self, start_end: ArrayBase<S, Ix2>) -> element::Line
