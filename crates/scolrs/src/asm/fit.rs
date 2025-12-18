@@ -1,4 +1,7 @@
-use crate::asm::{adam, adam::EarlyTermination, model::ActiveShapeModel};
+use crate::asm::{
+    adam::{self, AdamParams, Stopper},
+    model::ActiveShapeModel,
+};
 use ndarray::{Array1, ArrayView1, ArrayView2, ArrayView3, Axis};
 use serde::{Deserialize, Serialize};
 
@@ -145,14 +148,14 @@ impl History {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FitConfig {
     pub lambda: f64,
-    pub learning_rate: f64,
+    pub adam: AdamParams,
 }
 
 impl Default for FitConfig {
     fn default() -> Self {
         Self {
             lambda: 0.01,
-            learning_rate: 0.1,
+            adam: AdamParams::default(),
         }
     }
 }
@@ -160,13 +163,13 @@ impl Default for FitConfig {
 pub fn fit_asm_to_heatmap(
     asm: &ActiveShapeModel,
     initial_params: ArrayView1<f64>,
-    termination: &mut EarlyTermination,
+    stopper: &mut Stopper,
     heatmaps: ArrayView3<f64>,
     config: FitConfig,
 ) -> (Array1<f64>, History) {
     let FitConfig {
         lambda,
-        learning_rate,
+        adam: adam_params,
     } = config;
     // Initialize shape parameters to zero (mean shape)
     let mut shape_params = initial_params.to_owned();
@@ -174,7 +177,7 @@ pub fn fit_asm_to_heatmap(
     let mut best_objective = f64::INFINITY;
 
     // Initialize Adam optimizer
-    let mut optimizer = adam::Adam::new(initial_params.len(), learning_rate);
+    let mut optimizer = adam::Adam::with_params(initial_params.len(), adam_params);
 
     let mut obj_history = Vec::new();
 
@@ -209,7 +212,7 @@ pub fn fit_asm_to_heatmap(
             best_params = shape_params.clone();
         }
 
-        if termination.should_stop(objective) {
+        if stopper.should_stop(objective) {
             log::info!(
                 "Early stopping at iteration {} with objective {}",
                 optimizer.timestep(),

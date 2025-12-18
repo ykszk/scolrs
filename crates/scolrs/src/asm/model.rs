@@ -21,7 +21,7 @@ pub enum ModelError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum ModeConfig {
     N(usize),
     Variance(f64),

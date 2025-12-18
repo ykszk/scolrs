@@ -1,7 +1,31 @@
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use serde::{Deserialize, Serialize};
 
-/// Adam (Adaptive Moment Estimation) optimizer with early termination
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdamParams {
+    pub learning_rate: f64,
+    pub beta1: f64,
+    pub beta2: f64,
+    pub epsilon: f64,
+}
+
+impl Default for AdamParams {
+    fn default() -> Self {
+        Self::with_learning_rate(0.1)
+    }
+}
+impl AdamParams {
+    pub fn with_learning_rate(learning_rate: f64) -> Self {
+        Self {
+            learning_rate,
+            beta1: 0.9,
+            beta2: 0.999,
+            epsilon: 1e-8,
+        }
+    }
+}
+
+/// Adam (Adaptive Moment Estimation) optimizer
 #[derive(Debug, Clone)]
 pub struct Adam {
     learning_rate: f64,
@@ -16,22 +40,16 @@ pub struct Adam {
 impl Adam {
     /// Create a new Adam optimizer
     pub fn new(param_count: usize, learning_rate: f64) -> Self {
-        Self::with_params(param_count, learning_rate, 0.9, 0.999, 1e-8)
+        Self::with_params(param_count, AdamParams::with_learning_rate(learning_rate))
     }
 
     /// Create Adam optimizer with custom hyperparameters
-    pub fn with_params(
-        param_count: usize,
-        learning_rate: f64,
-        beta1: f64,
-        beta2: f64,
-        epsilon: f64,
-    ) -> Self {
+    pub fn with_params(param_count: usize, params: AdamParams) -> Self {
         Self {
-            learning_rate,
-            beta1,
-            beta2,
-            epsilon,
+            learning_rate: params.learning_rate,
+            beta1: params.beta1,
+            beta2: params.beta2,
+            epsilon: params.epsilon,
             t: 0,
             m: Array1::zeros(param_count),
             v: Array1::zeros(param_count),
@@ -99,6 +117,7 @@ impl Adam {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ObjectiveType {
     Minimize,
     Maximize,
@@ -111,9 +130,9 @@ pub struct NoImprovementConfig {
     pub objective: ObjectiveType,
 }
 
-/// Early termination criteria
+/// Stopping criteria
 #[derive(Debug, Clone)]
-pub enum TerminationCriterion {
+pub enum StoppingCriterion {
     /// Stop when loss is below threshold
     LossThreshold(f64),
     /// Stop when loss improvement over N iterations is below threshold
@@ -121,28 +140,28 @@ pub enum TerminationCriterion {
     /// Stop after maximum iterations
     MaxIterations(usize),
     /// Combine multiple criteria (stops when any is met)
-    Any(Vec<TerminationCriterion>),
+    Any(Vec<StoppingCriterion>),
     /// Combine multiple criteria (stops when all are met)
-    All(Vec<TerminationCriterion>),
+    All(Vec<StoppingCriterion>),
 }
 
-/// Early termination tracker
-pub struct EarlyTermination {
-    criterion: TerminationCriterion,
+/// Stopping tracker
+pub struct Stopper {
+    criterion: StoppingCriterion,
     best_loss: f64,
     iterations_without_improvement: usize,
     iteration: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EarlyTerminationConfig {
+pub struct StopperConfig {
     pub loss_threshold: Option<f64>,
     pub no_improvement: Option<NoImprovementConfig>,
     pub max_iterations: Option<usize>,
     pub all: bool,
 }
 
-impl Default for EarlyTerminationConfig {
+impl Default for StopperConfig {
     fn default() -> Self {
         Self {
             loss_threshold: None,
@@ -157,8 +176,8 @@ impl Default for EarlyTerminationConfig {
     }
 }
 
-impl EarlyTermination {
-    pub fn new(criterion: TerminationCriterion) -> Self {
+impl Stopper {
+    pub fn new(criterion: StoppingCriterion) -> Self {
         Self {
             criterion,
             best_loss: f64::INFINITY,
@@ -167,41 +186,41 @@ impl EarlyTermination {
         }
     }
 
-    pub fn from_config(config: EarlyTerminationConfig) -> Self {
+    pub fn from_config(config: StopperConfig) -> Self {
         let mut criteria = Vec::new();
 
         if let Some(threshold) = config.loss_threshold {
-            criteria.push(TerminationCriterion::LossThreshold(threshold));
+            criteria.push(StoppingCriterion::LossThreshold(threshold));
         }
 
         if let Some(no_improvement) = config.no_improvement {
-            criteria.push(TerminationCriterion::NoImprovement(no_improvement));
+            criteria.push(StoppingCriterion::NoImprovement(no_improvement));
         }
 
         if let Some(max_iter) = config.max_iterations {
-            criteria.push(TerminationCriterion::MaxIterations(max_iter));
+            criteria.push(StoppingCriterion::MaxIterations(max_iter));
         }
 
         let criterion = if config.all {
-            TerminationCriterion::All(criteria)
+            StoppingCriterion::All(criteria)
         } else {
-            TerminationCriterion::Any(criteria)
+            StoppingCriterion::Any(criteria)
         };
 
         Self::new(criterion)
     }
 
-    /// Check if training should terminate
+    /// Check if training should stop
     pub fn should_stop(&mut self, loss: f64) -> bool {
         self.iteration += 1;
         self.check_criterion(&self.criterion.clone(), loss)
     }
 
-    fn check_criterion(&mut self, criterion: &TerminationCriterion, loss: f64) -> bool {
+    fn check_criterion(&mut self, criterion: &StoppingCriterion, loss: f64) -> bool {
         match criterion {
-            TerminationCriterion::LossThreshold(threshold) => loss < *threshold,
+            StoppingCriterion::LossThreshold(threshold) => loss < *threshold,
 
-            TerminationCriterion::NoImprovement(NoImprovementConfig {
+            StoppingCriterion::NoImprovement(NoImprovementConfig {
                 patience,
                 min_delta,
                 objective,
@@ -221,13 +240,13 @@ impl EarlyTermination {
                 }
             }
 
-            TerminationCriterion::MaxIterations(max_iter) => self.iteration >= *max_iter,
+            StoppingCriterion::MaxIterations(max_iter) => self.iteration >= *max_iter,
 
-            TerminationCriterion::Any(criteria) => {
+            StoppingCriterion::Any(criteria) => {
                 criteria.iter().any(|c| self.check_criterion(c, loss))
             }
 
-            TerminationCriterion::All(criteria) => {
+            StoppingCriterion::All(criteria) => {
                 criteria.iter().all(|c| self.check_criterion(c, loss))
             }
         }

@@ -6,7 +6,7 @@ use labelme_rs::{LabelMeData, Shape};
 use ndarray_ndimage as ndi;
 use scolrs::asm::{
     self,
-    adam::{EarlyTermination, EarlyTerminationConfig},
+    adam::{Stopper, StopperConfig},
     fit::{fit_asm_to_heatmap, FitConfig},
     model::ActiveShapeModel,
 };
@@ -149,34 +149,26 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
     asm.global_transform(&tr_asm_to_ref);
 
-    let mode_config = if let Some(variance) = args.pc_mode.variance {
-        asm::model::ModeConfig::Variance(variance)
-    } else {
-        asm::model::ModeConfig::N(args.pc_mode.n_mode)
-    };
-    let n_mode = asm.calculate_mode(mode_config);
+    let mut config_builder =
+        config::Config::builder().add_source(config::Config::try_from(&AsmConfig::default())?);
+    if let Some(config_path) = args.config {
+        log::debug!("Loading ASM fitting configuration from {:?}", config_path);
+        config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
+    }
+    let config_builder = add_env_config(config_builder).build()?;
+
+    let asm_config: AsmConfig = config_builder.try_deserialize()?;
+    log::debug!("ASM fitting configuration: {:?}", asm_config);
+
+    let n_mode = asm.calculate_mode(asm_config.mode);
 
     let mut initial_params = Array1::zeros(n_mode);
-    if args.sigmas.is_empty() {
+    if asm_config.sigmas.is_empty() {
         unreachable!("At least one sigma value must be provided for heatmap smoothing.")
     };
     let mut histories = Vec::new();
-    let termination_config = asm::adam::EarlyTerminationConfig {
-        loss_threshold: None,
-        no_improvement: Some(asm::adam::NoImprovementConfig {
-            patience: args.patience,
-            min_delta: 0.0,
-            objective: asm::adam::ObjectiveType::Minimize,
-        }),
-        max_iterations: Some(args.max_iterations),
-        all: false,
-    };
-    let fit_config = FitConfig {
-        lambda: args.lambda,
-        learning_rate: args.learning_rate,
-    };
-    for sigma in args.sigmas {
-        let mut termination = EarlyTermination::from_config(termination_config.clone());
+    for sigma in asm_config.sigmas {
+        let mut stopper = Stopper::from_config(asm_config.stopper.clone());
         log::info!("Fitting ASM with heatmap smoothing sigma = {}", sigma);
         let smoothed_heatmaps = if sigma > 0.0 {
             let smoothed = smooth_heatmaps(&heatmaps, sigma);
@@ -188,9 +180,9 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         let (fitted_params, obj_history) = fit_asm_to_heatmap(
             &asm,
             initial_params.view(),
-            &mut termination,
+            &mut stopper,
             smoothed_heatmaps.view(),
-            fit_config.clone(),
+            asm_config.fit.clone(),
         );
         log::info!(
             "Fitting with sigma {} completed in {} iterations.",
@@ -298,7 +290,7 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AsmConfig {
     pub fit: FitConfig,
-    pub termination: EarlyTerminationConfig,
+    pub stopper: StopperConfig,
     pub sigmas: Vec<f64>,
     pub mode: asm::model::ModeConfig,
 }
@@ -309,17 +301,39 @@ impl Default for AsmConfig {
         Self {
             sigmas,
             fit: FitConfig::default(),
-            termination: EarlyTerminationConfig::default(),
+            stopper: StopperConfig::default(),
             mode: asm::model::ModeConfig::default(),
         }
     }
 }
 
+fn add_env_config(
+    builder: config::ConfigBuilder<config::builder::DefaultState>,
+) -> config::ConfigBuilder<config::builder::DefaultState> {
+    builder.add_source(
+        config::Environment::with_prefix("ASM")
+            .separator("__")
+            .list_separator(",")
+            .try_parsing(true),
+    )
+}
+
 fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {
-    let config = AsmConfig::default();
+    let mut config_builder =
+        config::Config::builder().add_source(config::Config::try_from(&AsmConfig::default())?);
+    if let Some(config_path) = args.config {
+        log::debug!("Configuration from {:?}", config_path);
+        config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
+    }
+    if args.env {
+        log::debug!("Configuration from environment variables with prefix 'ASM'");
+        config_builder = add_env_config(config_builder);
+    }
+    let config_builder = config_builder.build()?;
+    let asm_config: AsmConfig = config_builder.try_deserialize()?;
     let output_file = std::fs::File::create(&args.output)
         .with_context(|| format!("Creating configuration file {:?}", args.output))?;
-    let toml_str = toml::to_string_pretty(&config)?;
+    let toml_str = toml::to_string_pretty(&asm_config)?;
     std::io::Write::write_all(
         &mut std::io::BufWriter::new(output_file),
         toml_str.as_bytes(),

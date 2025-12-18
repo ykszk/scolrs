@@ -514,6 +514,9 @@ pub struct AsmFitArgs {
     /// Key in the npz file for the heatmap
     #[clap(long, default_value = "heatmaps.npy")]
     pub key: String,
+    /// Channel order in the heatmap npz file
+    #[clap(long, default_value = "last")]
+    pub channel_order: ChannelOrder,
     /// Labelme point data containing reference points
     /// Reference points have label "Reference-{index}" where index is 0-based point index
     #[clap(name="LM", value_hint = ValueHint::FilePath)]
@@ -521,27 +524,9 @@ pub struct AsmFitArgs {
     /// Output Labelme json with fitted points
     #[clap(flatten)]
     pub output: AsmOutput,
-    /// Number of modes to use
-    #[clap(flatten)]
-    pub pc_mode: PCMode,
-    /// Lambda for regularization
-    #[clap(long, default_value_t = 0.01)]
-    pub lambda: f64,
-    /// Learning rate for Adam optimizer
-    #[clap(long, default_value_t = 0.1)]
-    pub learning_rate: f64,
-    /// Maximum number of iterations
-    #[clap(long, default_value_t = 1000)]
-    pub max_iterations: usize,
-    /// Patience for early stopping
-    #[clap(long, default_value_t = 8)]
-    pub patience: usize,
-    /// Channel order in the heatmap npz file
-    #[clap(long, default_value = "last")]
-    pub channel_order: ChannelOrder,
-    /// Sigma for gaussian smoothing of heatmaps
-    #[clap(long, value_delimiter = ',', default_value = "1.0")]
-    pub sigmas: Vec<f64>,
+    /// Config file in toml. Use `asm config` command to generate a template
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -577,4 +562,10 @@ pub struct AsmConfigArgs {
     /// Output configuration file in toml
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
+    /// Load (partial) configuration from file
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
+    pub config: Option<PathBuf>,
+    /// Load environment variables for configuration
+    #[clap(short, long)]
+    pub env: bool,
 }
