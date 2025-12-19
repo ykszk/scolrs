@@ -289,7 +289,10 @@ pub fn create_lm(
             20 => {
                 lm_data.flags.insert("L6".to_string(), true);
             }
-            _ => log::warn!("Unexpected TL point count: {}", tl_count),
+            _ => {
+                log::warn!("Unexpected TL point count: {}", tl_count);
+                lm_data.flags.insert("L?".to_string(), true);
+            }
         };
     }
 
@@ -695,11 +698,11 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let mut cp = CoronalPointsAndCurve::try_from(lm_data.clone())?;
             let crop_adjusted_cp = CoronalPointsAndCurve::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
-            *cp.coronal_points.get_confidence_mut() = Some(
-                crop_adjusted_cp
-                    .coronal_points
-                    .extract_point_confidence(ch_last_output.view()),
-            );
+            let confidence = crop_adjusted_cp
+                .coronal_points
+                .extract_point_confidence(ch_last_output.view());
+            log::debug!("Extracted confidence: {:?}", confidence);
+            *cp.coronal_points.get_confidence_mut() = Some(confidence);
             let lm_data_with_image: LabelMeDataWImage = LabelMeDataWImage::new(lm_data, image);
             create_coronal_svg(cp, lm_data_with_image, overlays)
         }
@@ -708,8 +711,9 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let mut cp: scolrs::SagittalPoints = scolrs::SagittalPoints::try_from(lm_data.clone())?;
             let crop_adjusted_cp = scolrs::SagittalPoints::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
-            *cp.get_confidence_mut() =
-                Some(crop_adjusted_cp.extract_point_confidence(ch_last_output.view()));
+            let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
+            log::debug!("Extracted confidence: {:?}", confidence);
+            *cp.get_confidence_mut() = Some(confidence);
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_sagittal_svg(cp, lm_data_with_image, overlays)
         }

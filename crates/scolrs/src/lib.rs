@@ -2226,6 +2226,10 @@ impl<S: Data<Elem = f64>> From<Corners<S>> for Centroids {
 
 impl C7TLS {
     pub fn check_corner_counts(corners: &[Array2<f64>]) -> Result<(), ScolError> {
+        let tl_count = corners[0].shape()[0];
+        if !(18..=20).contains(&tl_count) {
+            return Err(ScolError::InvalidPointCount("TL".into(), tl_count));
+        }
         if corners[0].shape()[0] != corners[1].shape()[0] {
             return Err(ScolError::InvalidPointCombo(
                 "TL".into(),
