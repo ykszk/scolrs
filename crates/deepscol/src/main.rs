@@ -3,8 +3,8 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use deepscol::output3_to_heatmap;
 use image::GenericImageView;
+use scolrs::draw::output3_to_heatmap;
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
@@ -173,7 +173,7 @@ fn main() -> Result<()> {
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
         } else {
-            let heatmap = output3_to_heatmap(&output3, input_image_wh);
+            let heatmap = output3_to_heatmap(output3.view(), input_image_wh);
             heatmap
                 .save(output_path)
                 .expect("Failed to save output image");
@@ -227,7 +227,7 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let heatmap = output3_to_heatmap(&output3, input_image_wh);
+        let heatmap = output3_to_heatmap(output3.view(), input_image_wh);
         log::debug!("Heatmap image shape: {:?}", heatmap.dimensions());
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,

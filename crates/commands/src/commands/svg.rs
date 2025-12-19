@@ -12,7 +12,7 @@ use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use log::debug;
 
 use rayon::prelude::*;
-use scolrs::draw::{wrap_in_html, DrawArguments};
+use scolrs::draw::{wrap_in_html, DrawArguments, ImageOverlay};
 use scolrs::head_neck::draw_neck;
 use scolrs::{
     draw::{
@@ -122,7 +122,8 @@ fn process_one<T, S: FsWrite>(
     point_with_image: PointDataWithImage<T>,
     draws: &[T::Draw],
     hide: &[T::Draw],
-    output: &std::path::Path,
+    heatmap_path: Option<&Path>,
+    output: &Path,
     mut writer: S,
 ) -> Result<()>
 where
@@ -149,6 +150,41 @@ where
             }
         });
 
+    let overlays = if let Some(heatmap_path) = heatmap_path {
+        // let overlay_npz = scolrs::draw::load_heatmap_npz(overlay_path)?;
+        let mut npz = ndarray_npz::NpzReader::new(
+            std::fs::File::open(heatmap_path)
+                .with_context(|| format!("Opening {:?}", heatmap_path))?,
+        )?;
+        let heatmaps: ndarray::Array3<f64> = npz
+            .by_name("heatmaps.npy")
+            .with_context(|| format!("Reading array with key '{}' from npz", "heatmaps"))?;
+        log::debug!(
+            "Loaded heatmaps with shape {:?} from {:?}",
+            heatmaps.dim(),
+            heatmap_path
+        );
+        // channel last to channel first
+        let heatmaps_f32 = heatmaps.permuted_axes((2, 0, 1)).mapv(|x| x as f32);
+        let input_image_wh = (
+            point_with_image.data_image.image.width(),
+            point_with_image.data_image.image.height(),
+        );
+        let heatmap = scolrs::draw::output3_to_heatmap(heatmaps_f32.view(), input_image_wh);
+        let overlays = vec![ImageOverlay::new_with_image(
+            "Heatmap".to_string(),
+            "Heatmap".to_string(),
+            Some(
+                "Red: Top left and top right. Green: Bottom left and bottom right. Blue: Other points"
+                    .to_string(),
+            ),
+            heatmap,
+        )];
+        overlays
+    } else {
+        Vec::new()
+    };
+
     let draw_args = DrawArguments {
         image: point_with_image.data_image.image,
         data: point_with_image.data,
@@ -158,7 +194,7 @@ where
         palettes: svg_common.palettes,
         draw: draws,
         hide,
-        overlays: Default::default(),
+        overlays,
     };
 
     let document = T::draw(draw_args)?;
@@ -267,7 +303,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
             for group in svg_sub_coronal_args.hide_group {
                 hide.append(&mut (&group).into());
             }
-            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
+            process_one(
+                svg_common,
+                data,
+                &draws,
+                &hide,
+                args.heatmap.as_deref(),
+                &args.output,
+                writer,
+            )?;
         }
         SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
             let data: PointDataWithImage<SagittalPoints> = load_native_or_lableme_json_file(
@@ -279,7 +323,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(SagittalDraw::all);
             let hide = svg_sub_sagittall_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
+            process_one(
+                svg_common,
+                data,
+                &draws,
+                &hide,
+                args.heatmap.as_deref(),
+                &args.output,
+                writer,
+            )?;
         }
         SvgSubCommands::Neck(svg_sub_neck_args) => {
             let data: PointDataWithImage<LateralPoints> = load_native_or_lableme_json_file(
@@ -291,7 +343,15 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(NeckLateralDraw::all);
             let hide = svg_sub_neck_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
+            process_one(
+                svg_common,
+                data,
+                &draws,
+                &hide,
+                args.heatmap.as_deref(),
+                &args.output,
+                writer,
+            )?;
         }
         SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
             let data: LabelMeOptionalDetectron2 = if args.input.as_os_str() == "-" {
@@ -308,7 +368,7 @@ pub fn cmd(args: SvgArgs) -> Result<()> {
                 .measures
                 .unwrap_or_else(ImplantDraw::all);
             let hide = svg_sub_implant_args.hide;
-            process_one(svg_common, data, &draws, &hide, &args.output, writer)?;
+            process_one(svg_common, data, &draws, &hide, None, &args.output, writer)?;
         }
     };
     Ok(())
@@ -340,25 +400,20 @@ fn load_svg_common(args: SvgArgsCommon) -> Result<(ReadSvgArgCommon, SvgSubComma
         .size
         .map(|s| ResizeParam::try_from(s.as_str()))
         .transpose()?;
-    let label_colors = if let Some(filename) = args.label_colors {
-        ColorPalette::new(
+
+    let mut palettes = ColorPalettes::default();
+    if let Some(filename) = args.label_colors {
+        let label_colors = ColorPalette::new(
             labelme_rs::load_label_colors(&filename)
                 .with_context(|| format!("Load label color {:?}", filename))?,
-        )
-    } else {
-        ColorPalette::default()
+        );
+        palettes.label_colors = label_colors;
     };
-    let line_colors = if let Some(filename) = args.line_colors {
+    if let Some(filename) = args.line_colors {
         let reader = std::fs::File::open(&filename)
             .with_context(|| format!("Load line color {:?}", filename))?;
-        ColorPalette::new(scolrs::draw::load_line_colors(reader)?)
-    } else {
-        ColorPalette::default()
-    };
-
-    let palettes = ColorPalettes {
-        label_colors,
-        line_colors,
+        let line_colors = ColorPalette::new(scolrs::draw::load_line_colors(reader)?);
+        palettes.line_colors = line_colors;
     };
 
     Ok((
@@ -463,7 +518,15 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 }
 
                 let output = derive_svg_output(filename);
-                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
+                process_one(
+                    svg_common.clone(),
+                    data,
+                    &draws,
+                    &hide,
+                    None,
+                    &output,
+                    writer,
+                )?;
             }
             SvgSubCommands::Sagittal(svg_sub_sagittall_args) => {
                 let (data, filename) =
@@ -474,7 +537,15 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 let hide = svg_sub_sagittall_args.hide;
 
                 let output = derive_svg_output(filename);
-                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
+                process_one(
+                    svg_common.clone(),
+                    data,
+                    &draws,
+                    &hide,
+                    None,
+                    &output,
+                    writer,
+                )?;
             }
             SvgSubCommands::Neck(svg_sub_neck_args) => {
                 let (data, filename) =
@@ -485,7 +556,15 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 let hide = svg_sub_neck_args.hide;
 
                 let output = derive_svg_output(filename);
-                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
+                process_one(
+                    svg_common.clone(),
+                    data,
+                    &draws,
+                    &hide,
+                    None,
+                    &output,
+                    writer,
+                )?;
             }
             SvgSubCommands::CoronalImplant(svg_sub_implant_args) => {
                 let data_line: LabelMeOptionalDetectron2Line = serde_json::from_str(line.as_str())?;
@@ -502,7 +581,15 @@ pub fn cmd_ndjson(args: SvgNdjsonArgs) -> Result<()> {
                 let hide = svg_sub_implant_args.hide;
 
                 let output = derive_svg_output(data_line.filename);
-                process_one(svg_common.clone(), data, &draws, &hide, &output, writer)?;
+                process_one(
+                    svg_common.clone(),
+                    data,
+                    &draws,
+                    &hide,
+                    None,
+                    &output,
+                    writer,
+                )?;
             }
         };
         Ok(())

@@ -177,6 +177,9 @@ pub struct SvgArgs {
     /// Output svg filename. Use `.html` suffix to output html. Specify '-' for stdout
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
+    /// Heatmap npz file for overlay
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub heatmap: Option<PathBuf>,
     #[clap(flatten)]
     pub svg_args: SvgArgsCommon,
 }

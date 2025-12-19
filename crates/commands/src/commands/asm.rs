@@ -161,6 +161,7 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     log::debug!("ASM fitting configuration: {:?}", asm_config);
 
     let n_mode = asm.calculate_mode(asm_config.mode);
+    log::info!("Using {} modes for fitting.", n_mode);
 
     let mut initial_params = Array1::zeros(n_mode);
     if asm_config.sigmas.is_empty() {

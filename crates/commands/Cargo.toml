@@ -16,7 +16,7 @@ gdcm = ["dicom", "labelme-rs/gdcm"]
 
 [dependencies]
 named_derive = { path = "../named_derive" }
-scolrs = { path = "../scolrs" }
+scolrs = { path = "../scolrs", features = ["webp"] }
 
 toml = "0.9.8"
 glob = "0.3.3"

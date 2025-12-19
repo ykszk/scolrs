@@ -6,11 +6,11 @@ use crate::{
     CORNER_LABELS,
 };
 use crate::{Curve, Spine, VERTEBRAL_LABELS};
-use labelme_rs::image::DynamicImage;
+use labelme_rs::image::{self, DynamicImage};
 use labelme_rs::ResizeParam;
 use log::{debug, warn};
 pub use named_derive::Named;
-use ndarray::{s, stack, Array2, ArrayBase, ArrayView1, ArrayView2, Axis, Ix1, Ix2};
+use ndarray::{s, stack, Array2, ArrayBase, ArrayView1, ArrayView2, Axis, Dim, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -1008,13 +1008,51 @@ pub trait CommonComponent: DrawComponent {
     }
 }
 
+pub trait AxisMax {
+    type D;
+    fn axis_max(&self, axis: Axis) -> ndarray::Array<f32, Dim<Self::D>>;
+}
+
+impl AxisMax for ndarray::ArrayView3<'_, f32> {
+    type D = [usize; 2];
+    fn axis_max(&self, axis: Axis) -> ndarray::Array<f32, Dim<Self::D>> {
+        self.fold_axis(axis, 0.0f32, |acc, &x| acc.max(x))
+    }
+}
+
+pub fn array3_to_rgba_image(arr3: ndarray::ArrayView3<f32>) -> DynamicImage {
+    let r = arr3.slice(s![0..2, .., ..]).axis_max(Axis(0)); // TL and TR
+    let g = arr3.slice(s![2..4, .., ..]).axis_max(Axis(0)); // BL and BR
+    let b = arr3.slice(s![4..9, .., ..]).axis_max(Axis(0)); // Other points
+    let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
+        let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
+        let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
+        let b_val = (b[[y as usize, x as usize]] * 255.0) as u8;
+        let a_val = r_val.max(g_val).max(b_val);
+        image::Rgba([r_val, g_val, b_val, a_val])
+    });
+    DynamicImage::ImageRgba8(heatmap)
+}
+
+/// Convert output3 to heatmap image, adjusting width according to input image aspect ratio
+/// input array is in channel-first format
+pub fn output3_to_heatmap(
+    output3: ndarray::ArrayView3<f32>,
+    input_image_wh: (u32, u32),
+) -> DynamicImage {
+    let aspect_ratio = input_image_wh.0 as f32 / input_image_wh.1 as f32;
+    let heatmap_width = (output3.shape()[1] as f32 * aspect_ratio).round() as usize;
+    let output3 = output3.slice(s![.., .., ..heatmap_width]);
+    array3_to_rgba_image(output3)
+}
+
 pub struct ImageOverlay {
     id: String,
     label: String,
     description: Option<String>,
     image: DynamicImage,
     x_y: (f64, f64),
-    width_height: (f64, f64),
+    width_height: Option<(f64, f64)>,
 }
 
 impl ImageOverlay {
@@ -1026,6 +1064,7 @@ impl ImageOverlay {
         x_y: (f64, f64),
         width_height: (f64, f64),
     ) -> Self {
+        let width_height = Some(width_height);
         Self {
             id,
             label,
@@ -1036,15 +1075,36 @@ impl ImageOverlay {
         }
     }
 
-    fn draw_image(&self, _painter: &Painter) -> Result<element::Group, DrawError> {
+    pub fn new_with_image(
+        id: String,
+        label: String,
+        description: Option<String>,
+        image: DynamicImage,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            description,
+            image,
+            x_y: (0.0, 0.0),
+            width_height: None,
+        }
+    }
+
+    fn draw_image(&self, painter: &Painter) -> Result<element::Group, DrawError> {
         let group = self.default_group();
 
         let base64_image_data = encode_image(&self.image).map_err(DrawError::LabelMeDataError)?;
+        let width_height = if let Some(wh) = self.width_height {
+            wh
+        } else {
+            (painter.size.0 as f64, painter.size.1 as f64)
+        };
         let layer = element::Image::new()
             .set("x", self.x_y.0)
             .set("y", self.x_y.1)
-            .set("width", self.width_height.0)
-            .set("height", self.width_height.1)
+            .set("width", width_height.0)
+            .set("height", width_height.1)
             .set("xlink:href", base64_image_data);
         Ok(group.add(layer))
     }
