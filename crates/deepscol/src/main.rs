@@ -2,9 +2,10 @@ use std::path::PathBuf;
 use std::vec;
 
 use anyhow::{Context, Result};
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 use image::GenericImageView;
-use scolrs::draw::output3_to_heatmap;
+use ndarray::Axis;
+use scolrs::{asm::model::ActiveShapeModel, draw::output3_to_heatmap};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
@@ -29,9 +30,19 @@ struct OutputGroup {
     html: Option<Option<PathBuf>>,
 }
 
+#[derive(Args, Debug, Clone, Default)]
+pub struct AsmArgs {
+    /// Model in json
+    #[clap(long)]
+    asm: PathBuf,
+    /// Config file for ASM fitting
+    #[clap(long)]
+    config: PathBuf,
+}
+
 #[derive(Parser)]
 #[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
-struct Args {
+struct CmdArgs {
     /// Path to the input image file
     input_image: PathBuf,
     /// Text file of labels for the points in LabelMe format
@@ -43,6 +54,9 @@ struct Args {
     /// Direction of the image
     #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
     direction: Direction,
+    /// Active shape model file
+    #[clap(flatten)]
+    asm: Option<AsmArgs>,
     #[command(flatten)]
     output: OutputGroup,
 }
@@ -50,7 +64,7 @@ struct Args {
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let args = Args::parse();
+    let args = CmdArgs::parse();
     let model_path = &args.model;
     let image_path = &args.input_image;
     // ort::set_api(ort_tract::api());
@@ -186,7 +200,7 @@ fn main() -> Result<()> {
         .to_string();
     let thresh = 0.1;
 
-    let points = deepscol::extract_points(&output3, thresh).unwrap();
+    let mut points = deepscol::extract_points(&output3, thresh).unwrap();
     // Save the points to LabelMe format
     let mut lm_data = deepscol::create_lm(
         &deepscol::LABELS,
@@ -196,6 +210,62 @@ fn main() -> Result<()> {
         lm_scale,
         points.as_slice(),
     );
+
+    // check spine point counts
+    if let Err(e) = scolrs::C7TLS::check_counts(&lm_data) {
+        if let Some(asm_args) = &args.asm {
+            log::warn!(
+                "Point counts are invalid: {}. Attempting to fit ASM model.",
+                e
+            );
+            let reader = std::fs::File::open(&asm_args.asm)
+                .with_context(|| format!("Opening ASM model file {:?}", asm_args.asm))?;
+            let asm: ActiveShapeModel = serde_json::from_reader(reader)
+                .with_context(|| format!("Loading ASM model from {:?}", asm_args.asm))?;
+            let config_builder = config::Config::builder()
+                .add_source(config::Config::try_from(&scolrs::asm::AsmConfig::default())?)
+                .add_source(config::File::from(asm_args.config.as_path()))
+                .build()?;
+            let asm_config: scolrs::asm::AsmConfig = config_builder.try_deserialize()?;
+            log::debug!("ASM fitting configuration: {:?}", asm_config);
+
+            let heatmap_lm = deepscol::create_lm(
+                &deepscol::LABELS,
+                abs_path.clone(),
+                output3.shape()[2] as u32,
+                output3.shape()[1] as u32,
+                1.0,
+                points.as_slice(),
+            );
+
+            let output3_channel_last = output3.mapv(|x| x as f64).permuted_axes((1, 2, 0));
+            let (mut fitted_lm_data, _histories, _optimal_params, fitted_shape) =
+                scolrs::asm::apply_asm(asm, asm_config, output3_channel_last.view(), &heatmap_lm)?;
+            let fitted_points = fitted_shape
+                .iter()
+                .map(|arr2| {
+                    arr2.axis_iter(Axis(0))
+                        .map(|pt| (pt[0] as f32, pt[1] as f32))
+                        .collect::<Vec<(f32, f32)>>()
+                })
+                .collect::<Vec<Vec<(f32, f32)>>>();
+            for (i, fitted_shape) in fitted_points.into_iter().enumerate() {
+                points[i] = fitted_shape;
+            }
+            log::info!("Fitted points from ASM: {:?}", points);
+            fitted_lm_data.scale(lm_scale);
+            fitted_lm_data.imageWidth = original_image_width as usize;
+            fitted_lm_data.imageHeight = original_image_height as usize;
+            fitted_lm_data.version = scolrs::VERSION.to_string();
+            lm_data = fitted_lm_data;
+            log::info!("ASM model fitting completed.");
+        } else {
+            log::error!(
+                "Point counts are invalid: {}. No ASM model provided, skipping ASM fitting.",
+                e
+            );
+        }
+    }
 
     if let Some(crop_min_xy) = crop_min_xy {
         // Update the points to be relative to the cropped image

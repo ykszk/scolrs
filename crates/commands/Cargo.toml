@@ -24,8 +24,6 @@ clap_complete = "4.5.60"
 tar = "0.4"
 rayon = "1.11.0"
 ndarray-npz = { version = "0.4.2", default-features = false, features = ["compressed"]}
-ndarray-ndimage = "0.5.0"
-config = { version = "0.15.19", default-features = false, features = ["toml"] }
 
 anyhow.workspace = true
 clap.workspace = true
@@ -41,6 +39,7 @@ thiserror.workspace = true
 scraper.workspace = true
 tera.workspace = true
 serde_json.workspace = true
+config.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0.16"

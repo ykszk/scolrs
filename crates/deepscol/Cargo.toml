@@ -28,8 +28,9 @@ wasm = ["ort/alternative-backend","wasm-logger", "getrandom", "console_error_pan
 
 [dependencies]
 anyhow.workspace = true
-burn = "0.18.0"
+# burn = "0.18.0"
 clap = { workspace = true, features = ["derive"] }
+config.workspace = true
 console_error_panic_hook = { version = "0.1.7", optional = true }
 dicom-object = "0.8.1"
 dicom-pixeldata = { version = "0.8.1", default-features = false, features = ["native"] }

@@ -1362,10 +1362,7 @@ impl ConfidenceComponent for Lstv<'_> {
     fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // reduce confidence from all corner points
         let confidence = self.0.confidences.as_ref()?;
-        let confidence_1d = confidence
-            .view()
-            .into_shape_with_order(confidence.len())
-            .unwrap();
+        let confidence_1d = confidence.to_shape(confidence.len()).unwrap();
         // exclude last two elements (sacral bl and sacrum br)
         let conf = reduce_confidence(
             confidence_1d.slice(s![..(confidence.len() - 2)]),
