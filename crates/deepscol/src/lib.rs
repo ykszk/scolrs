@@ -244,10 +244,10 @@ pub fn create_lm(
     image_path: String,
     image_width: u32,
     image_height: u32,
-    scale: f64,
     points: &[Vec<(f32, f32)>],
 ) -> labelme_rs::LabelMeData {
     let mut lm_data = labelme_rs::LabelMeData {
+        version: scolrs::VERSION.to_string(),
         imagePath: image_path,
         imageHeight: image_height as usize,
         imageWidth: image_width as usize,
@@ -272,9 +272,6 @@ pub fn create_lm(
             lm_data.shapes.push(shape);
         }
     }
-    lm_data.scale(scale);
-    lm_data.imageWidth = image_width as usize;
-    lm_data.imageHeight = image_height as usize;
     // set flag L4, L5, or L6
     let tl_label_index = labels.iter().position(|&l| l == "TL");
     if let Some(tl_index) = tl_label_index {
@@ -295,6 +292,22 @@ pub fn create_lm(
             }
         };
     }
+
+    lm_data
+}
+
+pub fn create_scaled_lm(
+    labels: &[&str],
+    image_path: String,
+    image_width: u32,
+    image_height: u32,
+    scale: f64,
+    points: &[Vec<(f32, f32)>],
+) -> labelme_rs::LabelMeData {
+    let mut lm_data = create_lm(labels, image_path, image_width, image_height, points);
+    lm_data.scale(scale);
+    lm_data.imageWidth = image_width as usize;
+    lm_data.imageHeight = image_height as usize;
 
     lm_data
 }
@@ -395,7 +408,7 @@ pub fn calculate_crop_parameters(
     original_image_height: u32,
     original_image_width: u32,
     model_input_height: u32,
-) -> Option<(usize, usize, usize, usize)> {
+) -> Option<CroppingParams> {
     let heatmap2 = output3.view().axis_max(Axis(0));
     let heatmap2_bin = heatmap2.mapv(|x| x > thresh);
     let bbox = bounding_box(&heatmap2_bin);
@@ -415,7 +428,12 @@ pub fn calculate_crop_parameters(
             let min_y = (min_y - margin_y).max(0.0) as usize;
             let max_x = (max_x + margin_x).min(original_image_width as f64) as usize;
             let max_y = (max_y + margin_y).min(original_image_height as f64) as usize;
-            return Some((min_x, min_y, max_x, max_y));
+            return Some(CroppingParams {
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            });
         }
     }
     None
@@ -588,11 +606,21 @@ pub fn calc_overlay_params(
     }
 }
 
-pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
-    let ResultHtmlArguments {
-        points,
+pub struct ResultHtmlLmArgs {
+    pub lm_data_w_image: LabelMeDataWImage,
+    pub model_input_height: u32,
+    pub metadata: ImageMetadata,
+    pub scan_direction: ScanDirection,
+    pub cropping_params: Option<CroppingParams>,
+    pub heatmap: DynamicImage,
+    pub model_output: Array3<f32>,
+    pub title: String,
+}
+
+pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyhow::Error> {
+    let ResultHtmlLmArgs {
+        lm_data_w_image,
         model_input_height,
-        image,
         metadata,
         scan_direction,
         cropping_params,
@@ -600,38 +628,11 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         model_output,
         title,
     } = args;
-    log::debug!("Extracted points: {:?}", points);
+    let lm_data = lm_data_w_image.data;
+    let image = lm_data_w_image.image;
+
     let original_image_width = image.width();
     let original_image_height = image.height();
-    let lm_scale = if let Some(cropping_params) = &cropping_params {
-        let crop_height = cropping_params.max_y - cropping_params.min_y;
-        log::debug!(
-            "Cropped image height: {}, original image height: {}",
-            crop_height,
-            original_image_height
-        );
-        crop_height as f64 / model_input_height as f64
-    } else {
-        original_image_height as f64 / model_input_height as f64
-    };
-    log::debug!("LM scale: {}", lm_scale);
-    let mut lm_data = create_lm(
-        &LABELS,
-        "".to_string(),
-        original_image_width,
-        original_image_height,
-        lm_scale,
-        points.as_slice(),
-    );
-    if let Some(crop_params) = &cropping_params {
-        log::debug!(
-            "Shifting LabelMeData by min_x: {}, min_y: {}",
-            crop_params.min_x,
-            crop_params.min_y
-        );
-        lm_data.shift(crop_params.min_x as f64, crop_params.min_y as f64);
-    }
-
     let (x_y, width_height) = calc_overlay_params(
         original_image_width,
         original_image_height,
@@ -651,6 +652,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         width_height,
     )];
 
+    // lm_data in heatmap space
     let crop_adjusted_lm_data = if let Some(cropping_params) = &cropping_params {
         // shift
         log::debug!(
@@ -681,7 +683,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
 
     if let Err(e) = scolrs::C7TLS::check_counts(&lm_data) {
         log::warn!(
-            "Not enough points for Spine falling back to heatmap display: {}",
+            "Incorrect number of points for Spine falling back to heatmap display: {}",
             e
         );
         let html = create_generic_svg(
@@ -701,7 +703,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let confidence = crop_adjusted_cp
                 .coronal_points
                 .extract_point_confidence(ch_last_output.view());
-            log::debug!("Extracted confidence: {:?}", confidence);
+            log::trace!("Extracted confidence: {:?}", confidence);
             *cp.coronal_points.get_confidence_mut() = Some(confidence);
             let lm_data_with_image: LabelMeDataWImage = LabelMeDataWImage::new(lm_data, image);
             create_coronal_svg(cp, lm_data_with_image, overlays)
@@ -712,7 +714,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             let crop_adjusted_cp = scolrs::SagittalPoints::try_from(crop_adjusted_lm_data)?;
             *cp.image_metadata_mut() = metadata;
             let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
-            log::debug!("Extracted confidence: {:?}", confidence);
+            log::trace!("Extracted confidence: {:?}", confidence);
             *cp.get_confidence_mut() = Some(confidence);
             let lm_data_with_image = LabelMeDataWImage::new(lm_data, image);
             create_sagittal_svg(cp, lm_data_with_image, overlays)
@@ -720,6 +722,63 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     }?;
     let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
     Ok(html)
+}
+
+pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
+    let ResultHtmlArguments {
+        points,
+        model_input_height,
+        image,
+        metadata,
+        scan_direction,
+        cropping_params,
+        heatmap,
+        model_output,
+        title,
+    } = args;
+    log::debug!("Extracted points: {:?}", points);
+    let original_image_width = image.width();
+    let original_image_height = image.height();
+    let lm_scale = if let Some(cropping_params) = &cropping_params {
+        let crop_height = cropping_params.max_y - cropping_params.min_y;
+        log::debug!(
+            "Cropped image height: {}, original image height: {}",
+            crop_height,
+            original_image_height
+        );
+        crop_height as f64 / model_input_height as f64
+    } else {
+        original_image_height as f64 / model_input_height as f64
+    };
+    log::debug!("LM scale: {}", lm_scale);
+    let mut lm_data = create_scaled_lm(
+        &LABELS,
+        "".to_string(),
+        original_image_width,
+        original_image_height,
+        lm_scale,
+        points.as_slice(),
+    );
+    if let Some(crop_params) = &cropping_params {
+        log::debug!(
+            "Shifting LabelMeData by min_x: {}, min_y: {}",
+            crop_params.min_x,
+            crop_params.min_y
+        );
+        lm_data.shift(crop_params.min_x as f64, crop_params.min_y as f64);
+    }
+    let lm_data_w_image = LabelMeDataWImage::new(lm_data, image);
+    let args = ResultHtmlLmArgs {
+        lm_data_w_image,
+        model_input_height,
+        metadata,
+        scan_direction,
+        cropping_params,
+        heatmap,
+        model_output,
+        title,
+    };
+    create_result_html_from_lm(args)
 }
 
 #[cfg(feature = "wasm")]
@@ -797,13 +856,7 @@ pub fn calculate_crop_parameters_wasm(
         original_image_height,
         original_image_width,
         tensor_dims.get_index(2),
-    )
-    .map(|(min_x, min_y, max_x, max_y)| CroppingParams {
-        min_x,
-        min_y,
-        max_x,
-        max_y,
-    });
+    );
     Ok(params)
 }
 
@@ -845,7 +898,7 @@ pub fn process_output(
     }
 
     // create rgb heatmap using output3
-    let heatmap = output3_to_heatmap(&output3, input_image_wh);
+    let heatmap = scolrs::draw::output3_to_heatmap(output3.view(), input_image_wh);
 
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);

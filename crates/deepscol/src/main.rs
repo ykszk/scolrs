@@ -3,7 +3,9 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, ValueEnum};
+use deepscol::CroppingParams;
 use image::GenericImageView;
+use labelme_rs::LabelMeDataWImage;
 use ndarray::Axis;
 use scolrs::{asm::model::ActiveShapeModel, draw::output3_to_heatmap};
 
@@ -130,7 +132,13 @@ fn main() -> Result<()> {
     let mut crop_min_xy = None;
     let mut input_image_wh = (original_image_width, original_image_height);
 
-    if let Some((min_x, min_y, max_x, max_y)) = cropping_params {
+    if let Some(cropping_params) = cropping_params {
+        let CroppingParams {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        } = cropping_params;
         log::info!(
             "cropping image to bounding box: ({}, {}, {}, {})",
             min_x,
@@ -202,7 +210,7 @@ fn main() -> Result<()> {
 
     let mut points = deepscol::extract_points(&output3, thresh).unwrap();
     // Save the points to LabelMe format
-    let mut lm_data = deepscol::create_lm(
+    let mut lm_data = deepscol::create_scaled_lm(
         &deepscol::LABELS,
         abs_path.clone(),
         original_image_width,
@@ -234,29 +242,33 @@ fn main() -> Result<()> {
                 abs_path.clone(),
                 output3.shape()[2] as u32,
                 output3.shape()[1] as u32,
-                1.0,
                 points.as_slice(),
             );
 
             let output3_channel_last = output3.mapv(|x| x as f64).permuted_axes((1, 2, 0));
-            let (mut fitted_lm_data, _histories, _optimal_params, fitted_shape) =
+            let (_fitted_lm_data, _histories, _optimal_params, fitted_shape) =
                 scolrs::asm::apply_asm(asm, asm_config, output3_channel_last.view(), &heatmap_lm)?;
             let fitted_points = fitted_shape
                 .iter()
                 .map(|arr2| {
                     arr2.axis_iter(Axis(0))
                         .map(|pt| (pt[0] as f32, pt[1] as f32))
-                        .collect::<Vec<(f32, f32)>>()
+                        .collect::<Vec<_>>()
                 })
-                .collect::<Vec<Vec<(f32, f32)>>>();
+                .collect::<Vec<_>>();
+            // update points with fitted points
             for (i, fitted_shape) in fitted_points.into_iter().enumerate() {
                 points[i] = fitted_shape;
             }
-            log::info!("Fitted points from ASM: {:?}", points);
-            fitted_lm_data.scale(lm_scale);
-            fitted_lm_data.imageWidth = original_image_width as usize;
-            fitted_lm_data.imageHeight = original_image_height as usize;
-            fitted_lm_data.version = scolrs::VERSION.to_string();
+            log::debug!("Fitted points from ASM: {:?}", points);
+            let fitted_lm_data = deepscol::create_scaled_lm(
+                &deepscol::LABELS,
+                abs_path,
+                original_image_width,
+                original_image_height,
+                lm_scale,
+                points.as_slice(),
+            );
             lm_data = fitted_lm_data;
             log::info!("ASM model fitting completed.");
         } else {
@@ -303,21 +315,14 @@ fn main() -> Result<()> {
             Direction::Coronal => deepscol::ScanDirection::Coronal,
             Direction::Sagittal => deepscol::ScanDirection::Sagittal,
         };
-        let cropping_params =
-            cropping_params.map(|(min_x, min_y, max_x, max_y)| deepscol::CroppingParams {
-                min_x,
-                min_y,
-                max_x,
-                max_y,
-            });
         let title = format!(
             "{} - Deepscol",
             image_path.file_stem().unwrap_or_default().to_string_lossy()
         );
-        let html_args = deepscol::ResultHtmlArguments {
-            points,
+        let lm_data_w_image = LabelMeDataWImage::new(lm_data, image);
+        let html_args = deepscol::ResultHtmlLmArgs {
+            lm_data_w_image,
             model_input_height,
-            image,
             metadata,
             scan_direction,
             cropping_params,
@@ -325,7 +330,7 @@ fn main() -> Result<()> {
             model_output: output3,
             title,
         };
-        let html = deepscol::create_result_html(html_args)?;
+        let html = deepscol::create_result_html_from_lm(html_args)?;
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }

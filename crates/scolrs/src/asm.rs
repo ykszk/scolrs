@@ -7,7 +7,7 @@ use crate::asm::{
     self,
     adam::{Stopper, StopperConfig},
     alignment::AlignmentError,
-    fit::{fit_asm_to_heatmap, FitConfig},
+    fit::{fit_asm_to_heatmap, FitConfig, History},
     model::{ActiveShapeModel, ModeConfig},
 };
 use labelme_rs::{LabelMeData, Shape};
@@ -151,20 +151,14 @@ pub enum AsmError {
     HeatmapError(usize, usize),
 }
 
+type AsmReturn = (LabelMeData, Vec<History>, Array1<f64>, Vec<Array2<f64>>);
+
 pub fn apply_asm(
     asm: ActiveShapeModel,
     asm_config: AsmConfig,
     heatmaps: ArrayView3<f64>,
     ref_lm: &LabelMeData,
-) -> Result<
-    (
-        LabelMeData,
-        Vec<asm::fit::History>,
-        Array1<f64>,
-        Vec<Array2<f64>>,
-    ),
-    AsmError,
-> {
+) -> Result<AsmReturn, AsmError> {
     let n_required_channels = asm.labels.len();
     let n_actual_channels = heatmaps.len_of(Axis(2));
     if n_actual_channels < n_required_channels {
