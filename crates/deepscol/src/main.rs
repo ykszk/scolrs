@@ -183,9 +183,9 @@ fn main() -> Result<()> {
         let output_path = output_path.unwrap_or_else(|| {
             let mut p = image_path.clone();
             log::debug!("Generating heatmap path from image path: {:?}", p);
-            p.set_extension("png");
+            p.set_extension(".npz");
             if p == *image_path {
-                p.set_extension("heatmap.png");
+                p.set_extension("heatmap.npz");
             }
             p
         });
@@ -203,10 +203,10 @@ fn main() -> Result<()> {
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
         } else {
-            let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh);
-            heatmap
-                .save(output_path)
-                .expect("Failed to save output image");
+            anyhow::bail!(
+                "Unsupported heatmap output format: {:?}",
+                output_path.extension()
+            );
         }
     }
 
