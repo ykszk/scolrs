@@ -658,12 +658,19 @@ pub struct OriginalIO {
 }
 
 impl OriginalIO {
-    pub fn new(output3: Array3<f32>, points: Vec<Vec<(f32, f32)>>) -> Self {
-        let lm_data = create_lm(
+    pub fn new(
+        original_image_height: u32,
+        input_height: u32,
+        output3: Array3<f32>,
+        points: Vec<Vec<(f32, f32)>>,
+    ) -> Self {
+        let lm_scale = original_image_height as f64 / input_height as f64;
+        let lm_data = create_scaled_lm(
             &LABELS,
             "".to_string(),
             output3.shape()[2] as u32,
             output3.shape()[1] as u32,
+            lm_scale,
             points.as_slice(),
         );
         Self { output3, lm_data }
@@ -686,7 +693,7 @@ impl CroppedIO {
         cropping_params: CroppingParams,
     ) -> Self {
         let CroppingParams {
-            min_x: _,
+            min_x,
             min_y,
             max_x: _,
             max_y,
@@ -701,7 +708,7 @@ impl CroppedIO {
             lm_scale,
             points.as_slice(),
         );
-        lm_data.shift(min_y as f64, min_y as f64);
+        lm_data.shift(min_x as f64, min_y as f64);
 
         let cropped_lm_data = create_lm(
             &LABELS,
@@ -750,10 +757,10 @@ impl ModelIO {
                 original.lm_data = lm_data;
             }
             ModelIO::Cropped(cropped) => {
-                cropped.cropped_lm_data = lm_data;
+                cropped.cropped_lm_data = lm_data.clone();
                 // scaled lm data as well
                 let CroppingParams {
-                    min_x: _,
+                    min_x,
                     min_y,
                     max_x: _,
                     max_y,
@@ -761,7 +768,9 @@ impl ModelIO {
                 let lm_scale = (max_y - min_y) as f64 / cropped.input_height as f64;
                 let image_width = cropped.cropped_lm_data.imageWidth;
                 let image_height = cropped.cropped_lm_data.imageHeight;
+                cropped.lm_data = lm_data;
                 cropped.lm_data.scale(lm_scale);
+                cropped.lm_data.shift(min_x as f64, min_y as f64);
                 cropped.lm_data.imageWidth = image_width;
                 cropped.lm_data.imageHeight = image_height;
             }
@@ -911,7 +920,12 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
             cropping_params,
         )))
     } else {
-        ModelIO::Original(Box::new(OriginalIO::new(model_output, points)))
+        ModelIO::Original(Box::new(OriginalIO::new(
+            image.height(),
+            model_input_height,
+            model_output,
+            points,
+        )))
     };
     let args = ResultHtmlLmArgs {
         model_io,

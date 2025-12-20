@@ -131,19 +131,13 @@ fn main() -> Result<()> {
     let point_thresh = 0.1;
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
+        log::info!("cropping image to bounding box: {:?}", cropping_params);
         let CroppingParams {
             min_x,
             min_y,
             max_x,
             max_y,
         } = cropping_params;
-        log::info!(
-            "cropping image to bounding box: ({}, {}, {}, {})",
-            min_x,
-            min_y,
-            max_x,
-            max_y
-        );
         // crop the image
         let cropped_image = image.crop_imm(
             min_x as u32,
@@ -177,7 +171,12 @@ fn main() -> Result<()> {
         log::info!("No cropping applied");
         let points = deepscol::extract_points(&output3, point_thresh)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
-        ModelIO::Original(Box::new(OriginalIO::new(output3, points)))
+        ModelIO::Original(Box::new(OriginalIO::new(
+            image.height(),
+            model_input_height,
+            output3,
+            points,
+        )))
     };
 
     if let Some(output_path) = args.output.heatmap {
