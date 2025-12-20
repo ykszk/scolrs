@@ -3,9 +3,8 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, ValueEnum};
-use deepscol::CroppingParams;
+use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use image::GenericImageView;
-use labelme_rs::LabelMeDataWImage;
 use ndarray::Axis;
 use scolrs::{asm::model::ActiveShapeModel, draw::output3_to_heatmap};
 
@@ -104,7 +103,6 @@ fn main() -> Result<()> {
     );
     log::debug!("Expected model input {:?}", session);
     let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
-    let mut lm_scale = original_image_height as f64 / model_input_height as f64;
     let arr4 = deepscol::to_model_input(image.clone(), model_input_height)?;
     let input = ort::value::Tensor::from_array(arr4)?;
     log::debug!(
@@ -123,16 +121,16 @@ fn main() -> Result<()> {
 
     let cropping_params = deepscol::calculate_crop_parameters(
         &output3,
-        0.05,
+        &deepscol::CropConrig::default(),
         original_image_height,
         original_image_width,
         model_input_height,
     );
 
-    let mut crop_min_xy = None;
     let mut input_image_wh = (original_image_width, original_image_height);
+    let point_thresh = 0.1;
 
-    if let Some(cropping_params) = cropping_params {
+    let mut model_io = if let Some(cropping_params) = cropping_params {
         let CroppingParams {
             min_x,
             min_y,
@@ -146,7 +144,6 @@ fn main() -> Result<()> {
             max_x,
             max_y
         );
-        crop_min_xy = Some((min_x, min_y));
         // crop the image
         let cropped_image = image.crop_imm(
             min_x as u32,
@@ -156,7 +153,6 @@ fn main() -> Result<()> {
         );
         input_image_wh = (cropped_image.width(), cropped_image.height());
         let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
-        lm_scale = (max_y - min_y) as f64 / model_input_height as f64;
 
         // update the input tensor
         let input3 = ort::value::Tensor::from_array(arr4)?;
@@ -168,9 +164,21 @@ fn main() -> Result<()> {
         log::info!("Model run completed on cropped input");
         // convert to ndarray
         output3 = deepscol::extract_array_from_output(outputs);
+        let points = deepscol::extract_points(&output3, point_thresh)
+            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
+
+        ModelIO::Cropped(Box::new(CroppedIO::new(
+            model_input_height,
+            output3,
+            points,
+            cropping_params,
+        )))
     } else {
         log::info!("No cropping applied");
-    }
+        let points = deepscol::extract_points(&output3, point_thresh)
+            .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
+        ModelIO::Original(Box::new(OriginalIO::new(output3, points)))
+    };
 
     if let Some(output_path) = args.output.heatmap {
         let output_path = output_path.unwrap_or_else(|| {
@@ -186,6 +194,7 @@ fn main() -> Result<()> {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
             //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
+            let output3 = model_io.output3();
             let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
                 (output3.shape()[0], output3.shape()[1], output3.shape()[2]),
                 output3.clone().into_raw_vec_and_offset().0,
@@ -195,32 +204,15 @@ fn main() -> Result<()> {
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
         } else {
-            let heatmap = output3_to_heatmap(output3.view(), input_image_wh);
+            let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh);
             heatmap
                 .save(output_path)
                 .expect("Failed to save output image");
         }
     }
-    let abs_path = image_path
-        .canonicalize()
-        .expect("Failed to get absolute path of image")
-        .to_string_lossy()
-        .to_string();
-    let thresh = 0.1;
-
-    let mut points = deepscol::extract_points(&output3, thresh).unwrap();
-    // Save the points to LabelMe format
-    let mut lm_data = deepscol::create_scaled_lm(
-        &deepscol::LABELS,
-        abs_path.clone(),
-        original_image_width,
-        original_image_height,
-        lm_scale,
-        points.as_slice(),
-    );
 
     // check spine point counts
-    if let Err(e) = scolrs::C7TLS::check_counts(&lm_data) {
+    if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
         if let Some(asm_args) = &args.asm {
             log::warn!(
                 "Point counts are invalid: {}. Attempting to fit ASM model.",
@@ -237,39 +229,34 @@ fn main() -> Result<()> {
             let asm_config: scolrs::asm::AsmConfig = config_builder.try_deserialize()?;
             log::debug!("ASM fitting configuration: {:?}", asm_config);
 
-            let heatmap_lm = deepscol::create_lm(
-                &deepscol::LABELS,
-                abs_path.clone(),
-                output3.shape()[2] as u32,
-                output3.shape()[1] as u32,
-                points.as_slice(),
-            );
+            let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();
 
-            let output3_channel_last = output3.mapv(|x| x as f64).permuted_axes((1, 2, 0));
+            let output3_channel_last = model_io
+                .output3()
+                .mapv(|x| x as f64)
+                .permuted_axes((1, 2, 0));
+            let asm_labels = asm.labels.clone();
             let (_fitted_lm_data, _histories, _optimal_params, fitted_shape) =
                 scolrs::asm::apply_asm(asm, asm_config, output3_channel_last.view(), &heatmap_lm)?;
-            let fitted_points = fitted_shape
-                .iter()
-                .map(|arr2| {
-                    arr2.axis_iter(Axis(0))
-                        .map(|pt| (pt[0] as f32, pt[1] as f32))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            // update points with fitted points
-            for (i, fitted_shape) in fitted_points.into_iter().enumerate() {
-                points[i] = fitted_shape;
+            // remove old points
+            for label in asm_labels.iter() {
+                heatmap_lm.shapes.retain(|shape| &shape.label != label);
             }
-            log::debug!("Fitted points from ASM: {:?}", points);
-            let fitted_lm_data = deepscol::create_scaled_lm(
-                &deepscol::LABELS,
-                abs_path,
-                original_image_width,
-                original_image_height,
-                lm_scale,
-                points.as_slice(),
-            );
-            lm_data = fitted_lm_data;
+            // update points with fitted points
+            for (label, points) in asm_labels.iter().zip(fitted_shape.iter()) {
+                for point in points.axis_iter(Axis(0)) {
+                    let shape = labelme_rs::Shape {
+                        label: label.clone(),
+                        points: vec![(point[0], point[1])],
+                        group_id: None,
+                        shape_type: "point".to_string(),
+                        flags: Default::default(),
+                    };
+                    heatmap_lm.shapes.push(shape);
+                }
+            }
+
+            model_io.set_heatmap_lm_data(heatmap_lm);
             log::info!("ASM model fitting completed.");
         } else {
             log::error!(
@@ -277,12 +264,6 @@ fn main() -> Result<()> {
                 e
             );
         }
-    }
-
-    if let Some(crop_min_xy) = crop_min_xy {
-        // Update the points to be relative to the cropped image
-        log::debug!("Shifting points by ({}, {})", crop_min_xy.0, crop_min_xy.1);
-        lm_data.shift(crop_min_xy.0 as f64, crop_min_xy.1 as f64);
     }
 
     if let Some(labelme_path) = args.output.labelme {
@@ -293,6 +274,13 @@ fn main() -> Result<()> {
             p
         });
         // Save the LabelMe data to a file
+        let mut lm_data = model_io.lm_data().to_owned();
+        let abs_path = image_path
+            .canonicalize()
+            .expect("Failed to get absolute path of image")
+            .to_string_lossy()
+            .to_string();
+        lm_data.imagePath = abs_path;
         let labelme_json = serde_json::to_string_pretty(&lm_data)?;
 
         std::fs::write(&labelme_path, labelme_json).with_context(|| {
@@ -309,7 +297,7 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let heatmap = output3_to_heatmap(output3.view(), input_image_wh);
+        let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh);
         log::debug!("Heatmap image shape: {:?}", heatmap.dimensions());
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,
@@ -319,15 +307,12 @@ fn main() -> Result<()> {
             "{} - Deepscol",
             image_path.file_stem().unwrap_or_default().to_string_lossy()
         );
-        let lm_data_w_image = LabelMeDataWImage::new(lm_data, image);
         let html_args = deepscol::ResultHtmlLmArgs {
-            lm_data_w_image,
-            model_input_height,
+            model_io,
+            image,
             metadata,
             scan_direction,
-            cropping_params,
             heatmap,
-            model_output: output3,
             title,
         };
         let html = deepscol::create_result_html_from_lm(html_args)?;
