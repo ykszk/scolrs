@@ -5,7 +5,7 @@ members = [
     "crates/pyscol",
     "crates/devsc",
     "crates/named_derive",
-    "crates/deepscol",
+    "crates/deepscol", "crates/deepscol_wasm",
 ]
 default-members = ["crates/scolrs", "crates/commands"]
 resolver = "2"

@@ -1,61 +1,56 @@
 [package]
-name = "deepscol"
+name = "deepscol_wasm"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 description.workspace = true
 
-
 [lib]
-name = "deepscol"
+crate-type = ["cdylib"]
+name = "deepscol_wasm"
 path = "src/lib.rs"
-
-[[bin]]
-name = "deepscol"
-path = "src/main.rs"
-
-[[bin]]
-name = "dev"
-path = "src/dev.rs"
-
-[features]
-default = ["std"]
-std = ["ort/std", "ort/download-binaries"]
-wasm = ["ort/alternative-backend"]
 
 [dependencies]
 scolrs = { path = "../scolrs", features = ['dicom'] }
-
-serde.workspace = true
-serde_json.workspace = true
+deepscol = { path = "../deepscol", default-features = false, features = [
+    "wasm",
+] }
 anyhow.workspace = true
-config.workspace = true
-env_logger.workspace = true
-clap.workspace = true
 labelme-rs.workspace = true
 log.workspace = true
 ndarray.workspace = true
+config.workspace = true
+env_logger.workspace = true
 ndarray-stats.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
+console_error_panic_hook = "0.1.7"
 dicom-object = "0.8.1"
 dicom-pixeldata = { version = "0.8.1", default-features = false, features = [
     "native",
 ] }
+# getrandom = { version = "0.3.3", default-features = false, features = [
+#     "wasm_js",
+# ] }
 image = { version = "0.25.6", default-features = false, features = [
     "jpeg",
     "png",
     "tiff",
 ] }
 imageproc = "0.25.0"
-ndarray-npz = { version = "0.4.2", default-features = false, features = [
-    "compressed",
-] }
-ort = { version = "2.0.0-rc.10", default-features = false, features = [
-    "ndarray",
-] }
-tracing-subscriber = "0.3.19"
+js-sys = "0.3.77"
+# ndarray-npz = { version = "0.4.2", default-features = false, features = [
+#     "compressed",
+# ] }
+# ort = { version = "2.0.0-rc.10", default-features = false, features = [
+#     "ndarray",
+#     "alternative-backend",
+# ] }
+# tracing-subscriber = "0.3.19"
 wasm-bindgen = "0.2.100"
+wasm-logger = "0.2.0"
 wee_alloc = "0.4.5"
 
 [build-dependencies]
