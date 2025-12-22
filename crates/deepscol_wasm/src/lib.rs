@@ -188,12 +188,18 @@ pub fn process_output(
             .map(|asm| (asm, asm_config.clone()))
             .collect();
         let output_f64 = model_io.output3().mapv(|x| x as f64);
-        let best_asm_lm_data = deepscol::apply_asms(&model_io, output_f64.view(), asms)
-            .map_err(|e| JsValue::from_str(&format!("Failed to apply ASM models: {}", e)))?;
-        if let Some(best_lm_data) = best_asm_lm_data {
-            model_io.set_heatmap_lm_data(best_lm_data);
-        } else {
-            log::warn!("No ASM model provided, skipping ASM fitting.");
+        let result_best_asm_lm_data = deepscol::apply_asms(&model_io, output_f64.view(), asms);
+        match result_best_asm_lm_data {
+            Err(e) => {
+                log::warn!("Failed to apply ASM models: {}", e);
+            }
+            Ok(best_asm_lm_data) => {
+                if let Some(best_lm_data) = best_asm_lm_data {
+                    model_io.set_heatmap_lm_data(best_lm_data);
+                } else {
+                    log::warn!("No ASM model provided, skipping ASM fitting.");
+                }
+            }
         }
     }
 
