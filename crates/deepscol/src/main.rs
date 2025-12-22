@@ -133,8 +133,6 @@ fn main() -> Result<()> {
 
     let mut input_image_wh = (original_image_width, original_image_height);
     let point_thresh = ds_config.thresh;
-    let points = deepscol::extract_points(&output3, point_thresh)
-        .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
         log::info!("cropping image to bounding box: {:?}", cropping_params);
@@ -164,6 +162,8 @@ fn main() -> Result<()> {
         log::info!("Model run completed on cropped input");
         // convert to ndarray
         output3 = deepscol::extract_array_from_output(outputs);
+        let points = deepscol::extract_points(&output3, point_thresh)
+            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
             (image.width(), image.height()),
@@ -173,6 +173,8 @@ fn main() -> Result<()> {
         )))
     } else {
         log::info!("No cropping applied");
+        let points = deepscol::extract_points(&output3, point_thresh)
+            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
             (image.width(), image.height()),
             output3,
