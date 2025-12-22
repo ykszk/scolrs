@@ -94,8 +94,8 @@ pub fn create_input_array(
         );
         image = cropped_image;
     }
-    let arr4 =
-        to_model_input(image, model_input_height).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let arr4 = to_model_input(&image, model_input_height)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Arr3 {
         arr: js_sys::Float32Array::from(arr4.as_slice().unwrap()),
         d1: arr4.shape()[1] as usize,
@@ -186,6 +186,7 @@ pub fn process_output(
         cropping_params,
         heatmap,
         model_output: output3,
+        size_config: deepscol::SizeConfig::default(),
         title: format!("{} - deepscol result", image_filename),
     };
     let html = create_result_html(result_args)

@@ -25,6 +25,41 @@ pub enum ScanDirection {
     Sagittal,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SizeConfig {
+    pub resize: (u32, u32),
+    pub svg_size: Option<(usize, usize)>,
+}
+
+impl Default for SizeConfig {
+    fn default() -> Self {
+        Self {
+            resize: (1200, 1200),
+            svg_size: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeepscolConfig {
+    /// Threshold for heatmap binarization for point extraction
+    pub thresh: f32,
+    /// SVG size and resize parameters
+    pub size_config: SizeConfig,
+
+    pub crop_config: CropConfig,
+}
+
+impl Default for DeepscolConfig {
+    fn default() -> Self {
+        Self {
+            thresh: 0.1,
+            size_config: SizeConfig::default(),
+            crop_config: CropConfig::default(),
+        }
+    }
+}
+
 /// Extract landmark point out of the input heatmaps
 pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec<Point>>, String> {
     let height = arr.shape()[1];
@@ -170,10 +205,10 @@ pub fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
 }
 
 pub fn to_model_input(
-    image: image::DynamicImage,
+    image: &image::DynamicImage,
     model_input_height: u32,
 ) -> Result<ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 4]>>, anyhow::Error> {
-    let image = resize_height(&image, model_input_height);
+    let image = resize_height(image, model_input_height);
     let image = Array3::from_shape_vec(
         (image.height() as usize, image.width() as usize, 1),
         image.to_luma8().into_raw(),
@@ -344,8 +379,6 @@ pub const MAX_POINT_COUNTS: [usize; 13] = [
     1,  // S-TR
 ];
 
-pub const RESIZE_PARAM_SIZE: u32 = 1200;
-
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
 /// Returns None if no true values are found.
 fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usize)> {
@@ -438,13 +471,14 @@ pub fn create_generic_svg(
     gp: GenericPoints,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
+    size_config: &SizeConfig,
 ) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(gp, lm_data_with_image);
     let draws = vec![GenericDraw::AllPoints];
 
     let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
-    let svg_size = None;
+    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
+    let svg_size = size_config.svg_size;
     let palettes = scolrs::draw::ColorPalettes::default();
     let hide = vec![GenericDraw::AllPoints];
     let draw_args = draw::GenericDrawArguments {
@@ -466,6 +500,7 @@ pub fn create_coronal_svg(
     cp: CoronalPointsAndCurve,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
+    size_config: &SizeConfig,
 ) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
@@ -475,8 +510,8 @@ pub fn create_coronal_svg(
         .collect::<Vec<_>>();
 
     let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
-    let svg_size = None;
+    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
+    let svg_size = size_config.svg_size;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
         CoronalDraw::AllPoints,
@@ -508,12 +543,13 @@ pub fn create_sagittal_svg(
     cp: SagittalPoints,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
+    size_config: &SizeConfig,
 ) -> Result<SVG, anyhow::Error> {
     let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
     let draws = scolrs::SagittalDraw::all();
     let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
-    let svg_size = None;
+    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
+    let svg_size = size_config.svg_size;
     let palettes = scolrs::draw::ColorPalettes::default();
     let non_hide = [
         SagittalDraw::AllPoints,
@@ -564,38 +600,8 @@ pub struct ResultHtmlArguments {
     pub cropping_params: Option<CroppingParams>,
     pub heatmap: DynamicImage,
     pub model_output: Array3<f32>,
+    pub size_config: SizeConfig,
     pub title: String,
-}
-
-#[deprecated(note = "Use ModelIO::overlay_params instead")]
-pub fn calc_overlay_params(
-    original_image_width: u32,
-    original_image_height: u32,
-    cropping_params: Option<(usize, usize, usize, usize)>,
-    ol_img_width_height: (u32, u32),
-    model_input_height: u32,
-) -> ((f64, f64), (f64, f64)) {
-    let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
-    let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
-    if let Some((min_x, min_y, _max_x, max_y)) = cropping_params {
-        let crop_height = max_y - min_y;
-        let crop_to_input_scale = model_input_height as f64 / crop_height as f64;
-        let scale = orig_svg_scale / crop_to_input_scale;
-        let x_y = (min_x as f64 * orig_svg_scale, min_y as f64 * orig_svg_scale);
-        let width_height = (
-            ol_img_width_height.0 as f64 * scale,
-            ol_img_width_height.1 as f64 * scale,
-        );
-        (x_y, width_height)
-    } else {
-        (
-            (0.0, 0.0),
-            (
-                original_image_width as f64 * orig_svg_scale,
-                original_image_height as f64 * orig_svg_scale,
-            ),
-        )
-    }
 }
 
 pub struct OriginalIO {
@@ -730,8 +736,10 @@ impl ModelIO {
         original_image_width: u32,
         original_image_height: u32,
         ol_img_width_height: (u32, u32),
+        size_config: &SizeConfig,
     ) -> ((f64, f64), (f64, f64)) {
-        let resize_param = labelme_rs::ResizeParam::Size(RESIZE_PARAM_SIZE, RESIZE_PARAM_SIZE);
+        let resize_param =
+            labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
         let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
 
         match self {
@@ -768,6 +776,7 @@ pub struct ResultHtmlLmArgs {
     pub metadata: ImageMetadata,
     pub scan_direction: ScanDirection,
     pub heatmap: DynamicImage,
+    pub size_config: SizeConfig,
     pub title: String,
 }
 
@@ -778,6 +787,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         metadata,
         scan_direction,
         heatmap,
+        size_config,
         title,
     } = args;
 
@@ -787,6 +797,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         original_image_width,
         original_image_height,
         (heatmap.width(), heatmap.height()),
+        &size_config,
     );
 
     let overlays = vec![ImageOverlay::new(
@@ -815,6 +826,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             gp,
             LabelMeDataWImage::new(model_io.lm_data().clone(), image),
             overlays,
+            &size_config,
         )?;
         let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title)?;
         return Ok(html);
@@ -832,7 +844,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             *cp.coronal_points.get_confidence_mut() = Some(confidence);
             let lm_data_with_image: LabelMeDataWImage =
                 LabelMeDataWImage::new(model_io.lm_data().clone(), image);
-            create_coronal_svg(cp, lm_data_with_image, overlays)
+            create_coronal_svg(cp, lm_data_with_image, overlays, &size_config)
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
@@ -844,7 +856,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             *cp.get_confidence_mut() = Some(confidence);
             let lm_data_with_image: LabelMeDataWImage =
                 LabelMeDataWImage::new(model_io.lm_data().clone(), image);
-            create_sagittal_svg(cp, lm_data_with_image, overlays)
+            create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)
         }
     }?;
     let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
@@ -860,6 +872,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         cropping_params,
         heatmap,
         model_output,
+        size_config,
         title,
     } = args;
     let model_io = if let Some(cropping_params) = cropping_params {
@@ -882,6 +895,7 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         metadata,
         scan_direction,
         heatmap,
+        size_config,
         title,
     };
     create_result_html_from_lm(args)

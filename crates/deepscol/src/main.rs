@@ -96,7 +96,7 @@ fn main() -> Result<()> {
     );
     log::debug!("Expected model input {:?}", session);
     let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
-    let arr4 = deepscol::to_model_input(image.clone(), model_input_height)?;
+    let arr4 = deepscol::to_model_input(&image, model_input_height)?;
     let input = ort::value::Tensor::from_array(arr4)?;
     log::debug!(
         "Image converted to tensor successfully with shape: {:?}",
@@ -112,16 +112,18 @@ fn main() -> Result<()> {
     // convert to ndarray
     let mut output3 = deepscol::extract_array_from_output(outputs);
 
+    let ds_config = deepscol::DeepscolConfig::default();
+
     let cropping_params = deepscol::calculate_crop_parameters(
         &output3,
-        &deepscol::CropConfig::default(),
+        &ds_config.crop_config,
         original_image_height,
         original_image_width,
         model_input_height,
     );
 
     let mut input_image_wh = (original_image_width, original_image_height);
-    let point_thresh = 0.1;
+    let point_thresh = ds_config.thresh;
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
         log::info!("cropping image to bounding box: {:?}", cropping_params);
@@ -139,7 +141,7 @@ fn main() -> Result<()> {
             (max_y - min_y) as u32,
         );
         input_image_wh = (cropped_image.width(), cropped_image.height());
-        let arr4 = deepscol::to_model_input(cropped_image, model_input_height)?;
+        let arr4 = deepscol::to_model_input(&cropped_image, model_input_height)?;
 
         // update the input tensor
         let input3 = ort::value::Tensor::from_array(arr4)?;
@@ -311,6 +313,7 @@ fn main() -> Result<()> {
             metadata,
             scan_direction,
             heatmap,
+            size_config: ds_config.size_config,
             title,
         };
         let html = deepscol::create_result_html_from_lm(html_args)?;
