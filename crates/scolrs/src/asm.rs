@@ -87,19 +87,69 @@ pub fn create_shapes_from_fitted_points(
 
 fn smooth_heatmaps(heatmaps: ArrayView3<f64>, sigma: f64) -> Array3<f64> {
     let mut smoothed_heatmaps = heatmaps.to_owned();
-    for (ch_idx, channel) in heatmaps.axis_iter(Axis(2)).enumerate() {
+    for (ch_idx, channel) in heatmaps.axis_iter(Axis(0)).enumerate() {
         let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 3);
         smoothed_heatmaps
-            .index_axis_mut(ndarray::Axis(2), ch_idx)
+            .index_axis_mut(ndarray::Axis(0), ch_idx)
             .assign(&smoothed);
     }
     smoothed_heatmaps
 }
 
+/// Cache smoothed heatmaps for different sigma values
+pub struct CachedHeatmaps<'a> {
+    pub original: ArrayView3<'a, f64>,
+    pub smoothed: Vec<((f64, usize), Array3<f64>)>,
+}
+
+impl<'a> CachedHeatmaps<'a> {
+    pub fn new(heatmaps: ArrayView3<'a, f64>) -> Self {
+        Self {
+            original: heatmaps,
+            smoothed: Vec::new(),
+        }
+    }
+
+    pub fn get_smoothed(
+        &'_ mut self,
+        sigma: f64,
+        n_required_channels: usize,
+    ) -> ArrayView3<'_, f64> {
+        if sigma == 0.0 {
+            log::debug!("Using original heatmaps without smoothing for sigma 0.0.");
+            return self.original.view();
+        }
+        if let Some(index) = self
+            .smoothed
+            .iter()
+            .position(|((s, n), _)| *s == sigma && *n == n_required_channels)
+        {
+            log::debug!(
+                "Using cached smoothed heatmaps for sigma {} and {} channels",
+                sigma,
+                n_required_channels
+            );
+            self.smoothed[index].1.view()
+        } else {
+            log::debug!(
+                "Smoothing heatmaps with sigma {} and {} channels",
+                sigma,
+                n_required_channels
+            );
+            let smoothed = smooth_heatmaps(
+                self.original.slice(s![..n_required_channels, .., ..]),
+                sigma,
+            );
+            self.smoothed.push(((sigma, n_required_channels), smoothed));
+            self.smoothed.last().unwrap().1.view()
+        }
+    }
+}
+
 fn fit_asm(
     asm: &ActiveShapeModel,
     asm_config: AsmConfig,
-    heatmaps: ArrayView3<f64>,
+    cached_heatmaps: &mut CachedHeatmaps,
 ) -> (Vec<asm::fit::History>, Array1<f64>, Vec<Array2<f64>>) {
     let n_mode = asm.calculate_mode(asm_config.mode);
     log::info!("Using {} modes for fitting.", n_mode);
@@ -108,17 +158,19 @@ fn fit_asm(
     if asm_config.sigmas.is_empty() {
         unreachable!("At least one sigma value must be provided for heatmap smoothing.")
     };
+    let n_required_channels = asm.labels.len();
     let mut histories = Vec::new();
     for sigma in asm_config.sigmas {
         let mut stopper = Stopper::from_config(asm_config.stopper.clone());
         log::info!("Fitting ASM with heatmap smoothing sigma = {}", sigma);
-        let smoothed_heatmaps = if sigma > 0.0 {
-            let smoothed = smooth_heatmaps(heatmaps, sigma);
-            log::debug!("Smoothed heatmaps with sigma {}", sigma);
-            smoothed
-        } else {
-            heatmaps.to_owned()
-        };
+        // let smoothed_heatmaps = if sigma > 0.0 {
+        //     let smoothed = smooth_heatmaps(heatmaps, sigma);
+        //     log::debug!("Smoothed heatmaps with sigma {}", sigma);
+        //     smoothed
+        // } else {
+        //     heatmaps.to_owned()
+        // };
+        let smoothed_heatmaps = cached_heatmaps.get_smoothed(sigma, n_required_channels);
         let (fitted_params, obj_history) = fit_asm_to_heatmap(
             asm,
             initial_params.view(),
@@ -153,31 +205,25 @@ pub enum AsmError {
 
 type AsmReturn = (LabelMeData, Vec<History>, Array1<f64>, Vec<Array2<f64>>);
 
+/// Apply Active Shape Model to the given heatmaps and reference labelme data
+///
+/// heatmaps is in channel-first format (channels, height, width)
 pub fn apply_asm(
     asm: ActiveShapeModel,
     asm_config: AsmConfig,
-    heatmaps: ArrayView3<f64>,
+    cached_heatmaps: &mut CachedHeatmaps,
     ref_lm: &LabelMeData,
 ) -> Result<AsmReturn, AsmError> {
     let n_required_channels = asm.labels.len();
-    let n_actual_channels = heatmaps.len_of(Axis(2));
+    let n_actual_channels = cached_heatmaps.original.len_of(Axis(0));
     if n_actual_channels < n_required_channels {
         return Err(AsmError::HeatmapError(
             n_actual_channels,
             n_required_channels,
         ));
     }
-    let heatmaps = if n_actual_channels > n_required_channels {
-        log::info!(
-            "Heatmaps have {0} channels, but ASM requires only {1} channels. Using the first {1} channels.",
-            n_actual_channels,
-            n_required_channels,
-        );
-        heatmaps.slice_move(s![.., .., 0..n_required_channels])
-    } else {
-        heatmaps
-    };
-    let scale_hm_to_ref = ref_lm.imageHeight as f64 / heatmaps.len_of(Axis(0)) as f64;
+    let scale_hm_to_ref =
+        ref_lm.imageHeight as f64 / cached_heatmaps.original.len_of(Axis(1)) as f64;
     let mut scaled_ref_lm = ref_lm.clone();
     log::debug!(
         "Scaling reference labelme data by factor {} to match heatmap size",
@@ -195,7 +241,7 @@ pub fn apply_asm(
     log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
     let mut asm = asm;
     asm.global_transform(&tr_asm_to_ref);
-    let (histories, optimal_params, fitted_shape) = fit_asm(&asm, asm_config, heatmaps);
+    let (histories, optimal_params, fitted_shape) = fit_asm(&asm, asm_config, cached_heatmaps);
 
     let mut output_lm = ref_lm.clone();
     output_lm.shapes = create_shapes_from_fitted_points(&fitted_shape, &asm.labels);

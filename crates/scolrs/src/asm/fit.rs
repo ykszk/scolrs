@@ -48,7 +48,7 @@ fn bilinear_interpolate_with_gradient(
 
 fn compute_objective_and_gradient(
     asm: &ActiveShapeModel,
-    heatmaps: ArrayView3<f64>,
+    heatmaps: ArrayView3<f64>, // channel-first format
     shape_params: ArrayView1<f64>,
     // lambda: f64,
 ) -> (f64, Array1<f64>) {
@@ -59,7 +59,7 @@ fn compute_objective_and_gradient(
     let mut gradient = Array1::zeros(shape_params.len());
 
     for (channel_idx, current_shape) in nested_points.iter().enumerate() {
-        let heatmap = heatmaps.index_axis(ndarray::Axis(2), channel_idx);
+        let heatmap = heatmaps.index_axis(ndarray::Axis(0), channel_idx);
 
         // Compute objective and gradient for this channel
         for (i, point) in current_shape.axis_iter(Axis(0)).enumerate() {
@@ -164,7 +164,7 @@ pub fn fit_asm_to_heatmap(
     asm: &ActiveShapeModel,
     initial_params: ArrayView1<f64>,
     stopper: &mut Stopper,
-    heatmaps: ArrayView3<f64>,
+    heatmaps: ArrayView3<f64>, // channel-first format
     config: FitConfig,
 ) -> (Array1<f64>, History) {
     let FitConfig {

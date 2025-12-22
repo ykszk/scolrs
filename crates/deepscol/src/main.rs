@@ -218,6 +218,8 @@ fn main() -> Result<()> {
     if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
         log::info!("Point counts are invalid: {}", e);
         let mut asm_results = Vec::new();
+        let output3_f64 = model_io.output3().mapv(|x| x as f64);
+        let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(output3_f64.view());
         for asm_path_config in &args.asm {
             let (asm_path, asm_config) = asm_path_config;
             let reader = std::fs::File::open(asm_path)
@@ -240,15 +242,11 @@ fn main() -> Result<()> {
 
             let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();
 
-            let output3_channel_last = model_io
-                .output3()
-                .mapv(|x| x as f64)
-                .permuted_axes((1, 2, 0));
             let asm_labels = asm.labels.clone();
             let model_name = asm.model_name.clone();
             log::info!("Starting ASM model fitting for model: {}", model_name);
             let (_fitted_lm_data, histories, _optimal_params, fitted_shape) =
-                scolrs::asm::apply_asm(asm, asm_config, output3_channel_last.view(), &heatmap_lm)?;
+                scolrs::asm::apply_asm(asm, asm_config, &mut cached_heatmaps, &heatmap_lm)?;
             // remove old points
             for label in asm_labels.iter() {
                 heatmap_lm.shapes.retain(|shape| &shape.label != label);

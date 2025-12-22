@@ -37,11 +37,13 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         args.heatmaps
     );
     let heatmaps = match args.channel_order {
-        crate::cli::ChannelOrder::Last => heatmaps,
-        crate::cli::ChannelOrder::First => {
-            log::debug!("Permuting heatmap axes from (C, H, W) to (H, W, C)");
-            heatmaps.permuted_axes([1, 2, 0])
+        crate::cli::ChannelOrder::Last => {
+            log::debug!(
+                "Permuting heatmap foramt from channel-last (H, W, C) to channel-first (C, H, W)"
+            );
+            heatmaps.permuted_axes([2, 0, 1])
         }
+        crate::cli::ChannelOrder::First => heatmaps,
     };
     let ref_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.lm_in)
@@ -59,8 +61,9 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     let asm_config: AsmConfig = config_builder.try_deserialize()?;
     log::debug!("ASM fitting configuration: {:?}", asm_config);
 
+    let mut cached_heatmaps = asm::CachedHeatmaps::new(heatmaps.view());
     let (output_lm, histories, optimal_params, _fitted_shape) =
-        apply_asm(asm, asm_config, heatmaps.view(), &ref_lm)?;
+        apply_asm(asm, asm_config, &mut cached_heatmaps, &ref_lm)?;
 
     if let Some(output_path) = args.output.params {
         // save as json
