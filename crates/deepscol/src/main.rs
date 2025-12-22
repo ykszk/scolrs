@@ -4,8 +4,7 @@ use std::vec;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
-use image::GenericImageView;
-use scolrs::{asm::model::ActiveShapeModel, draw::output3_to_heatmap};
+use scolrs::asm::model::ActiveShapeModel;
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
@@ -131,7 +130,6 @@ fn main() -> Result<()> {
         model_input_height,
     );
 
-    let mut input_image_wh = (original_image_width, original_image_height);
     let point_thresh = ds_config.thresh;
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
@@ -149,7 +147,6 @@ fn main() -> Result<()> {
             (max_x - min_x) as u32,
             (max_y - min_y) as u32,
         );
-        input_image_wh = (cropped_image.width(), cropped_image.height());
         let arr4 = deepscol::to_model_input(&cropped_image, model_input_height)?;
 
         // update the input tensor
@@ -166,7 +163,7 @@ fn main() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
-            (image.width(), image.height()),
+            image,
             output3,
             points,
             cropping_params,
@@ -175,11 +172,7 @@ fn main() -> Result<()> {
         log::info!("No cropping applied");
         let points = deepscol::extract_points(&output3, point_thresh)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
-        ModelIO::Original(Box::new(OriginalIO::new(
-            (image.width(), image.height()),
-            output3,
-            points,
-        )))
+        ModelIO::Original(Box::new(OriginalIO::new(image, output3, points)))
     };
 
     if let Some(output_path) = args.output.heatmap {
@@ -278,8 +271,6 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh); // TODO: should be handled by ModelIO
-        log::debug!("Heatmap image shape: {:?}", heatmap.dimensions());
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,
             Direction::Sagittal => deepscol::ScanDirection::Sagittal,
@@ -290,10 +281,8 @@ fn main() -> Result<()> {
         );
         let html_args = deepscol::ResultHtmlLmArgs {
             model_io,
-            image,
             metadata,
             scan_direction,
-            heatmap,
             size_config: ds_config.size_config,
             title,
         };

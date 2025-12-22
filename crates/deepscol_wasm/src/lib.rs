@@ -164,30 +164,15 @@ pub fn process_output(
 
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-    let mut input_image_wh = (image.width(), image.height());
     let points = extract_points(&output3, 0.1)
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
 
     let mut model_io = if let Some(cp) = cropping_params {
-        input_image_wh = ((cp.max_x - cp.min_x) as u32, (cp.max_y - cp.min_y) as u32);
-
-        ModelIO::Cropped(Box::new(CroppedIO::new(
-            (image.width(), image.height()),
-            output3,
-            points,
-            cp,
-        )))
+        ModelIO::Cropped(Box::new(CroppedIO::new(image, output3, points, cp)))
     } else {
         log::info!("No cropping applied");
-        ModelIO::Original(Box::new(OriginalIO::new(
-            (image.width(), image.height()),
-            output3,
-            points,
-        )))
+        ModelIO::Original(Box::new(OriginalIO::new(image, output3, points)))
     };
-
-    // create rgb heatmap using output3
-    let heatmap = scolrs::draw::output3_to_heatmap(model_io.output3().view(), input_image_wh);
 
     log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
@@ -214,10 +199,8 @@ pub fn process_output(
 
     let result_args = ResultHtmlLmArgs {
         model_io,
-        image,
         metadata,
         scan_direction: settings.scan_direction,
-        heatmap,
         size_config: deepscol::SizeConfig::default(),
         title: format!("{} - deepscol result", image_filename),
     };

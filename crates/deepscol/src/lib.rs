@@ -1,6 +1,6 @@
 extern crate wasm_bindgen;
 use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView};
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
 use ndarray::{s, Array3, Array4, ArrayView3, Axis, NewAxis};
@@ -9,7 +9,7 @@ use scolrs::{
     draw::{
         draw_generic, draw_sagittal,
         generic::{GenericDraw, GenericPoints},
-        AxisMax, ImageOverlay,
+        output3_to_heatmap, AxisMax, ImageOverlay,
     },
     HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints,
 };
@@ -599,13 +599,13 @@ pub struct ResultHtmlArguments {
     pub metadata: ImageMetadata,
     pub scan_direction: ScanDirection,
     pub cropping_params: Option<CroppingParams>,
-    pub heatmap: DynamicImage,
     pub model_output: Array3<f32>,
     pub size_config: SizeConfig,
     pub title: String,
 }
 
 pub struct OriginalIO {
+    original_image: DynamicImage,
     output3: Array3<f32>,
     /// LabelMeData in the original image coordinate system
     /// image width and height correspond to original image
@@ -614,10 +614,11 @@ pub struct OriginalIO {
 
 impl OriginalIO {
     pub fn new(
-        original_image_wh: (u32, u32),
+        original_image: DynamicImage,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
     ) -> Self {
+        let original_image_wh = original_image.dimensions();
         let input_height = output3.shape()[1] as u32;
         let lm_scale = original_image_wh.1 as f64 / input_height as f64;
         let lm_data = create_scaled_lm(
@@ -628,11 +629,16 @@ impl OriginalIO {
             lm_scale,
             points.as_slice(),
         );
-        Self { output3, lm_data }
+        Self {
+            original_image,
+            output3,
+            lm_data,
+        }
     }
 }
 
 pub struct CroppedIO {
+    original_image: DynamicImage,
     input_height: u32,
     output3: Array3<f32>,
     cropping_params: CroppingParams,
@@ -645,7 +651,7 @@ pub struct CroppedIO {
 
 impl CroppedIO {
     pub fn new(
-        original_image_wh: (u32, u32),
+        original_image: DynamicImage,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
         cropping_params: CroppingParams,
@@ -665,6 +671,7 @@ impl CroppedIO {
             points.as_slice(),
         );
 
+        let original_image_wh = original_image.dimensions();
         let mut lm_data = cropped_lm_data.clone();
         let input_height = output3.shape()[1] as u32;
         let lm_scale = (max_y - min_y) as f64 / input_height as f64;
@@ -674,6 +681,7 @@ impl CroppedIO {
         lm_data.imageHeight = original_image_wh.1 as usize;
 
         Self {
+            original_image,
             input_height,
             output3,
             cropping_params,
@@ -689,6 +697,24 @@ pub enum ModelIO {
 }
 
 impl ModelIO {
+    pub fn original_image(&self) -> &DynamicImage {
+        match self {
+            ModelIO::Original(original) => &original.original_image,
+            ModelIO::Cropped(cropped) => &cropped.original_image,
+        }
+    }
+    pub fn into_lm_data_w_image(self) -> LabelMeDataWImage {
+        match self {
+            ModelIO::Original(original) => LabelMeDataWImage {
+                data: original.lm_data,
+                image: original.original_image,
+            },
+            ModelIO::Cropped(cropped) => LabelMeDataWImage {
+                data: cropped.lm_data,
+                image: cropped.original_image,
+            },
+        }
+    }
     pub fn output3(&self) -> &Array3<f32> {
         match self {
             ModelIO::Original(original) => &original.output3,
@@ -734,11 +760,11 @@ impl ModelIO {
     }
     pub fn overlay_params(
         &self,
-        original_image_width: u32,
-        original_image_height: u32,
         ol_img_width_height: (u32, u32),
         size_config: &SizeConfig,
     ) -> ((f64, f64), (f64, f64)) {
+        let original_image_width = self.original_image().width();
+        let original_image_height = self.original_image().height();
         let resize_param =
             labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
         let orig_svg_scale = resize_param.scale(original_image_width, original_image_height);
@@ -770,13 +796,25 @@ impl ModelIO {
             }
         }
     }
+
+    pub fn output3_to_heatmap(&self) -> DynamicImage {
+        let input_image_wh = match self {
+            ModelIO::Original(original) => (
+                original.lm_data.imageWidth as u32,
+                original.lm_data.imageHeight as u32,
+            ),
+            ModelIO::Cropped(cropped) => (
+                (cropped.cropping_params.max_x - cropped.cropping_params.min_x) as u32,
+                (cropped.cropping_params.max_y - cropped.cropping_params.min_y) as u32,
+            ),
+        };
+        output3_to_heatmap(self.output3().view(), input_image_wh)
+    }
 }
 pub struct ResultHtmlLmArgs {
     pub model_io: ModelIO,
-    pub image: DynamicImage,
     pub metadata: ImageMetadata,
     pub scan_direction: ScanDirection,
-    pub heatmap: DynamicImage,
     pub size_config: SizeConfig,
     pub title: String,
 }
@@ -784,22 +822,14 @@ pub struct ResultHtmlLmArgs {
 pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyhow::Error> {
     let ResultHtmlLmArgs {
         model_io,
-        image,
         metadata,
         scan_direction,
-        heatmap,
         size_config,
         title,
     } = args;
-
-    let original_image_width = image.width();
-    let original_image_height = image.height();
-    let (x_y, width_height) = model_io.overlay_params(
-        original_image_width,
-        original_image_height,
-        (heatmap.width(), heatmap.height()),
-        &size_config,
-    );
+    let heatmap = model_io.output3_to_heatmap();
+    let (x_y, width_height) =
+        model_io.overlay_params((heatmap.width(), heatmap.height()), &size_config);
 
     let overlays = vec![ImageOverlay::new(
         "Heatmap".to_string(),
@@ -823,12 +853,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         );
         let mut gp = GenericPoints::from(model_io.lm_data().clone());
         *gp.image_metadata_mut() = metadata;
-        let html = create_generic_svg(
-            gp,
-            LabelMeDataWImage::new(model_io.lm_data().clone(), image),
-            overlays,
-            &size_config,
-        )?;
+        let html = create_generic_svg(gp, model_io.into_lm_data_w_image(), overlays, &size_config)?;
         let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title)?;
         return Ok(html);
     }
@@ -843,8 +868,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
                 .extract_point_confidence(ch_last_output.view());
             log::trace!("Extracted confidence: {:?}", confidence);
             *cp.coronal_points.get_confidence_mut() = Some(confidence);
-            let lm_data_with_image: LabelMeDataWImage =
-                LabelMeDataWImage::new(model_io.lm_data().clone(), image);
+            let lm_data_with_image = model_io.into_lm_data_w_image();
             create_coronal_svg(cp, lm_data_with_image, overlays, &size_config)
         }
         ScanDirection::Sagittal => {
@@ -855,51 +879,12 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
             log::trace!("Extracted confidence: {:?}", confidence);
             *cp.get_confidence_mut() = Some(confidence);
-            let lm_data_with_image: LabelMeDataWImage =
-                LabelMeDataWImage::new(model_io.lm_data().clone(), image);
+            let lm_data_with_image = model_io.into_lm_data_w_image();
             create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)
         }
     }?;
     let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
     Ok(html)
-}
-
-pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
-    let ResultHtmlArguments {
-        points,
-        image,
-        metadata,
-        scan_direction,
-        cropping_params,
-        heatmap,
-        model_output,
-        size_config,
-        title,
-    } = args;
-    let model_io = if let Some(cropping_params) = cropping_params {
-        ModelIO::Cropped(Box::new(CroppedIO::new(
-            (image.width(), image.height()),
-            model_output,
-            points,
-            cropping_params,
-        )))
-    } else {
-        ModelIO::Original(Box::new(OriginalIO::new(
-            (image.width(), image.height()),
-            model_output,
-            points,
-        )))
-    };
-    let args = ResultHtmlLmArgs {
-        model_io,
-        image,
-        metadata,
-        scan_direction,
-        heatmap,
-        size_config,
-        title,
-    };
-    create_result_html_from_lm(args)
 }
 
 pub fn embedded_asm(direction: ScanDirection) -> Result<Vec<ActiveShapeModel>, serde_json::Error> {
