@@ -4,8 +4,8 @@ use ndarray::Array3;
 use wasm_bindgen::prelude::*;
 
 use deepscol::{
-    calculate_crop_parameters, create_result_html, extract_points, load_image, to_model_input,
-    CropConfig, ResultHtmlArguments,
+    calculate_crop_parameters, extract_points, load_image, to_model_input, CropConfig, CroppedIO,
+    ModelIO, OriginalIO, ResultHtmlLmArgs,
 };
 
 pub use deepscol::{CroppingParams, ScanDirection};
@@ -164,32 +164,64 @@ pub fn process_output(
 
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-
     let mut input_image_wh = (image.width(), image.height());
-    if let Some(cp) = &cropping_params {
-        input_image_wh = ((cp.max_x - cp.min_x) as u32, (cp.max_y - cp.min_y) as u32);
-    }
-
-    // create rgb heatmap using output3
-    let heatmap = scolrs::draw::output3_to_heatmap(output3.view(), input_image_wh);
-
-    log::debug!("Output tensor shape: {:?}", output3.shape());
-    log::debug!("Cropping parameters: {:?}", cropping_params);
-
     let points = extract_points(&output3, 0.1)
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
-    let result_args = ResultHtmlArguments {
-        points,
+
+    let mut model_io = if let Some(cp) = cropping_params {
+        input_image_wh = ((cp.max_x - cp.min_x) as u32, (cp.max_y - cp.min_y) as u32);
+
+        ModelIO::Cropped(Box::new(CroppedIO::new(
+            (image.width(), image.height()),
+            output3,
+            points,
+            cp,
+        )))
+    } else {
+        log::info!("No cropping applied");
+        ModelIO::Original(Box::new(OriginalIO::new(
+            (image.width(), image.height()),
+            output3,
+            points,
+        )))
+    };
+
+    // create rgb heatmap using output3
+    let heatmap = scolrs::draw::output3_to_heatmap(model_io.output3().view(), input_image_wh);
+
+    log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
+    log::debug!("Cropping parameters: {:?}", cropping_params);
+
+    if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
+        log::info!("Point counts are invalid: {}", e);
+        let asms = deepscol::embedded_asm(settings.scan_direction).map_err(|e| {
+            JsValue::from_str(&format!("Failed to load embedded ASM models: {}", e))
+        })?;
+        let asm_config = scolrs::asm::AsmConfig::default();
+        let asms: Vec<_> = asms
+            .into_iter()
+            .map(|asm| (asm, asm_config.clone()))
+            .collect();
+        let output_f64 = model_io.output3().mapv(|x| x as f64);
+        let best_asm_lm_data = deepscol::apply_asms(&model_io, output_f64.view(), asms)
+            .map_err(|e| JsValue::from_str(&format!("Failed to apply ASM models: {}", e)))?;
+        if let Some(best_lm_data) = best_asm_lm_data {
+            model_io.set_heatmap_lm_data(best_lm_data);
+        } else {
+            log::warn!("No ASM model provided, skipping ASM fitting.");
+        }
+    }
+
+    let result_args = ResultHtmlLmArgs {
+        model_io,
         image,
         metadata,
         scan_direction: settings.scan_direction,
-        cropping_params,
         heatmap,
-        model_output: output3,
         size_config: deepscol::SizeConfig::default(),
         title: format!("{} - deepscol result", image_filename),
     };
-    let html = create_result_html(result_args)
+    let html = deepscol::create_result_html_from_lm(result_args)
         .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
     Ok(html)
 }

@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use image::GenericImageView;
-use ndarray::Axis;
 use scolrs::{asm::model::ActiveShapeModel, draw::output3_to_heatmap};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
@@ -134,6 +133,8 @@ fn main() -> Result<()> {
 
     let mut input_image_wh = (original_image_width, original_image_height);
     let point_thresh = ds_config.thresh;
+    let points = deepscol::extract_points(&output3, point_thresh)
+        .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
         log::info!("cropping image to bounding box: {:?}", cropping_params);
@@ -163,8 +164,6 @@ fn main() -> Result<()> {
         log::info!("Model run completed on cropped input");
         // convert to ndarray
         output3 = deepscol::extract_array_from_output(outputs);
-        let points = deepscol::extract_points(&output3, point_thresh)
-            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
             (image.width(), image.height()),
@@ -174,8 +173,6 @@ fn main() -> Result<()> {
         )))
     } else {
         log::info!("No cropping applied");
-        let points = deepscol::extract_points(&output3, point_thresh)
-            .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
             (image.width(), image.height()),
             output3,
@@ -217,9 +214,8 @@ fn main() -> Result<()> {
     // check spine point counts
     if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
         log::info!("Point counts are invalid: {}", e);
-        let mut asm_results = Vec::new();
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
-        let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(output3_f64.view());
+        let mut asms = Vec::new();
         for asm_path_config in &args.asm {
             let (asm_path, asm_config) = asm_path_config;
             let reader = std::fs::File::open(asm_path)
@@ -239,49 +235,13 @@ fn main() -> Result<()> {
                     scolrs::asm::AsmConfig::default()
                 };
             log::debug!("ASM fitting configuration: {:?}", asm_config);
-
-            let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();
-
-            let asm_labels = asm.labels.clone();
-            let model_name = asm.model_name.clone();
-            log::info!("Starting ASM model fitting for model: {}", model_name);
-            let (_fitted_lm_data, histories, _optimal_params, fitted_shape) =
-                scolrs::asm::apply_asm(asm, asm_config, &mut cached_heatmaps, &heatmap_lm)?;
-            // remove old points
-            for label in asm_labels.iter() {
-                heatmap_lm.shapes.retain(|shape| &shape.label != label);
-            }
-            // update points with fitted points
-            for (label, points) in asm_labels.iter().zip(fitted_shape.iter()) {
-                for point in points.axis_iter(Axis(0)) {
-                    let shape = labelme_rs::Shape {
-                        label: label.clone(),
-                        points: vec![(point[0], point[1])],
-                        group_id: None,
-                        shape_type: "point".to_string(),
-                        flags: Default::default(),
-                    };
-                    heatmap_lm.shapes.push(shape);
-                }
-            }
-
-            let best_loss = histories
-                .last()
-                .unwrap()
-                .data_objectives
-                .iter()
-                .fold(f64::INFINITY, |a, b| a.min(*b));
-            asm_results.push((model_name, heatmap_lm, best_loss));
-            log::info!("ASM model fitting completed.");
+            asms.push((asm, asm_config));
         }
-        if args.asm.is_empty() {
-            log::warn!("No ASM model provided, skipping ASM fitting.");
+        let best_asm_lm_data = deepscol::apply_asms(&model_io, output3_f64.view(), asms)?;
+        if let Some(best_lm_data) = best_asm_lm_data {
+            model_io.set_heatmap_lm_data(best_lm_data);
         } else {
-            // Choose the model with minimum loss
-            asm_results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
-            let (best_model_name, best_lm_data, best_loss) = &asm_results[0];
-            log::info!("Best ASM model {} w/ loss: {}", best_model_name, best_loss);
-            model_io.set_heatmap_lm_data(best_lm_data.to_owned());
+            log::warn!("No ASM model provided, skipping ASM fitting.");
         }
     }
 
@@ -316,7 +276,7 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh);
+        let heatmap = output3_to_heatmap(model_io.output3().view(), input_image_wh); // TODO: should be handled by ModelIO
         log::debug!("Heatmap image shape: {:?}", heatmap.dimensions());
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,

@@ -3,8 +3,9 @@ use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
 use image::DynamicImage;
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
-use ndarray::{s, Array3, Array4, Axis, NewAxis};
+use ndarray::{s, Array3, Array4, ArrayView3, Axis, NewAxis};
 use scolrs::{
+    asm::{model::ActiveShapeModel, AsmConfig, AsmError},
     draw::{
         draw_generic, draw_sagittal,
         generic::{GenericDraw, GenericPoints},
@@ -899,4 +900,79 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
         title,
     };
     create_result_html_from_lm(args)
+}
+
+pub fn embedded_asm(direction: ScanDirection) -> Result<Vec<ActiveShapeModel>, serde_json::Error> {
+    match direction {
+        ScanDirection::Coronal => {
+            let json = include_str!("../models/coronal/asms.json");
+            serde_json::from_str(json)
+        }
+        ScanDirection::Sagittal => {
+            let json = include_str!("../models/sagittal/asms.json");
+            serde_json::from_str(json)
+        }
+    }
+}
+
+fn _apply_asms(
+    model_io: &ModelIO,
+    output3: ArrayView3<f64>,
+    asms: Vec<(ActiveShapeModel, AsmConfig)>,
+) -> Result<Vec<(String, labelme_rs::LabelMeData, f64)>, AsmError> {
+    let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(output3);
+    let mut asm_results = Vec::new();
+    for (asm, asm_config) in asms {
+        let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();
+
+        let asm_labels = asm.labels.clone();
+        let model_name = asm.model_name.clone();
+        log::info!("Starting ASM model fitting for model: {}", model_name);
+        let (_fitted_lm_data, histories, _optimal_params, fitted_shape) =
+            scolrs::asm::apply_asm(asm, asm_config, &mut cached_heatmaps, &heatmap_lm)?;
+        // remove old points
+        for label in asm_labels.iter() {
+            heatmap_lm.shapes.retain(|shape| &shape.label != label);
+        }
+        // update points with fitted points
+        for (label, points) in asm_labels.iter().zip(fitted_shape.iter()) {
+            for point in points.axis_iter(Axis(0)) {
+                let shape = labelme_rs::Shape {
+                    label: label.clone(),
+                    points: vec![(point[0], point[1])],
+                    group_id: None,
+                    shape_type: "point".to_string(),
+                    flags: Default::default(),
+                };
+                heatmap_lm.shapes.push(shape);
+            }
+        }
+
+        let best_loss = histories
+            .last()
+            .unwrap()
+            .data_objectives
+            .iter()
+            .fold(f64::INFINITY, |a, b| a.min(*b));
+        asm_results.push((model_name, heatmap_lm, best_loss));
+        log::info!("ASM model fitting completed.");
+    }
+    Ok(asm_results)
+}
+
+pub fn apply_asms(
+    model_io: &ModelIO,
+    output3: ArrayView3<f64>,
+    asms: Vec<(ActiveShapeModel, AsmConfig)>,
+) -> Result<Option<LabelMeData>, AsmError> {
+    let mut asm_results = _apply_asms(model_io, output3, asms)?;
+    // Choose the model with minimum loss
+    asm_results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+    asm_results
+        .first()
+        .map(|(best_model_name, best_lm_data, best_loss)| {
+            log::info!("Best ASM model {} w/ loss: {}", best_model_name, best_loss);
+            Ok(best_lm_data.clone())
+        })
+        .transpose()
 }
