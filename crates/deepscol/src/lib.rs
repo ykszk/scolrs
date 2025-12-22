@@ -435,11 +435,10 @@ pub fn calculate_crop_parameters(
 }
 
 pub fn create_generic_svg(
-    lm_data: LabelMeData,
+    gp: GenericPoints,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
 ) -> Result<SVG, anyhow::Error> {
-    let gp = GenericPoints::from(lm_data.clone());
     let points_with_image = PointDataWithImage::new(gp, lm_data_with_image);
     let draws = vec![GenericDraw::AllPoints];
 
@@ -559,7 +558,6 @@ impl CroppingParams {
 
 pub struct ResultHtmlArguments {
     pub points: Vec<Vec<(f32, f32)>>,
-    pub model_input_height: u32,
     pub image: DynamicImage,
     pub metadata: ImageMetadata,
     pub scan_direction: ScanDirection,
@@ -602,22 +600,24 @@ pub fn calc_overlay_params(
 
 pub struct OriginalIO {
     output3: Array3<f32>,
+    /// LabelMeData in the original image coordinate system
+    /// image width and height correspond to original image
     lm_data: LabelMeData,
 }
 
 impl OriginalIO {
     pub fn new(
-        original_image_height: u32,
-        input_height: u32,
+        original_image_wh: (u32, u32),
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
     ) -> Self {
-        let lm_scale = original_image_height as f64 / input_height as f64;
+        let input_height = output3.shape()[1] as u32;
+        let lm_scale = original_image_wh.1 as f64 / input_height as f64;
         let lm_data = create_scaled_lm(
             &LABELS,
             "".to_string(),
-            output3.shape()[2] as u32,
-            output3.shape()[1] as u32,
+            original_image_wh.0,
+            original_image_wh.1,
             lm_scale,
             points.as_slice(),
         );
@@ -629,13 +629,16 @@ pub struct CroppedIO {
     input_height: u32,
     output3: Array3<f32>,
     cropping_params: CroppingParams,
+    /// LabelMeData in the original image coordinate system
     lm_data: LabelMeData,
+    /// LabelMeData in the cropped (heatmap) image coordinate system
+    /// image width and height correspond to output3 shape
     cropped_lm_data: LabelMeData,
 }
 
 impl CroppedIO {
     pub fn new(
-        input_height: u32,
+        original_image_wh: (u32, u32),
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
         cropping_params: CroppingParams,
@@ -646,17 +649,6 @@ impl CroppedIO {
             max_x: _,
             max_y,
         } = cropping_params;
-        let lm_scale = (max_y - min_y) as f64 / input_height as f64;
-
-        let mut lm_data = create_scaled_lm(
-            &LABELS,
-            "".to_string(),
-            output3.shape()[2] as u32,
-            output3.shape()[1] as u32,
-            lm_scale,
-            points.as_slice(),
-        );
-        lm_data.shift(min_x as f64, min_y as f64);
 
         let cropped_lm_data = create_lm(
             &LABELS,
@@ -665,6 +657,15 @@ impl CroppedIO {
             output3.shape()[1] as u32,
             points.as_slice(),
         );
+
+        let mut lm_data = cropped_lm_data.clone();
+        let input_height = output3.shape()[1] as u32;
+        let lm_scale = (max_y - min_y) as f64 / input_height as f64;
+        lm_data.scale(lm_scale);
+        lm_data.shift(min_x as f64, min_y as f64);
+        lm_data.imageWidth = original_image_wh.0 as usize;
+        lm_data.imageHeight = original_image_wh.1 as usize;
+
         Self {
             input_height,
             output3,
@@ -714,8 +715,8 @@ impl ModelIO {
                     max_y,
                 } = cropped.cropping_params;
                 let lm_scale = (max_y - min_y) as f64 / cropped.input_height as f64;
-                let image_width = cropped.cropped_lm_data.imageWidth;
-                let image_height = cropped.cropped_lm_data.imageHeight;
+                let image_width = cropped.lm_data.imageWidth;
+                let image_height = cropped.lm_data.imageHeight;
                 cropped.lm_data = lm_data;
                 cropped.lm_data.scale(lm_scale);
                 cropped.lm_data.shift(min_x as f64, min_y as f64);
@@ -808,8 +809,10 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             "Incorrect number of points for Spine falling back to heatmap display: {}",
             e
         );
+        let mut gp = GenericPoints::from(model_io.lm_data().clone());
+        *gp.image_metadata_mut() = metadata;
         let html = create_generic_svg(
-            model_io.lm_data().clone(),
+            gp,
             LabelMeDataWImage::new(model_io.lm_data().clone(), image),
             overlays,
         )?;
@@ -819,7 +822,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
     let document = match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
-            let mut cp = CoronalPointsAndCurve::try_from(model_io.lm_data().clone())?;
+            let mut cp = CoronalPointsAndCurve::try_from(model_io.lm_data())?;
             let crop_adjusted_cp = CoronalPointsAndCurve::try_from(model_io.heatmap_lm_data())?;
             *cp.image_metadata_mut() = metadata;
             let confidence = crop_adjusted_cp
@@ -833,7 +836,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
-            let mut cp: SagittalPoints = SagittalPoints::try_from(model_io.lm_data().clone())?;
+            let mut cp: SagittalPoints = SagittalPoints::try_from(model_io.lm_data())?;
             let crop_adjusted_cp = SagittalPoints::try_from(model_io.heatmap_lm_data())?;
             *cp.image_metadata_mut() = metadata;
             let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
@@ -851,7 +854,6 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
 pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::Error> {
     let ResultHtmlArguments {
         points,
-        model_input_height,
         image,
         metadata,
         scan_direction,
@@ -862,15 +864,14 @@ pub fn create_result_html(args: ResultHtmlArguments) -> Result<String, anyhow::E
     } = args;
     let model_io = if let Some(cropping_params) = cropping_params {
         ModelIO::Cropped(Box::new(CroppedIO::new(
-            model_input_height,
+            (image.width(), image.height()),
             model_output,
             points,
             cropping_params,
         )))
     } else {
         ModelIO::Original(Box::new(OriginalIO::new(
-            image.height(),
-            model_input_height,
+            (image.width(), image.height()),
             model_output,
             points,
         )))

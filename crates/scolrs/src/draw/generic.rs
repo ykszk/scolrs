@@ -56,7 +56,7 @@ impl From<LabelMeData> for GenericPoints {
                 all_points.push((label.to_string(), points_arr));
             }
         }
-        let image_metadata = ImageMetadata::from(lm_data.clone());
+        let image_metadata = ImageMetadata::from(lm_data);
         GenericPoints {
             all_points,
             image_metadata,

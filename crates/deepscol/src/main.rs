@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::vec;
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use image::GenericImageView;
 use ndarray::Axis;
@@ -31,16 +31,6 @@ struct OutputGroup {
     html: Option<Option<PathBuf>>,
 }
 
-#[derive(Args, Debug, Clone, Default)]
-pub struct AsmArgs {
-    /// Model in json
-    #[clap(long)]
-    asm: PathBuf,
-    /// Config file for ASM fitting
-    #[clap(long)]
-    config: PathBuf,
-}
-
 #[derive(Parser)]
 #[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
 struct CmdArgs {
@@ -55,9 +45,12 @@ struct CmdArgs {
     /// Direction of the image
     #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
     direction: Direction,
-    /// Active shape model file
-    #[clap(flatten)]
-    asm: Option<AsmArgs>,
+    /// Model in json
+    #[clap(long)]
+    asm: Option<PathBuf>,
+    /// Config file for ASM fitting
+    #[clap(long, requires = "asm")]
+    asm_config: Option<PathBuf>,
     #[command(flatten)]
     output: OutputGroup,
 }
@@ -162,7 +155,7 @@ fn main() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
-            model_input_height,
+            (image.width(), image.height()),
             output3,
             points,
             cropping_params,
@@ -172,8 +165,7 @@ fn main() -> Result<()> {
         let points = deepscol::extract_points(&output3, point_thresh)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
-            image.height(),
-            model_input_height,
+            (image.width(), image.height()),
             output3,
             points,
         )))
@@ -212,20 +204,27 @@ fn main() -> Result<()> {
 
     // check spine point counts
     if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
-        if let Some(asm_args) = &args.asm {
+        if let Some(asm_path) = &args.asm {
             log::warn!(
                 "Point counts are invalid: {}. Attempting to fit ASM model.",
                 e
             );
-            let reader = std::fs::File::open(&asm_args.asm)
-                .with_context(|| format!("Opening ASM model file {:?}", asm_args.asm))?;
+            let reader = std::fs::File::open(asm_path)
+                .with_context(|| format!("Opening ASM model file {:?}", asm_path))?;
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
-                .with_context(|| format!("Loading ASM model from {:?}", asm_args.asm))?;
-            let config_builder = config::Config::builder()
-                .add_source(config::Config::try_from(&scolrs::asm::AsmConfig::default())?)
-                .add_source(config::File::from(asm_args.config.as_path()))
-                .build()?;
-            let asm_config: scolrs::asm::AsmConfig = config_builder.try_deserialize()?;
+                .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
+
+            let asm_config: scolrs::asm::AsmConfig =
+                if let Some(asm_config_path) = args.asm_config.as_ref() {
+                    let config_builder = config::Config::builder()
+                        .add_source(config::Config::try_from(&scolrs::asm::AsmConfig::default())?)
+                        .add_source(config::File::from(asm_config_path.as_path()))
+                        .build()?;
+                    config_builder.try_deserialize()?
+                } else {
+                    log::debug!("No ASM config file provided, using default configuration.");
+                    scolrs::asm::AsmConfig::default()
+                };
             log::debug!("ASM fitting configuration: {:?}", asm_config);
 
             let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();

@@ -176,12 +176,10 @@ pub fn process_output(
     log::debug!("Output tensor shape: {:?}", output3.shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
 
-    let model_input_height = output3.shape()[1] as u32;
     let points = extract_points(&output3, 0.1)
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
     let result_args = ResultHtmlArguments {
         points,
-        model_input_height,
         image,
         metadata,
         scan_direction: settings.scan_direction,
