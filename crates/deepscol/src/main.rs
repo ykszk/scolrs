@@ -114,7 +114,7 @@ fn main() -> Result<()> {
 
     let cropping_params = deepscol::calculate_crop_parameters(
         &output3,
-        &deepscol::CropConrig::default(),
+        &deepscol::CropConfig::default(),
         original_image_height,
         original_image_width,
         model_input_height,

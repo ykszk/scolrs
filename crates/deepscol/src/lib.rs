@@ -379,7 +379,7 @@ fn bounding_box(arr: &ndarray::Array2<bool>) -> Option<(usize, usize, usize, usi
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CropConrig {
+pub struct CropConfig {
     /// Threshold for heatmap binarization
     pub thresh: f32,
     pub crop_min_coverage: f64,
@@ -387,7 +387,7 @@ pub struct CropConrig {
     pub margin_y_rate: f64,
 }
 
-impl Default for CropConrig {
+impl Default for CropConfig {
     fn default() -> Self {
         Self {
             thresh: 0.05,
@@ -400,7 +400,7 @@ impl Default for CropConrig {
 
 pub fn calculate_crop_parameters(
     output3: &ndarray::Array3<f32>,
-    config: &CropConrig,
+    config: &CropConfig,
     original_image_height: u32,
     original_image_width: u32,
     model_input_height: u32,
@@ -409,8 +409,8 @@ pub fn calculate_crop_parameters(
     let heatmap2_bin = heatmap2.mapv(|x| x > config.thresh);
     let bbox = bounding_box(&heatmap2_bin);
     if let Some((min_x, min_y, max_x, max_y)) = bbox {
-        if (max_x - min_x) < (0.9 * original_image_width as f64) as usize
-            || (max_y - min_y) < (0.9 * original_image_height as f64) as usize
+        if (max_x - min_x) < (config.crop_min_coverage * original_image_width as f64) as usize
+            || (max_y - min_y) < (config.crop_min_coverage * original_image_height as f64) as usize
         {
             let scale = original_image_height as f64 / model_input_height as f64;
             let max_x = scale * max_x as f64;

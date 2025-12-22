@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use deepscol::{
     calculate_crop_parameters, create_result_html, extract_points, load_image, to_model_input,
-    CropConrig, ResultHtmlArguments,
+    CropConfig, ResultHtmlArguments,
 };
 
 pub use deepscol::{CroppingParams, ScanDirection};
@@ -126,7 +126,7 @@ pub fn calculate_crop_parameters_wasm(
 
     let params = calculate_crop_parameters(
         &output3,
-        &CropConrig::default(),
+        &CropConfig::default(),
         original_image_height,
         original_image_width,
         tensor_dims.get_index(2),
