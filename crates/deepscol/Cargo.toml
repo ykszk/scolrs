@@ -42,7 +42,7 @@ dicom-object = "0.8.1"
 dicom-pixeldata = { version = "0.8.1", default-features = false, features = [
     "native",
 ] }
-image = { version = "0.25.6", default-features = false, features = [
+image = { version = "0.25.9", default-features = false, features = [
     "jpeg",
     "png",
     "tiff",
@@ -54,12 +54,12 @@ ndarray-npz = { version = "0.4.2", default-features = false, features = [
 ort = { version = "2.0.0-rc.10", default-features = false, features = [
     "ndarray",
 ] }
-tracing-subscriber = "0.3.19"
-wasm-bindgen = "0.2.100"
+tracing-subscriber = "0.3.22"
+wasm-bindgen = "0.2.106"
 wee_alloc = "0.4.5"
 
 [build-dependencies]
 anyhow.workspace = true
 env_logger.workspace = true
 log.workspace = true
-reqwest = { version = "0.12.22", features = ["blocking"] }
+reqwest = { version = "0.12.26", features = ["blocking"] }

@@ -5,8 +5,10 @@ use wasm_bindgen::prelude::*;
 
 use deepscol::{
     calculate_crop_parameters, create_result_html, extract_points, load_image, to_model_input,
-    CropConrig, CroppingParams, ResultHtmlArguments, ScanDirection,
+    CropConrig, ResultHtmlArguments,
 };
+
+pub use deepscol::{CroppingParams, ScanDirection};
 
 // Use `wee_alloc` as the global allocator.
 // Default allocator somehow panics in `wrap_in_html`, which can be fixed in the future.

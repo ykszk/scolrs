@@ -1,11 +1,12 @@
 use anyhow::Result;
-use assert_cmd::Command;
+use assert_cmd::{cargo, Command};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use std::{env, io::Write, path::PathBuf};
 
 #[test]
 fn test_redirect() -> Result<()> {
-    let mut cmd = Command::cargo_bin("scolrs").unwrap();
+    let bin_path = cargo::cargo_bin!("scolrs");
+    let mut cmd = Command::new(bin_path);
     let data_dir = PathBuf::from("../../tests/data/");
     let output_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
     cmd.arg("svg")
@@ -18,7 +19,7 @@ fn test_redirect() -> Result<()> {
 
     let cmd_output = cmd.output()?;
 
-    let mut cmd = Command::cargo_bin("scolrs").unwrap();
+    let mut cmd = Command::new(bin_path);
     cmd.arg("html")
         .arg("-")
         .arg(output_dir.join("case1_frontal.html"))
@@ -52,7 +53,7 @@ fn test_redirect() -> Result<()> {
     ndjson_file.sync_all()?;
 
     // convert ndjson
-    let mut cmd: Command = Command::cargo_bin("scolrs").unwrap();
+    let mut cmd: Command = Command::new(bin_path);
     let ndjson_native = output_dir.join("case5_frontal_native.ndjson");
     cmd.arg("conv")
         .arg(&ndjson)
@@ -70,7 +71,7 @@ fn test_redirect() -> Result<()> {
     ndjson_file.sync_all()?;
 
     // test  combination of svg-ndjson and catalog
-    let mut cmd = Command::cargo_bin("scolrs").unwrap();
+    let mut cmd = Command::new(bin_path);
     cmd.arg("svg-ndjson")
         .arg(&ndjson_native)
         .arg("-")
@@ -80,7 +81,7 @@ fn test_redirect() -> Result<()> {
 
     let cmd_output = cmd.output()?;
 
-    let mut cmd = Command::cargo_bin("scolrs").unwrap();
+    let mut cmd = Command::new(bin_path);
     cmd.arg("catalog")
         .arg("-")
         .arg(output_dir.join("catalog_case5_frontal.html"))
