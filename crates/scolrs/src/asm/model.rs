@@ -39,6 +39,8 @@ impl Default for ModeConfig {
 /// allowing for shape generation, deformation, and inverse transformation.
 #[derive(Debug, Clone)]
 pub struct ActiveShapeModel {
+    pub model_name: String,
+
     /// PCA mean vector (flattened 2D points)
     pub mean: Array1<f64>,
 
@@ -76,6 +78,7 @@ pub struct ActiveShapeModel {
 /// Parameters for creating an ActiveShapeModel
 #[derive(Debug, Clone)]
 pub struct ModelParams {
+    pub model_name: String,
     /// PCA mean vector
     pub mean: Array1<f64>,
     /// PCA components matrix
@@ -103,6 +106,7 @@ impl ActiveShapeModel {
     /// * `params` - Model parameters structure containing all required data
     pub fn new(params: ModelParams) -> Self {
         let ModelParams {
+            model_name,
             mean,
             components,
             explained_variance,
@@ -126,6 +130,7 @@ impl ActiveShapeModel {
         }
 
         Self {
+            model_name,
             mean,
             components,
             scaled_components,
@@ -362,6 +367,7 @@ impl ActiveShapeModel {
 // Struct to fascilitate deserialization of ActiveShapeModel
 #[derive(Debug, Clone, Deserialize)]
 struct ActiveShapeModelDe {
+    model_name: String,
     // Use `Vec`s instead of `Array`s for deserialization
     mean: Vec<f64>,
     components: Vec<Vec<f64>>,
@@ -391,6 +397,7 @@ impl From<ActiveShapeModelDe> for ActiveShapeModel {
         )
         .unwrap();
         Self::new(ModelParams {
+            model_name: de.model_name,
             mean,
             components,
             explained_variance,
@@ -421,6 +428,7 @@ mod tests {
 
     #[test]
     fn test_active_shape_model_creation() {
+        let model_name = "TestModel".to_string();
         let mean = array![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
         let components = array![
             [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -435,6 +443,7 @@ mod tests {
         let point_counts = vec![3];
 
         let model = ActiveShapeModel::new(ModelParams {
+            model_name,
             mean,
             components,
             explained_variance,
@@ -453,6 +462,7 @@ mod tests {
 
     #[test]
     fn test_unravel() {
+        let model_name = "TestModel".to_string();
         let mean = array![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 2.0, 2.0];
         let components = array![[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]];
         let explained_variance = array![1.0];
@@ -464,6 +474,7 @@ mod tests {
         let point_counts = vec![3, 1]; // First group has 3 points, second has 1
 
         let model = ActiveShapeModel::new(ModelParams {
+            model_name,
             mean,
             components,
             explained_variance,
@@ -485,6 +496,7 @@ mod tests {
 
     #[test]
     fn test_inverse_transform() {
+        let model_name = "TestModel".to_string();
         let mean = array![0.0, 0.0, 1.0, 0.0];
         let components = array![[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]];
         let explained_variance = array![1.0, 1.0];
@@ -496,6 +508,7 @@ mod tests {
         let point_counts = vec![2];
 
         let model = ActiveShapeModel::new(ModelParams {
+            model_name,
             mean,
             components,
             explained_variance,
@@ -517,6 +530,7 @@ mod tests {
 
     #[test]
     fn test_transform_and_inverse() {
+        let model_name = "TestModel".to_string();
         let mean = array![0.0, 0.0, 1.0, 0.0];
         let components = array![[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]];
         let explained_variance = array![1.0, 1.0];
@@ -528,6 +542,7 @@ mod tests {
         let point_counts = vec![2];
 
         let model = ActiveShapeModel::new(ModelParams {
+            model_name,
             mean,
             components,
             explained_variance,

@@ -31,6 +31,19 @@ struct OutputGroup {
     html: Option<Option<PathBuf>>,
 }
 
+fn parse_path_optional_pair(s: &str) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    match parts.len() {
+        1 => Ok((PathBuf::from(parts[0]), None)),
+        2 => Ok((PathBuf::from(parts[0]), Some(PathBuf::from(parts[1])))),
+        _ => Err(format!(
+            "Expected 1 or 2 paths separated by comma, got {} with {}",
+            parts.len(),
+            s
+        )),
+    }
+}
+
 #[derive(Parser)]
 #[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
 struct CmdArgs {
@@ -45,12 +58,9 @@ struct CmdArgs {
     /// Direction of the image
     #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
     direction: Direction,
-    /// Model in json
-    #[clap(long)]
-    asm: Option<PathBuf>,
-    /// Config file for ASM fitting
-    #[clap(long, requires = "asm")]
-    asm_config: Option<PathBuf>,
+    /// Path to the ASM model(s) file for fitting (and configuration optionally)
+    #[arg(long, value_parser = parse_path_optional_pair)]
+    asm: Vec<(PathBuf, Option<PathBuf>)>,
     #[command(flatten)]
     output: OutputGroup,
 }
@@ -206,18 +216,17 @@ fn main() -> Result<()> {
 
     // check spine point counts
     if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
-        if let Some(asm_path) = &args.asm {
-            log::warn!(
-                "Point counts are invalid: {}. Attempting to fit ASM model.",
-                e
-            );
+        log::info!("Point counts are invalid: {}", e);
+        let mut asm_results = Vec::new();
+        for asm_path_config in &args.asm {
+            let (asm_path, asm_config) = asm_path_config;
             let reader = std::fs::File::open(asm_path)
                 .with_context(|| format!("Opening ASM model file {:?}", asm_path))?;
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
                 .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
 
             let asm_config: scolrs::asm::AsmConfig =
-                if let Some(asm_config_path) = args.asm_config.as_ref() {
+                if let Some(asm_config_path) = asm_config.as_ref() {
                     let config_builder = config::Config::builder()
                         .add_source(config::Config::try_from(&scolrs::asm::AsmConfig::default())?)
                         .add_source(config::File::from(asm_config_path.as_path()))
@@ -236,7 +245,9 @@ fn main() -> Result<()> {
                 .mapv(|x| x as f64)
                 .permuted_axes((1, 2, 0));
             let asm_labels = asm.labels.clone();
-            let (_fitted_lm_data, _histories, _optimal_params, fitted_shape) =
+            let model_name = asm.model_name.clone();
+            log::info!("Starting ASM model fitting for model: {}", model_name);
+            let (_fitted_lm_data, histories, _optimal_params, fitted_shape) =
                 scolrs::asm::apply_asm(asm, asm_config, output3_channel_last.view(), &heatmap_lm)?;
             // remove old points
             for label in asm_labels.iter() {
@@ -256,13 +267,23 @@ fn main() -> Result<()> {
                 }
             }
 
-            model_io.set_heatmap_lm_data(heatmap_lm);
+            let best_loss = histories
+                .last()
+                .unwrap()
+                .data_objectives
+                .iter()
+                .fold(f64::INFINITY, |a, b| a.min(*b));
+            asm_results.push((model_name, heatmap_lm, best_loss));
             log::info!("ASM model fitting completed.");
+        }
+        if args.asm.is_empty() {
+            log::warn!("No ASM model provided, skipping ASM fitting.");
         } else {
-            log::error!(
-                "Point counts are invalid: {}. No ASM model provided, skipping ASM fitting.",
-                e
-            );
+            // Choose the model with minimum loss
+            asm_results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+            let (best_model_name, best_lm_data, best_loss) = &asm_results[0];
+            log::info!("Best ASM model {} w/ loss: {}", best_model_name, best_loss);
+            model_io.set_heatmap_lm_data(best_lm_data.to_owned());
         }
     }
 
