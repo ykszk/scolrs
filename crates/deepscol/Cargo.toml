@@ -38,9 +38,10 @@ log.workspace = true
 ndarray.workspace = true
 ndarray-stats.workspace = true
 
-dicom-object = "0.8.1"
-dicom-pixeldata = { version = "0.8.1", default-features = false, features = [
+dicom-object.workspace = true
+dicom-pixeldata = { version = "0.9.0", default-features = false, features = [
     "native",
+    "image",
 ] }
 image = { version = "0.25.9", default-features = false, features = [
     "jpeg",
@@ -56,7 +57,6 @@ ort = { version = "2.0.0-rc.10", default-features = false, features = [
 ] }
 tracing-subscriber = "0.3.22"
 wasm-bindgen = "0.2.106"
-wee_alloc = "0.4.5"
 
 [build-dependencies]
 anyhow.workspace = true

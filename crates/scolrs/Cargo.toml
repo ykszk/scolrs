@@ -18,16 +18,16 @@ webp = ["dep:webp"]
 [dependencies]
 named_derive = { path = "../named_derive" }
 csv = "1.4.0"
-dicom-core = { version = "0.8.0" }
-dicom-object = { version = "0.8.0" }
-dicom-dictionary-std = { version = "0.8.0" }
+dicom-core.workspace = true
+dicom-object.workspace = true
+dicom-dictionary-std = { version = "0.9.0" }
 lyon_geom = "1.0.18"
-rulinalg = "0.4.2"                                    # replace with nalgebra?
+rulinalg = "0.4.2"                                          # replace with nalgebra?
 serde_repr = "0.1.20"
 strum = { version = "0.27.2", features = ["derive"] }
 regex = "1.12.2"
 base64 = "0.22.1"
-webp = { version = "0.3.1", optional = true}
+webp = { version = "0.3.1", optional = true }
 shadow-rs = { version = "1.5.0", default-features = false }
 ndarray-ndimage = "0.5.0"
 
