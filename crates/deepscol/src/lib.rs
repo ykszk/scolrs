@@ -1,5 +1,6 @@
 extern crate wasm_bindgen;
 use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
+pub use image;
 use image::{DynamicImage, GenericImageView};
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;

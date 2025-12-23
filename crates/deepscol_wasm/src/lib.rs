@@ -17,7 +17,8 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen(getter_with_clone)]
 pub struct DecodedImage {
-    pub image: String,
+    pub image_bytes: Vec<u8>,
+    pub format: String,
     pub width: u32,
     pub height: u32,
 }
@@ -31,10 +32,13 @@ pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<DecodedImage, 
         log::debug!("Flipping image horizontally");
         image = image.fliph();
     }
-    let b64_image = labelme_rs::img2base64(&image, labelme_rs::image::ImageFormat::Png)
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut cursor, deepscol::image::ImageFormat::Jpeg)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(DecodedImage {
-        image: b64_image,
+        image_bytes: cursor.into_inner(),
+        format: "jpeg".to_string(),
         width: metadata.width as u32,
         height: metadata.height as u32,
     })
