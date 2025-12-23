@@ -209,7 +209,7 @@ where
             .map_or(String::from("scolrs html"), |stem| {
                 stem.to_string_lossy().into_owned()
             });
-        let html = wrap_in_html(svg, &["g.Component".to_string()], title)?;
+        let html = wrap_in_html(svg, &["g.Component".to_string()], title, &[])?;
         writer.write(output, html)?;
     } else {
         writer.write(output, document.to_string())?;

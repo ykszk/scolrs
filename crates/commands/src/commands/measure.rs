@@ -10,39 +10,16 @@ use crate::cli::{
 };
 use crate::utils::Ndjson;
 use anyhow::{Context, Result};
-use indexmap::IndexMap;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
+use scolrs::measure::{measure_all, measure_x, MeasureLine, MeasureResult, NeckMeasurements};
 use scolrs::{
-    draw::{ConfidenceComponent, MeasureComponent, MeasureError, ReductionMethod},
+    draw::ReductionMethod,
     head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
-    CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, HasImageMetadata,
-    MeasureAndDraw, PointConfidence, SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
-    ScaledType,
+    CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, MeasureAndDraw,
+    SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
-type Measurement = std::result::Result<f64, MeasureError>;
-type MeasurementVec = std::result::Result<Vec<f64>, MeasureError>;
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct MeasureResult<V, T>
-where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
-{
-    pub measurements: IndexMap<V, std::result::Result<T, MeasureError>>,
-    pub confidences: Option<IndexMap<V, std::result::Result<f64, MeasureError>>>,
-    pub unit_of_length: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct MeasureLine<V, T>
-where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
-{
-    pub filename: String,
-    pub content: MeasureResult<V, T>,
-}
+use serde::de::DeserializeOwned;
 
 type SagittalMeasureLine = MeasureLine<SagittalMeasure, f64>;
 type CoronalMeasureLine = MeasureLine<CoronalMeasure, f64>;
@@ -207,60 +184,6 @@ fn process_json(args: MeasureArgs) -> Result<()> {
     Ok(())
 }
 
-fn measure_x<T, U>(
-    data: ScaledType<T>,
-    measures: Vec<U>,
-    reduction_method: ReductionMethod,
-) -> Result<MeasureResult<U, f64>>
-where
-    T: HasImageMetadata + Scalable + PointConfidence,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
-    for<'a, 'b> (&'a U, &'b ScaledType<T>):
-        Into<Box<dyn MeasureComponent + 'b>> + Into<Box<dyn ConfidenceComponent + 'b>>,
-{
-    let confidences = if data.0.get_confidence().is_some() {
-        let confs = confidence_x(&data, &measures, reduction_method)?;
-        Some(confs)
-    } else {
-        None
-    };
-    let mut measurements: IndexMap<U, Measurement> = Default::default();
-    for measure in measures {
-        let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
-        measurements.insert(measure.clone(), spinal_measure.measure());
-    }
-    let result = MeasureResult {
-        measurements,
-        confidences,
-        unit_of_length: data.0.image_metadata().unit.clone(),
-    };
-    Ok(result)
-}
-
-type ConfResult<U> = IndexMap<U, std::result::Result<f64, MeasureError>>;
-
-fn confidence_x<T, U>(
-    data: &ScaledType<T>,
-    measures: &[U],
-    reduction_method: ReductionMethod,
-) -> Result<ConfResult<U>>
-where
-    T: Scalable,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
-    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
-{
-    let mut measurements: IndexMap<U, std::result::Result<f64, MeasureError>> = Default::default();
-    for measure in measures {
-        log::debug!("Calculating confidence for measure {:?}", measure);
-        let spinal_measure: Box<dyn ConfidenceComponent> = (measure, data).into();
-        let conf = spinal_measure.confidence(reduction_method);
-        if let Some(conf) = conf {
-            measurements.insert(measure.clone(), conf);
-        }
-    }
-    Ok(measurements)
-}
-
 fn convert_reduce(method: crate::cli::ReductionMethod) -> ReductionMethod {
     match method {
         crate::cli::ReductionMethod::Arithmetic => ReductionMethod::ArithmeticMean,
@@ -277,7 +200,7 @@ fn measure_sagittal(
     let scaled_data = sagittal_points.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
     let reduce = convert_reduce(args.reduce);
-    measure_x(scaled_data, measures, reduce)
+    Ok(measure_x(scaled_data, measures, reduce))
 }
 
 fn measure_coronal(
@@ -288,24 +211,8 @@ fn measure_coronal(
     let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
     let reduce = convert_reduce(args.reduce);
-    measure_x(scaled_data, measures, reduce)
+    Ok(measure_x(scaled_data, measures, reduce))
 }
-
-fn measure_all(
-    measures: Vec<Box<dyn NeckMeasureComponent + '_>>,
-) -> Result<IndexMap<String, MeasurementVec>> {
-    let measures: Vec<_> = measures
-        .into_iter()
-        .map(|m| {
-            let result = m.measure();
-            (m.id().to_string(), result)
-        })
-        .collect();
-    let map = IndexMap::from_iter(measures);
-    Ok(map)
-}
-
-type NeckMeasurements = MeasureResult<String, Vec<f64>>;
 
 fn process_neck(
     lateral_points: LateralPoints,
@@ -314,7 +221,7 @@ fn process_neck(
     let scaled_data = lateral_points.into_scaled()?;
     let measures: Vec<Box<dyn NeckMeasureComponent>> =
         measures.iter().map(|m| (m, &scaled_data).into()).collect();
-    let measures = measure_all(measures)?;
+    let measures = measure_all(measures);
     Ok(NeckMeasurements {
         measurements: measures,
         confidences: None,

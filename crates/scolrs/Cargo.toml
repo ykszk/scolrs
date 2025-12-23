@@ -17,7 +17,7 @@ webp = ["dep:webp"]
 
 [dependencies]
 named_derive = { path = "../named_derive" }
-csv = "1.4.0"
+csv.workspace = true
 dicom-core.workspace = true
 dicom-object.workspace = true
 dicom-dictionary-std = { version = "0.9.0" }
@@ -43,7 +43,7 @@ serde_json.workspace = true
 svg.workspace = true
 thiserror.workspace = true
 scraper.workspace = true
-tera.workspace = true
+tera = {workspace = true, features = ["urlencode"] }
 config.workspace = true
 serde_yaml = "0.9.34"
 

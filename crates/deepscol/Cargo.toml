@@ -37,6 +37,7 @@ labelme-rs.workspace = true
 log.workspace = true
 ndarray.workspace = true
 ndarray-stats.workspace = true
+csv.workspace = true
 
 dicom-object.workspace = true
 dicom-pixeldata = { version = "0.9.0", default-features = false, features = [

@@ -10,9 +10,10 @@ use scolrs::{
     draw::{
         draw_generic, draw_sagittal,
         generic::{GenericDraw, GenericPoints},
-        output3_to_heatmap, AxisMax, ImageOverlay,
+        output3_to_heatmap, AxisMax, EmbeddedData, ImageOverlay,
     },
-    HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints,
+    measure::measure_x,
+    HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints, Scalable,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -855,10 +856,11 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         let mut gp = GenericPoints::from(model_io.lm_data().clone());
         *gp.image_metadata_mut() = metadata;
         let html = create_generic_svg(gp, model_io.into_lm_data_w_image(), overlays, &size_config)?;
-        let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title)?;
+        let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title, &[])?;
         return Ok(html);
     }
-    let document = match scan_direction {
+    let reduce = scolrs::draw::ReductionMethod::GeometricMean;
+    let (document, measurements) = match scan_direction {
         ScanDirection::Coronal => {
             log::debug!("Creating CoronalPointsAndCurve");
             let mut cp = CoronalPointsAndCurve::try_from(model_io.lm_data())?;
@@ -870,7 +872,12 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             log::trace!("Extracted confidence: {:?}", confidence);
             *cp.coronal_points.get_confidence_mut() = Some(confidence);
             let lm_data_with_image = model_io.into_lm_data_w_image();
-            create_coronal_svg(cp, lm_data_with_image, overlays, &size_config)
+            // coronal measurements
+            let measures = scolrs::CoronalMeasure::all();
+            let scaled_data = cp.clone().into_scaled()?;
+            let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
+            let svg = create_coronal_svg(cp, lm_data_with_image, overlays, &size_config)?;
+            (svg, measurements)
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
@@ -881,10 +888,49 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             log::trace!("Extracted confidence: {:?}", confidence);
             *cp.get_confidence_mut() = Some(confidence);
             let lm_data_with_image = model_io.into_lm_data_w_image();
-            create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)
+            // sagittal measurements
+            let measures = scolrs::SagittalMeasure::all();
+            let scaled_data = cp.clone().into_scaled()?;
+            let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
+            let svg = create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)?;
+            (svg, measurements)
         }
-    }?;
-    let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
+    };
+    let measure_json = serde_json::to_string_pretty(&measurements)?;
+    let transposed_result = measurements.into_transposed();
+    let mut wtr = csv::Writer::from_writer(vec![]);
+    wtr.serialize(("Measurement", "Value", "Confidence"))?;
+    for entry in transposed_result.entries {
+        let measure = entry.1.measurement.ok();
+        // Option<Result<f64, _>> to Option<f64>
+        let confidence = entry.1.confidence.and_then(|r| r.ok());
+        wtr.serialize((entry.0, measure, confidence))?;
+    }
+    wtr.serialize((
+        "unit of length",
+        transposed_result.unit_of_length,
+        None::<f64>,
+    ))?;
+    let csv_data = String::from_utf8(wtr.into_inner()?)?;
+
+    let embedded_data = vec![
+        EmbeddedData::new(
+            "measurements.json".to_string(),
+            measure_json,
+            "application/json".to_string(),
+        ),
+        EmbeddedData::new(
+            "measurements.csv".to_string(),
+            csv_data,
+            "text/csv".to_string(),
+        ),
+    ];
+    let html = wrap_in_html(
+        document.to_string(),
+        &["g.Component".to_string()],
+        title,
+        &embedded_data,
+    )?;
     Ok(html)
 }
 

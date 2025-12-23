@@ -25,7 +25,7 @@ mod coronal;
 pub mod generic;
 mod sagittal;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
 struct LineColor {
     label: String,
     color: String,
@@ -840,7 +840,7 @@ where
     lyon_geom::Line { point, vector }
 }
 
-#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug, Clone, Serialize, Deserialize)]
 pub enum InvalidNumberOfPoints {
     /// Too few points, expected and actual
     #[error("Too few points, expected: {0}, actual: {1}")]
@@ -853,7 +853,7 @@ pub enum InvalidNumberOfPoints {
     IncorrectNumberOfPoints(usize, usize),
 }
 
-#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug, Clone, Serialize, Deserialize)]
 pub enum MeasureError {
     // Invalid number of points
     #[error("Invalid number of points")]
@@ -1910,11 +1910,29 @@ pub enum HtmlWrapError {
     Tera(#[from] tera::Error),
 }
 
+#[derive(Serialize)]
+pub struct EmbeddedData {
+    pub name: String,
+    pub content: String,
+    pub mime_type: String,
+}
+
+impl EmbeddedData {
+    pub fn new(name: String, content: String, mime_type: String) -> Self {
+        Self {
+            name,
+            content,
+            mime_type,
+        }
+    }
+}
+
 /// Wrap the SVG in HTML with visibility toggles
 pub fn wrap_in_html(
     svg: String,
     selector: &[String],
     title: String,
+    embedded_data: &[EmbeddedData],
 ) -> Result<String, HtmlWrapError> {
     let document = scraper::Html::parse_document(&svg);
 
@@ -1933,6 +1951,10 @@ pub fn wrap_in_html(
                 include_str!("templates/draw_setting.css"),
             ),
             ("draw_setting.js", include_str!("templates/draw_setting.js")),
+            (
+                "embedded_data.jinja",
+                include_str!("templates/embedded_data.jinja"),
+            ),
         ])
         .unwrap();
     let javascript = include_str!("templates/capture.js");
@@ -1983,6 +2005,28 @@ pub fn wrap_in_html(
     context.insert("title", &title);
     context.insert("javascript", &javascript);
     context.insert("save_module", &include_str!("templates/save_module.html"));
+
+    log::debug!("Embedding {} files", embedded_data.len());
+    // let download_links = embedded_data
+    //     .iter()
+    //     .map(|data| {
+    //         let mut b64_content = String::new();
+    //         base64::engine::general_purpose::STANDARD
+    //             .encode_string(&data.content, &mut b64_content);
+    //         let link = format!(
+    //             "data:{mime_type};base64,{content}",
+    //             mime_type = data.mime_type,
+    //             content = b64_content
+    //         );
+    //         let tag = format!(
+    //             r#"<a download="{name}" href="{link}">{name}</a>"#,
+    //             name = data.name,
+    //             link = link
+    //         );
+    //         tag
+    //     })
+    //     .collect::<Vec<_>>();
+    context.insert("embedded_data", &embedded_data);
 
     let html = templates.render("html.jinja", &context)?;
     Ok(html)

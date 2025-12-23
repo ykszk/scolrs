@@ -31,6 +31,7 @@ pub mod lenke;
 use head_neck::Scale2DPoints;
 use shadow_rs::shadow;
 pub mod asm;
+pub mod measure;
 
 use crate::draw::SpineWithConfidence;
 
@@ -119,7 +120,7 @@ pub trait HasImageMetadata {
     fn image_metadata_mut(&mut self) -> &mut ImageMetadata;
 }
 
-/// Marker type for scaled types
+/// Marker type for scaled data
 pub struct ScaledType<T: Scalable>(pub T);
 
 /// Scale the points by internal spacing data
