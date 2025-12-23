@@ -4,7 +4,7 @@ use std::vec;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
-use scolrs::asm::model::ActiveShapeModel;
+use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
 enum Direction {
@@ -218,17 +218,20 @@ fn main() -> Result<()> {
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
                 .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
 
-            let asm_config: scolrs::asm::AsmConfig =
-                if let Some(asm_config_path) = asm_config.as_ref() {
-                    let config_builder = config::Config::builder()
-                        .add_source(config::Config::try_from(&scolrs::asm::AsmConfig::default())?)
-                        .add_source(config::File::from(asm_config_path.as_path()))
-                        .build()?;
-                    config_builder.try_deserialize()?
-                } else {
-                    log::debug!("No ASM config file provided, using default configuration.");
-                    scolrs::asm::AsmConfig::default()
-                };
+            let asm_config: AsmConfig = if let Some(asm_config_path) = asm_config.as_ref() {
+                let config_builder = config::Config::builder()
+                    .add_source(config::Config::try_from(&AsmConfig::default())?);
+                let config_builder = scolrs::asm::add_env_config(config_builder)
+                    .add_source(config::File::from(asm_config_path.as_path()))
+                    .build()?;
+                config_builder.try_deserialize()?
+            } else {
+                log::debug!("No ASM config file provided, using default configuration and environment variables.");
+                let config_builder = config::Config::builder()
+                    .add_source(config::Config::try_from(&AsmConfig::default())?);
+                let config_builder = scolrs::asm::add_env_config(config_builder).build()?;
+                config_builder.try_deserialize()?
+            };
             log::debug!("ASM fitting configuration: {:?}", asm_config);
             asms.push((asm, asm_config));
         }

@@ -147,6 +147,7 @@ impl History {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FitConfig {
+    /// Weight on the regularization term
     pub lambda: f64,
     pub adam: AdamParams,
 }

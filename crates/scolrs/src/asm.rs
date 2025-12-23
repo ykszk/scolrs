@@ -15,6 +15,17 @@ use ndarray::{s, Array1, Array2, Array3, ArrayView3, Axis};
 use ndarray_ndimage as ndi;
 use serde::{Deserialize, Serialize};
 
+pub fn add_env_config(
+    builder: config::ConfigBuilder<config::builder::DefaultState>,
+) -> config::ConfigBuilder<config::builder::DefaultState> {
+    builder.add_source(
+        config::Environment::with_prefix("ASM")
+            .separator("__")
+            .list_separator(",")
+            .try_parsing(true),
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AsmConfig {
     pub fit: FitConfig,

@@ -4,7 +4,7 @@ use crate::cli::{AsmArgs, AsmConfigArgs, AsmFitArgs, AsmReconstructArgs, AsmSubC
 use labelme_rs::LabelMeData;
 
 use scolrs::asm::{
-    self, apply_asm, create_shapes_from_fitted_points, extract_reference_points,
+    self, add_env_config, apply_asm, create_shapes_from_fitted_points, extract_reference_points,
     model::ActiveShapeModel, AsmConfig,
 };
 use serde_json;
@@ -147,17 +147,6 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
         .with_context(|| format!("Writing labelme data to {:?}", args.output))?;
     println!("Saved reconstructed labelme data to {:?}", args.output);
     Ok(())
-}
-
-fn add_env_config(
-    builder: config::ConfigBuilder<config::builder::DefaultState>,
-) -> config::ConfigBuilder<config::builder::DefaultState> {
-    builder.add_source(
-        config::Environment::with_prefix("ASM")
-            .separator("__")
-            .list_separator(",")
-            .try_parsing(true),
-    )
 }
 
 fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {

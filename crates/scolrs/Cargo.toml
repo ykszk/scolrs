@@ -44,6 +44,7 @@ svg.workspace = true
 thiserror.workspace = true
 scraper.workspace = true
 tera.workspace = true
+config.workspace = true
 serde_yaml = "0.9.34"
 
 [dev-dependencies]
