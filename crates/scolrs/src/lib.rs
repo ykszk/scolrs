@@ -568,7 +568,9 @@ pub struct CoronalPoints {
 }
 
 trait GetMany {
+    #[allow(dead_code)] // TODO: maybe remove?
     fn get_many(&self, points: Array2<usize>) -> Array1<f64>;
+    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f64>;
 }
 
 impl GetMany for ArrayView2<'_, f64> {
@@ -577,6 +579,17 @@ impl GetMany for ArrayView2<'_, f64> {
         for (i, point) in points.axis_iter(Axis(0)).enumerate() {
             let x = point[0];
             let y = point[1];
+            result[i] = self[[y, x]];
+        }
+        result
+    }
+    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f64> {
+        let height = self.len_of(Axis(0));
+        let width = self.len_of(Axis(1));
+        let mut result = Array1::zeros(points.len_of(Axis(0)));
+        for (i, point) in points.axis_iter(Axis(0)).enumerate() {
+            let x = point[0].clamp(0, width - 1);
+            let y = point[1].clamp(0, height - 1);
             result[i] = self[[y, x]];
         }
         result
@@ -598,7 +611,9 @@ fn extract_confidence(
         confidence_map.shape(),
         pts
     );
-    confidence_map.slice(s![.., .., class_idx]).get_many(pts)
+    confidence_map
+        .slice(s![.., .., class_idx])
+        .get_many_clamped(pts)
 }
 
 impl CoronalPoints {

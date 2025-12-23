@@ -88,7 +88,7 @@ pub fn create_shapes_from_fitted_points(
 fn smooth_heatmaps(heatmaps: ArrayView3<f64>, sigma: f64) -> Array3<f64> {
     let mut smoothed_heatmaps = heatmaps.to_owned();
     for (ch_idx, channel) in heatmaps.axis_iter(Axis(0)).enumerate() {
-        let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Mirror, 3);
+        let smoothed = ndi::gaussian_filter(&channel, sigma, 0, ndi::BorderMode::Nearest, 3);
         smoothed_heatmaps
             .index_axis_mut(ndarray::Axis(0), ch_idx)
             .assign(&smoothed);
