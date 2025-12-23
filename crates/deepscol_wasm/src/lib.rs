@@ -65,6 +65,7 @@ pub struct Arr3 {
     pub d3: usize,
 }
 
+/// Note: this function takes the ownership of the cropping_params
 #[wasm_bindgen]
 pub fn create_input_array(
     bytes: &[u8],
@@ -133,6 +134,7 @@ pub fn calculate_crop_parameters_wasm(
     Ok(params)
 }
 
+/// Note: this function takes the ownership of the cropping_params
 #[wasm_bindgen]
 pub fn process_output(
     image_filename: &str,
