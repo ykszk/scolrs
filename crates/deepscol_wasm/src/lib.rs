@@ -24,14 +24,9 @@ pub struct DecodedImage {
 }
 
 #[wasm_bindgen]
-pub fn decode_image(encoded: &[u8], settings: Settings) -> Result<DecodedImage, JsValue> {
-    let (mut image, metadata) =
-        load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+pub fn decode_image(encoded: &[u8]) -> Result<DecodedImage, JsValue> {
+    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
     log::debug!("Image metadata: {:?}", metadata);
-    if settings.flip_image {
-        log::debug!("Flipping image horizontally");
-        image = image.fliph();
-    }
     let mut cursor = std::io::Cursor::new(Vec::new());
     image
         .write_to(&mut cursor, deepscol::image::ImageFormat::Jpeg)
@@ -74,7 +69,7 @@ pub struct Arr3 {
 pub fn create_input_array(
     bytes: &[u8],
     model_input_height: u32,
-    settings: Settings,
+    settings: &Settings,
     cropping_params: Option<CroppingParams>,
 ) -> Result<Arr3, JsValue> {
     let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -144,7 +139,7 @@ pub fn process_output(
     encoded: &[u8],
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
-    settings: Settings,
+    settings: &Settings,
     cropping_params: Option<CroppingParams>,
 ) -> Result<String, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
