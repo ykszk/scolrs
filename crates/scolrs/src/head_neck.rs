@@ -5,9 +5,9 @@ use crate::{
     draw::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
         femoral_incidence_angle, points2line, tilt_angle, AsMeasure, CobbAux, ColorPalette,
-        ConfidenceComponent, DrawArguments, DrawComponent, DrawCorners, DrawError, MeasureError,
-        Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE,
-        CLASS_POINT, CLASS_RATIO, CLASS_TEXT,
+        ConfidenceComponent, DrawArguments, DrawComponent, DrawCorners, DrawError,
+        MeasureComponent, MeasureError, Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION,
+        CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO, CLASS_TEXT,
     },
     extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
     Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, PointConfidence,
@@ -473,10 +473,6 @@ pub trait NeckSagittalComponent: DrawComponent {
     }
 }
 
-pub trait NeckMeasureComponent: Named {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError>;
-}
-
 /// Space Available for the Spinal Cord
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_LINE, CLASS_DISTANCE])]
@@ -559,8 +555,9 @@ impl DrawComponent for Sacs<'_> {
     }
 }
 
-impl NeckMeasureComponent for Sacs<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for Sacs<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         self.0.posterior_dens.validate_label_length("Dens", 1)?;
         self.0.lamina.validate_label_length("Lamina", 8)?;
         let mut lengths: Vec<f64> = Vec::new();
@@ -642,8 +639,9 @@ impl DrawComponent for Adi<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for Adi<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for Adi<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         self.prep()?;
         let diff = &self.0.anterior_dens.index_axis(Axis(0), 0)
             - &self.0.anterior_c1_arch.index_axis(Axis(0), 0);
@@ -718,8 +716,9 @@ impl DrawComponent for OC2<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for OC2<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for OC2<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
         let angle =
             angle_from_lines(mcgregor_points.view(), c2_lower_endplate.view()).unwrap_or_default();
@@ -773,8 +772,9 @@ impl DrawComponent for WedgeAngle<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for WedgeAngle<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for WedgeAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let mut angles = Vec::new();
         for i in 0..6 {
             let wedge_upper = self.0.corners.0.index_axis(Axis(0), i);
@@ -860,8 +860,9 @@ impl DrawComponent for ModifiedRenawatIndex<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for ModifiedRenawatIndex<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for ModifiedRenawatIndex<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let intersection = self.prep()?;
         if let Some(intersection) = intersection {
             let diff = &intersection.index_axis(Axis(0), 0) - &intersection.index_axis(Axis(0), 1);
@@ -906,8 +907,9 @@ impl DrawComponent for ThoracicInletAngle<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for ThoracicInletAngle<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for ThoracicInletAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let t1_top_plate = self.prep()?;
         let angle = femoral_incidence_angle(
             t1_top_plate.view(),
@@ -974,8 +976,9 @@ impl DrawComponent for NeckTilt<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for NeckTilt<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for NeckTilt<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (line1, line2) = self.prep()?;
         let angle = angle_between(line1.view(), line2.view()).to_degrees();
         Ok(vec![angle])
@@ -1035,8 +1038,9 @@ impl DrawComponent for SpinoCranialAngle<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for SpinoCranialAngle<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for SpinoCranialAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (c7_to_sella, c7_mid_to_posterior) = self.prep()?;
         let angle = angle_between(c7_to_sella.view(), c7_mid_to_posterior.view()).to_degrees();
         Ok(vec![angle])
@@ -1107,8 +1111,9 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for OccipitocervicalInclination<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for OccipitocervicalInclination<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let prep_data = self.prep()?;
         let (c4_posterior, mcgregor_points, _intersection) = if let Some(data) = prep_data {
             data
@@ -1140,8 +1145,9 @@ impl DrawComponent for CranialSlope<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for CranialSlope<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for CranialSlope<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let mcgregor_points = self.0.mcgregor_line()?;
         tilt_angle(self.id(), mcgregor_points.view()).map(|angle| vec![angle])
     }
@@ -1173,8 +1179,9 @@ impl DrawComponent for T1Slope<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for T1Slope<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for T1Slope<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let t1_top_plate = self.prep();
         tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![angle])
     }
@@ -1245,8 +1252,9 @@ impl DrawComponent for TPR<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for TPR<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for TPR<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let mut ratios = Vec::new();
         let lamina_below_c2 = self.0.lamina.slice(s![2.., ..]);
@@ -1345,8 +1353,9 @@ impl DrawComponent for C2C7SVA<'_> {
     }
 }
 
-impl NeckMeasureComponent for C2C7SVA<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for C2C7SVA<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (c2_lower_middle, c7_tr) = self.prep()?;
         let distance = c7_tr[0] - c2_lower_middle[0];
         Ok(vec![distance])
@@ -1399,8 +1408,9 @@ impl DrawComponent for EACSVA<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for EACSVA<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for EACSVA<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (eac, c7_tr) = self.prep()?;
         let distance = c7_tr[0] - eac[0];
         Ok(vec![distance])
@@ -1453,8 +1463,9 @@ impl DrawComponent for EndPlateAngle<'_> {
         Ok(group)
     }
 }
-impl NeckMeasureComponent for EndPlateAngle<'_> {
-    fn measure(&self) -> Result<Vec<f64>, MeasureError> {
+impl MeasureComponent for EndPlateAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let endplates = self.prep()?;
         let mut angles = Vec::new();
         for plate in endplates.axis_iter(Axis(0)) {
@@ -1565,7 +1576,20 @@ impl DrawComponent for VertebralLabels<'_> {
     }
 }
 
-#[derive(strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone)]
+#[derive(
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+)]
 #[clap(rename_all = "PascalCase")]
 pub enum NeckLateralMeasure {
     Adi,
@@ -1592,7 +1616,7 @@ impl NeckLateralMeasure {
 }
 
 impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
-    for Box<dyn NeckMeasureComponent + 'a>
+    for Box<dyn MeasureComponent<ValueType = Vec<f64>> + 'a>
 {
     fn from(value: (&NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
         let (measure, lateral_points) = value;
@@ -1622,7 +1646,7 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
 }
 
 impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
-    for Box<dyn ConfidenceComponent + 'a>
+    for Box<dyn ConfidenceComponent<ValueType = Vec<f64>> + 'a>
 {
     fn from(_value: (&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
         todo!()

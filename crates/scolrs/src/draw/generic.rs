@@ -99,7 +99,7 @@ impl<'a, 'b> From<(&'b GenericDraw, &'a ScaledType<GenericPoints>)>
 }
 
 impl<'a, 'b> From<(&'b GenericMeasure, &'a ScaledType<GenericPoints>)>
-    for Box<dyn ConfidenceComponent + 'a>
+    for Box<dyn ConfidenceComponent<ValueType = f64> + 'a>
 {
     fn from(_: (&'b GenericMeasure, &'a ScaledType<GenericPoints>)) -> Self {
         unreachable!("GenericDraw does not have confidence measures");

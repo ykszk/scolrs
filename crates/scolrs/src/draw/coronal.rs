@@ -51,7 +51,8 @@ macro_rules! impl_cobb_angle {
             }
         }
         impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f64, MeasureError> {
+            type ValueType = f64;
+            fn measure(&self) -> Result<Self::ValueType, MeasureError> {
                 if let Some((_curve, angle)) = self.1.as_ref() {
                     Ok(-*angle)
                 } else {
@@ -60,6 +61,7 @@ macro_rules! impl_cobb_angle {
             }
         }
         impl ConfidenceComponent for $name<'_> {
+            type ValueType = f64;
             fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
                 if self.0.confidences.is_none() || self.1.is_none() {
                     return None;
@@ -239,13 +241,15 @@ impl DrawComponent for Avt<'_> {
     }
 }
 impl MeasureComponent for Avt<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (apex_centroid, mid) = Self::prep(self.0, self.1)?;
         let dx = apex_centroid[0] - mid[0];
         Ok(dx)
     }
 }
 impl ConfidenceComponent for Avt<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let curve_desc = self.1;
@@ -311,13 +315,15 @@ impl DrawComponent for T1TiltAngle<'_> {
     }
 }
 impl MeasureComponent for T1TiltAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle("Vertebra", t1sup)
     }
 }
 impl ConfidenceComponent for T1TiltAngle<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         // T1 corners
@@ -365,13 +371,15 @@ impl DrawComponent for CoronalBalance<'_> {
     }
 }
 impl MeasureComponent for CoronalBalance<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let points = self.prep(&self.0.spine);
         let dx = points.index_axis(Axis(0), 0)[0] - points.index_axis(Axis(0), 1)[0];
         Ok(dx)
     }
 }
 impl ConfidenceComponent for CoronalBalance<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let c7_confs = confidence.c7tls.index_axis(Axis(0), 0);
@@ -410,11 +418,13 @@ impl DrawComponent for ClavicleAngle<'_> {
     }
 }
 impl MeasureComponent for ClavicleAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         tilt_angle("Clavicle", self.0.clavicle.0.view())
     }
 }
 impl ConfidenceComponent for ClavicleAngle<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.clavicle.view();
@@ -450,7 +460,8 @@ impl DrawComponent for ShoulderHeight<'_> {
     }
 }
 impl MeasureComponent for ShoulderHeight<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let coronal_points = self.0;
         coronal_points
             .shoulder
@@ -462,6 +473,7 @@ impl MeasureComponent for ShoulderHeight<'_> {
     }
 }
 impl ConfidenceComponent for ShoulderHeight<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.shoulder.view();
@@ -494,11 +506,13 @@ impl DrawComponent for PelvicObliquity<'_> {
     }
 }
 impl MeasureComponent for PelvicObliquity<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         tilt_angle("Pelvis", self.0.pelvis.0.view())
     }
 }
 impl ConfidenceComponent for PelvicObliquity<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.pelvis.view();
@@ -582,13 +596,15 @@ impl DrawComponent for SacralObliquity<'_> {
     }
 }
 impl MeasureComponent for SacralObliquity<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (femoral_line, sac_seg) = self.prep()?;
         let angle = angle_between(femoral_line.view(), sac_seg.view()).to_degrees();
         Ok(angle)
     }
 }
 impl ConfidenceComponent for SacralObliquity<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let femoral_confs = confidence.femoral_head.view();
@@ -627,7 +643,8 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
     }
 }
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let coronal_points = self.0;
         coronal_points
             .femoral_head
@@ -639,6 +656,7 @@ impl MeasureComponent for LegLengthDiscrepancy<'_> {
     }
 }
 impl ConfidenceComponent for LegLengthDiscrepancy<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.femoral_head.view();
@@ -687,7 +705,7 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
 }
 
 impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
-    for Box<dyn MeasureComponent + 'a>
+    for Box<dyn MeasureComponent<ValueType = f64> + 'a>
 {
     fn from(value: (&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
         let (measure, coronal_points_and_curve) = value;
@@ -717,7 +735,7 @@ impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
 }
 
 impl<'a, 'b> From<(&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)>
-    for Box<dyn ConfidenceComponent + 'a>
+    for Box<dyn ConfidenceComponent<ValueType = f64> + 'a>
 {
     fn from(value: (&'b CoronalMeasure, &'a ScaledType<CoronalPointsAndCurve>)) -> Self {
         let (measure, coronal_points_and_curve) = value;

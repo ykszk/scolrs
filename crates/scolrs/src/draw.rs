@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
-use std::ops::{AddAssign, SubAssign};
+use std::ops::{AddAssign, Range, SubAssign};
 use svg::node::element;
 use svg::Node;
 pub type LineColors = HashMap<String, String>;
@@ -952,18 +952,42 @@ pub trait DrawComponent: Named {
     ) -> Result<element::Group, DrawError>;
 }
 pub trait MeasureComponent: Named {
-    fn measure(&self) -> Result<f64, MeasureError>;
+    type ValueType;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError>;
+}
+
+pub trait ConfidenceDisplay {
+    fn display(&self) -> String;
+}
+
+impl ConfidenceDisplay for f64 {
+    fn display(&self) -> String {
+        format!("{:.4}", self)
+    }
+}
+impl ConfidenceDisplay for Vec<f64> {
+    fn display(&self) -> String {
+        let s: Vec<String> = self.iter().map(|c| format!("{:.4}", c)).collect();
+        s.join(", ")
+    }
 }
 
 pub trait ConfidenceComponent: Named {
-    fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>>;
+    type ValueType;
+    fn confidence(
+        &self,
+        reduction_method: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>>;
     fn add_confidence_to_group(
         &self,
         group: element::Group,
         reduction_method: ReductionMethod,
-    ) -> element::Group {
+    ) -> element::Group
+    where
+        Self::ValueType: ConfidenceDisplay,
+    {
         if let Some(Ok(confidence)) = self.confidence(reduction_method) {
-            group.set("data-confidence", format!("{:.4}", confidence))
+            group.set("data-confidence", confidence.display())
         } else {
             group
         }
@@ -1020,10 +1044,13 @@ impl AxisMax for ndarray::ArrayView3<'_, f32> {
     }
 }
 
-pub fn array3_to_rgba_image(arr3: ndarray::ArrayView3<f32>) -> DynamicImage {
-    let r = arr3.slice(s![0..2, .., ..]).axis_max(Axis(0)); // TL and TR
-    let g = arr3.slice(s![2..4, .., ..]).axis_max(Axis(0)); // BL and BR
-    let b = arr3.slice(s![4..9, .., ..]).axis_max(Axis(0)); // Other points
+pub fn array3_to_rgba_image(
+    arr3: ndarray::ArrayView3<f32>,
+    ch_range_rgb: (Range<usize>, Range<usize>, Range<usize>),
+) -> DynamicImage {
+    let r = arr3.slice(s![ch_range_rgb.0, .., ..]).axis_max(Axis(0)); // TL and TR
+    let g = arr3.slice(s![ch_range_rgb.1, .., ..]).axis_max(Axis(0)); // BL and BR
+    let b = arr3.slice(s![ch_range_rgb.2, .., ..]).axis_max(Axis(0)); // Other points
     let heatmap = image::ImageBuffer::from_fn(r.shape()[1] as u32, r.shape()[0] as u32, |x, y| {
         let r_val = (r[[y as usize, x as usize]] * 255.0) as u8;
         let g_val = (g[[y as usize, x as usize]] * 255.0) as u8;
@@ -1039,11 +1066,12 @@ pub fn array3_to_rgba_image(arr3: ndarray::ArrayView3<f32>) -> DynamicImage {
 pub fn output3_to_heatmap(
     output3: ndarray::ArrayView3<f32>,
     input_image_wh: (u32, u32),
+    ch_range_rgb: (Range<usize>, Range<usize>, Range<usize>),
 ) -> DynamicImage {
     let aspect_ratio = input_image_wh.0 as f32 / input_image_wh.1 as f32;
     let heatmap_width = (output3.shape()[1] as f32 * aspect_ratio).round() as usize;
     let output3 = output3.slice(s![.., .., ..heatmap_width]);
-    array3_to_rgba_image(output3)
+    array3_to_rgba_image(output3, ch_range_rgb)
 }
 
 pub struct ImageOverlay {
@@ -1344,8 +1372,9 @@ impl DrawComponent for Lstv<'_> {
     }
 }
 impl MeasureComponent for Lstv<'_> {
+    type ValueType = f64;
     // The number of lumbar vertebrae
-    fn measure(&self) -> Result<f64, MeasureError> {
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let vertebra_count = self.0.spine.c7tls.0.len_of(Axis(0));
         match vertebra_count {
             20 => Ok(6.0),
@@ -1359,6 +1388,7 @@ impl MeasureComponent for Lstv<'_> {
     }
 }
 impl ConfidenceComponent for Lstv<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction_method: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // reduce confidence from all corner points
         let confidence = self.0.confidences.as_ref()?;
@@ -1759,7 +1789,7 @@ const VISIBILITY_VISIBLE: &str = "visible";
 /// Draw the given components
 ///
 /// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
-pub fn draw_components<'a, T, S>(
+pub fn draw_components<'a, T, S, V>(
     data: T,
     draws: &[S],
     hide: &[S],
@@ -1769,8 +1799,10 @@ pub fn draw_components<'a, T, S>(
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq + AsMeasure,
-    for<'b> (&'b S::MeasureType, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
+        Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
     T: HasImageMetadata + Scalable,
+    V: ConfidenceDisplay,
     <T as Scalable>::Error: std::fmt::Debug,
 {
     let scaled_data = data
@@ -1792,7 +1824,7 @@ where
                 };
                 let mut g = g.set("visibility", visibility);
                 if let Some(conf_measure) = measure.as_measure() {
-                    let conf_component: Box<dyn ConfidenceComponent> =
+                    let conf_component: Box<dyn ConfidenceComponent<ValueType = V>> =
                         (&conf_measure, &scaled_data).into();
                     g = conf_component.add_confidence_to_group(g, ReductionMethod::default());
                 }
@@ -1835,12 +1867,14 @@ pub struct DrawArguments<'a, T, S> {
 /// Draw the given components on the image.
 ///
 /// Pass data in pixel coordinates becase scaling based on image_metadata is handled inside this function.
-pub fn draw_on_image<'a, T, S>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
+pub fn draw_on_image<'a, T, S, V>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
     S: Clone + Copy + PartialEq + AsMeasure,
-    for<'b> (&'b S::MeasureType, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
+        Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
     T: HasImageMetadata + Scalable,
+    V: ConfidenceDisplay,
     <T as Scalable>::Error: std::fmt::Debug,
 {
     let DrawArguments {

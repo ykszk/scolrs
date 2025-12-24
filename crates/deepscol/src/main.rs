@@ -13,6 +13,7 @@ enum Direction {
     Coronal,
     #[clap(alias = "lateral")]
     Sagittal,
+    NeckLateral,
 }
 
 #[derive(clap::Args)]
@@ -290,6 +291,7 @@ fn main() -> Result<()> {
         let scan_direction = match args.direction {
             Direction::Coronal => deepscol::ScanDirection::Coronal,
             Direction::Sagittal => deepscol::ScanDirection::Sagittal,
+            Direction::NeckLateral => deepscol::ScanDirection::NeckLateral,
         };
         let title = format!(
             "{} - Deepscol",

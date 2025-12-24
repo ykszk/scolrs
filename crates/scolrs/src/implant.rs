@@ -512,7 +512,7 @@ impl<'a, 'b> From<(&'b ImplantDraw, &'a ScaledType<ScrewSpine>)> for Box<dyn Dra
 
 pub struct DummyMeasureType;
 impl<'a, 'b> From<(&'b DummyMeasureType, &'a ScaledType<ScrewSpine>)>
-    for Box<dyn ConfidenceComponent + 'a>
+    for Box<dyn ConfidenceComponent<ValueType = f64> + 'a>
 {
     fn from(_: (&'b DummyMeasureType, &'a ScaledType<ScrewSpine>)) -> Self {
         unreachable!("ImplantDraw has no measures")

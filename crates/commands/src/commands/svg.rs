@@ -170,7 +170,11 @@ where
             point_with_image.data_image.image.width(),
             point_with_image.data_image.image.height(),
         );
-        let heatmap = scolrs::draw::output3_to_heatmap(heatmaps_f32.view(), input_image_wh);
+        let heatmap = scolrs::draw::output3_to_heatmap(
+            heatmaps_f32.view(),
+            input_image_wh,
+            (0..2, 2..4, 4..9),
+        );
         let overlays = vec![ImageOverlay::new_with_image(
             "Heatmap".to_string(),
             "Heatmap".to_string(),

@@ -71,7 +71,8 @@ macro_rules! impl_kyophosis {
             }
         }
         impl<'a> MeasureComponent for $name<'a> {
-            fn measure(&self) -> Result<f64, MeasureError> {
+            type ValueType = f64;
+            fn measure(&self) -> Result<Self::ValueType, MeasureError> {
                 let angle = self
                     .0
                     .spine
@@ -84,6 +85,7 @@ macro_rules! impl_kyophosis {
             }
         }
         impl ConfidenceComponent for $name<'_> {
+            type ValueType = f64;
             fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
                 let confidence = self.0.confidences.as_ref()?;
                 let conf = calc_conf_from_sup_and_inf(confidence, Self::SUP, Self::INF, reduction);
@@ -191,7 +193,8 @@ impl DrawComponent for LumbarLordosis<'_> {
     }
 }
 impl MeasureComponent for LumbarLordosis<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
         let angle = spine.angle(&Curve { sup, inf }).unwrap();
@@ -199,6 +202,7 @@ impl MeasureComponent for LumbarLordosis<'_> {
     }
 }
 impl ConfidenceComponent for LumbarLordosis<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let (sup, inf) = Self::prep(&self.0.spine);
@@ -230,13 +234,15 @@ impl DrawComponent for T1Slope<'_> {
     }
 }
 impl MeasureComponent for T1Slope<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let tl_sup_lines = self.0.spine.tl_sup_lines();
         let t1sup = tl_sup_lines.index_axis(Axis(0), 0);
         tilt_angle("Vertebra", t1sup).map(|a| -a)
     }
 }
 impl ConfidenceComponent for T1Slope<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let confs = confidence.c7tls.slice(s![1, ..2]);
@@ -281,7 +287,8 @@ impl DrawComponent for SagittalBalance<'_> {
     }
 }
 impl MeasureComponent for SagittalBalance<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let points = Self::prep(self.0);
         let p1 = points.index_axis(Axis(0), 0);
         let p2 = points.index_axis(Axis(0), 1);
@@ -290,6 +297,7 @@ impl MeasureComponent for SagittalBalance<'_> {
     }
 }
 impl ConfidenceComponent for SagittalBalance<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
@@ -347,13 +355,15 @@ impl DrawComponent for LumbosacralAngle<'_> {
     }
 }
 impl MeasureComponent for LumbosacralAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (sup, inf) = Self::prep(&self.0.spine);
         let angle = angle_between(sup.view(), inf.view()).to_degrees();
         Ok(angle)
     }
 }
 impl ConfidenceComponent for LumbosacralAngle<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
@@ -393,12 +403,14 @@ impl DrawComponent for PelvicIncidence<'_> {
     }
 }
 impl MeasureComponent for PelvicIncidence<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let plate = self.0.spine.sacral_sup_plate();
         femoral_incidence_angle(plate, &self.0.femoral_head)
     }
 }
 impl ConfidenceComponent for PelvicIncidence<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         confidence
@@ -472,7 +484,8 @@ impl DrawComponent for PelvicTilt<'_> {
     }
 }
 impl MeasureComponent for PelvicTilt<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let sagittal_points = self.0;
         let (fem2sac, v_line) = Self::prep(sagittal_points)?;
         let angle = angle_between(v_line.view(), fem2sac.view()).to_degrees();
@@ -480,6 +493,7 @@ impl MeasureComponent for PelvicTilt<'_> {
     }
 }
 impl ConfidenceComponent for PelvicTilt<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // Same as Pelvic Incidence
         PelvicIncidence(self.0).confidence(reduction)
@@ -537,7 +551,8 @@ impl DrawComponent for SacralSlope<'_> {
     }
 }
 impl MeasureComponent for SacralSlope<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let sagittal_points = self.0;
         let (sac_sup, h_line_sac) = Self::prep(sagittal_points)?;
         let angle = angle_between(sac_sup.view(), h_line_sac.view()).to_degrees();
@@ -545,6 +560,7 @@ impl MeasureComponent for SacralSlope<'_> {
     }
 }
 impl ConfidenceComponent for SacralSlope<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         let sac_sup_confs = confidence
@@ -590,7 +606,8 @@ impl DrawComponent for L5IncidenceAngle<'_> {
     }
 }
 impl MeasureComponent for L5IncidenceAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let sagittal_points = self.0;
         let plate = sagittal_points
             .spine
@@ -599,6 +616,7 @@ impl MeasureComponent for L5IncidenceAngle<'_> {
     }
 }
 impl ConfidenceComponent for L5IncidenceAngle<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         let confidence = self.0.confidences.as_ref()?;
         confidence
@@ -687,13 +705,15 @@ impl DrawComponent for PelvicRadiusAngle<'_> {
     }
 }
 impl MeasureComponent for PelvicRadiusAngle<'_> {
-    fn measure(&self) -> Result<f64, MeasureError> {
+    type ValueType = f64;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (sac_sup_post2ante, post_sac2fem) = Self::prep(self.0)?;
         let angle = angle_between(post_sac2fem.view(), sac_sup_post2ante.view()).to_degrees();
         Ok(angle)
     }
 }
 impl ConfidenceComponent for PelvicRadiusAngle<'_> {
+    type ValueType = f64;
     fn confidence(&self, reduction: ReductionMethod) -> Option<Result<f64, MeasureError>> {
         // Same as Pelvic Incidence
         PelvicIncidence(self.0).confidence(reduction)
@@ -742,7 +762,7 @@ impl<'a, 'b> From<(&'b SagittalDraw, &'a ScaledType<SagittalPoints>)>
 }
 
 impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
-    for Box<dyn MeasureComponent + 'a>
+    for Box<dyn MeasureComponent<ValueType = f64> + 'a>
 {
     fn from(
         (measure, sagittal_points): (&'b SagittalMeasure, &'a ScaledType<SagittalPoints>),
@@ -778,7 +798,7 @@ impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
 }
 
 impl<'a, 'b> From<(&'b SagittalMeasure, &'a ScaledType<SagittalPoints>)>
-    for Box<dyn ConfidenceComponent + 'a>
+    for Box<dyn ConfidenceComponent<ValueType = f64> + 'a>
 {
     fn from(
         (measure, sagittal_points): (&'b SagittalMeasure, &'a ScaledType<SagittalPoints>),

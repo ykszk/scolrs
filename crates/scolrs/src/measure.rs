@@ -1,49 +1,96 @@
 use indexmap::IndexMap;
 
 use crate::{
-    draw::{ConfidenceComponent, MeasureComponent, MeasureError, ReductionMethod},
-    head_neck::NeckMeasureComponent,
+    draw::{
+        ConfidenceComponent, ConfidenceDisplay, MeasureComponent, MeasureError, ReductionMethod,
+    },
     HasImageMetadata, PointConfidence, Scalable, ScaledType,
 };
 use serde::{Deserialize, Serialize};
 use std::result;
 
-type Measurement = result::Result<f64, MeasureError>;
-type MeasurementVec = result::Result<Vec<f64>, MeasureError>;
-
 #[derive(Serialize, Deserialize, Default)]
-pub struct MeasureResult<V, T>
+pub struct MeasureResult<K, T>
 where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
+    K: std::hash::Hash + Eq + std::cmp::Ord,
 {
-    pub measurements: IndexMap<V, result::Result<T, MeasureError>>,
-    pub confidences: Option<IndexMap<V, result::Result<f64, MeasureError>>>,
+    pub measurements: IndexMap<K, result::Result<T, MeasureError>>,
+    pub confidences: Option<IndexMap<K, result::Result<T, MeasureError>>>,
     pub unit_of_length: String,
+}
+
+// Trait to convert MeasureResult<String, Vec<T>> to MeasureResult<String, T> by flattening
+pub trait FlattenResult {
+    type FlatType;
+    fn into_flat(self) -> Self::FlatType;
+}
+
+impl FlattenResult for MeasureResult<String, Vec<f64>> {
+    type FlatType = MeasureResult<String, f64>;
+    fn into_flat(self) -> Self::FlatType {
+        let mut measurements: IndexMap<String, result::Result<f64, MeasureError>> = IndexMap::new();
+        for (k, v) in self.measurements {
+            if let Ok(v) = v {
+                if v.len() == 1 {
+                    measurements.insert(k, Ok(v[0]));
+                } else {
+                    for (i, value) in v.into_iter().enumerate() {
+                        let key = format!("{}_{}", k, i + 1);
+                        measurements.insert(key, Ok(value));
+                    }
+                }
+            }
+        }
+        let mut confidences: Option<IndexMap<String, result::Result<f64, MeasureError>>> = None;
+        if let Some(confs) = self.confidences {
+            let mut conf_map: IndexMap<String, result::Result<f64, MeasureError>> = IndexMap::new();
+            for (k, v) in confs {
+                if let Ok(v) = v {
+                    if v.len() == 1 {
+                        conf_map.insert(k, Ok(v[0]));
+                    } else {
+                        for (i, value) in v.into_iter().enumerate() {
+                            let key = format!("{}_{}", k, i + 1);
+                            conf_map.insert(key, Ok(value));
+                        }
+                    }
+                }
+            }
+            confidences = Some(conf_map);
+        }
+        MeasureResult {
+            measurements,
+            confidences,
+            unit_of_length: self.unit_of_length,
+        }
+    }
 }
 
 pub struct TransposedEntry<T> {
     pub measurement: result::Result<T, MeasureError>,
-    pub confidence: Option<result::Result<f64, MeasureError>>,
+    pub confidence: Option<result::Result<T, MeasureError>>,
 }
 
-pub struct TransposedResult<V, T>
+pub struct TransposedResult<K, T>
 where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
+    K: std::hash::Hash + Eq + std::cmp::Ord,
 {
-    pub entries: IndexMap<V, TransposedEntry<T>>,
+    pub entries: IndexMap<K, TransposedEntry<T>>,
     pub unit_of_length: String,
 }
 
-impl<V, T> MeasureResult<V, T>
+impl<K, T> MeasureResult<K, T>
 where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
+    K: std::hash::Hash + Eq + std::cmp::Ord,
+    T: std::fmt::Display + Clone,
 {
-    pub fn into_transposed(self) -> TransposedResult<V, T> {
-        let mut transposed: IndexMap<V, TransposedEntry<T>> = Default::default();
+    pub fn into_transposed(self) -> TransposedResult<K, T> {
+        let mut transposed: IndexMap<K, TransposedEntry<T>> = Default::default();
         for (key, measurement) in self.measurements {
-            let confidence = self.confidences.as_ref().and_then(
-                |confs: &IndexMap<V, Result<f64, MeasureError>>| confs.get(&key).cloned(),
-            );
+            let confidence = self
+                .confidences
+                .as_ref()
+                .and_then(|confs: &IndexMap<K, Result<T, MeasureError>>| confs.get(&key).cloned());
             transposed.insert(
                 key,
                 TransposedEntry {
@@ -70,7 +117,7 @@ where
             .into_iter()
             .map(|(k, v)| (k.to_string(), v))
             .collect();
-        let confidences: Option<IndexMap<String, result::Result<f64, MeasureError>>> = self
+        let confidences: Option<IndexMap<String, result::Result<T, MeasureError>>> = self
             .confidences
             .map(|confs| confs.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
         MeasureResult {
@@ -82,25 +129,25 @@ where
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct MeasureLine<V, T>
+pub struct MeasureLine<K, T>
 where
-    V: std::hash::Hash + Eq + std::cmp::Ord,
+    K: std::hash::Hash + Eq + std::cmp::Ord,
 {
     pub filename: String,
-    pub content: MeasureResult<V, T>,
+    pub content: MeasureResult<K, T>,
 }
 
 /// Calculate measures and their confidences for given data and measures.
-pub fn measure_x<T, U>(
+pub fn measure_x<T, U, V: ConfidenceDisplay>(
     data: ScaledType<T>,
     measures: Vec<U>,
     reduction_method: ReductionMethod,
-) -> MeasureResult<U, f64>
+) -> MeasureResult<U, V>
 where
     T: HasImageMetadata + Scalable + PointConfidence,
     U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
-    for<'a, 'b> (&'a U, &'b ScaledType<T>):
-        Into<Box<dyn MeasureComponent + 'b>> + Into<Box<dyn ConfidenceComponent + 'b>>,
+    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn MeasureComponent<ValueType = V> + 'b>>
+        + Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
 {
     let confidences = if data.0.get_confidence().is_some() {
         let confs = confidence_x(&data, &measures, reduction_method);
@@ -108,9 +155,9 @@ where
     } else {
         None
     };
-    let mut measurements: IndexMap<U, Measurement> = Default::default();
+    let mut measurements: IndexMap<U, _> = Default::default();
     for measure in measures.into_iter() {
-        let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
+        let spinal_measure: Box<dyn MeasureComponent<ValueType = V>> = (&measure, &data).into();
         measurements.insert(measure, spinal_measure.measure());
     }
     let result = MeasureResult {
@@ -121,41 +168,28 @@ where
     result
 }
 
-type ConfResult<U> = IndexMap<U, result::Result<f64, MeasureError>>;
+type ConfResult<U, V> = IndexMap<U, result::Result<V, MeasureError>>;
 
-fn confidence_x<T, U>(
+fn confidence_x<T, U, V: ConfidenceDisplay>(
     data: &ScaledType<T>,
     measures: &[U],
     reduction_method: ReductionMethod,
-) -> ConfResult<U>
+) -> ConfResult<U, V>
 where
     T: Scalable,
     U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
-    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent + 'b>>,
+    for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
 {
-    let mut measurements: IndexMap<U, result::Result<f64, MeasureError>> = Default::default();
+    let mut measurements: IndexMap<U, result::Result<V, MeasureError>> = Default::default();
     for measure in measures {
         log::debug!("Calculating confidence for measure {:?}", measure);
-        let spinal_measure: Box<dyn ConfidenceComponent> = (measure, data).into();
+        let spinal_measure: Box<dyn ConfidenceComponent<ValueType = V>> = (measure, data).into();
         let conf = spinal_measure.confidence(reduction_method);
         if let Some(conf) = conf {
             measurements.insert(measure.clone(), conf);
         }
     }
     measurements
-}
-
-pub fn measure_all(
-    measures: Vec<Box<dyn NeckMeasureComponent + '_>>,
-) -> IndexMap<String, MeasurementVec> {
-    let measures: Vec<_> = measures
-        .into_iter()
-        .map(|m| {
-            let result = m.measure();
-            (m.id().to_string(), result)
-        })
-        .collect();
-    IndexMap::from_iter(measures)
 }
 
 pub type NeckMeasurements = MeasureResult<String, Vec<f64>>;

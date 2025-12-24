@@ -12,10 +12,10 @@ use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
-use scolrs::measure::{measure_all, measure_x, MeasureLine, MeasureResult, NeckMeasurements};
+use scolrs::measure::{measure_x, FlattenResult, MeasureLine, MeasureResult, NeckMeasurements};
 use scolrs::{
     draw::ReductionMethod,
-    head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure, NeckMeasureComponent},
+    head_neck::{LateralPoints, LateralPointsLine, NeckLateralMeasure},
     CoronalMeasure, CoronalPointsAndCurve, CoronalPointsAndCurveLine, MeasureAndDraw,
     SagittalMeasure, SagittalPoints, SagittalPointsLine, Scalable,
 };
@@ -51,7 +51,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                         .identify_curves_with_algorithm(&algorithm);
                     data_line.content.curves = curves;
                 }
-                let results = measure_coronal(data_line.content, &args, subcommand)?;
+                let results = measure_coronal(data_line.content, subcommand, args.reduce)?;
                 let line = CoronalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -64,7 +64,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &args.input,
                     &line?,
                 )?;
-                let results = measure_sagittal(data_line.content, &args, subcommand)?;
+                let results = measure_sagittal(data_line.content, subcommand, args.reduce)?;
                 let line = SagittalMeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -78,7 +78,7 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &line?,
                 )?;
                 let flatten = measure_sub_neck_args.flatten;
-                let results = measure_neck(data_line.content, measure_sub_neck_args)?;
+                let results = measure_neck(data_line.content, measure_sub_neck_args, args.reduce)?;
                 let line = MeasureLine {
                     filename: data_line.filename,
                     content: results,
@@ -88,19 +88,8 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                         filename: line.filename,
                         content: Default::default(),
                     };
-                    flattened.content.unit_of_length = line.content.unit_of_length;
-                    for (k, v) in line.content.measurements {
-                        if let Ok(v) = v {
-                            if v.len() == 1 {
-                                flattened.content.measurements.insert(k, Ok(v[0]));
-                            } else {
-                                for (i, value) in v.into_iter().enumerate() {
-                                    let key = format!("{}_{}", k, i + 1);
-                                    flattened.content.measurements.insert(key, Ok(value));
-                                }
-                            }
-                        }
-                    }
+                    flattened.content.unit_of_length = line.content.unit_of_length.clone();
+                    flattened.content = line.content.into_flat();
                     writeln!(writer, "{}", serde_json::to_string(&flattened)?)?;
                 } else {
                     writeln!(writer, "{}", serde_json::to_string(&line)?)?;
@@ -158,7 +147,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                     .identify_curves_with_algorithm(&algorithm);
                 data.curves = curves;
             }
-            let results = measure_coronal(data, &args, subcommand)?;
+            let results = measure_coronal(data, subcommand, args.reduce)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Sagittal(subcommand) => {
@@ -167,7 +156,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_sagittal(data, &args, subcommand)?;
+            let results = measure_sagittal(data, subcommand, args.reduce)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
         MeasureSubCommands::Neck(measure_sub_neck_args) => {
@@ -176,7 +165,7 @@ fn process_json(args: MeasureArgs) -> Result<()> {
                 &args.input,
                 &data_str,
             )?;
-            let results = measure_neck(data, measure_sub_neck_args)?;
+            let results = measure_neck(data, measure_sub_neck_args, args.reduce)?;
             writeln!(writer, "{}", serde_json::to_string_pretty(&results)?)?;
         }
     };
@@ -194,48 +183,38 @@ fn convert_reduce(method: crate::cli::ReductionMethod) -> ReductionMethod {
 
 fn measure_sagittal(
     sagittal_points: SagittalPoints,
-    args: &MeasureArgs,
     subcommand: MeasureSubSagittallArgs,
+    reduce: crate::cli::ReductionMethod,
 ) -> Result<MeasureResult<SagittalMeasure, f64>> {
     let scaled_data = sagittal_points.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
-    let reduce = convert_reduce(args.reduce);
+    let reduce = convert_reduce(reduce);
     Ok(measure_x(scaled_data, measures, reduce))
 }
 
 fn measure_coronal(
     data: CoronalPointsAndCurve,
-    args: &MeasureArgs,
     subcommand: MeasureSubCoronalArgs,
+    reduce: crate::cli::ReductionMethod,
 ) -> Result<MeasureResult<CoronalMeasure, f64>> {
     let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
-    let reduce = convert_reduce(args.reduce);
+    let reduce = convert_reduce(reduce);
     Ok(measure_x(scaled_data, measures, reduce))
-}
-
-fn process_neck(
-    lateral_points: LateralPoints,
-    measures: &[NeckLateralMeasure],
-) -> Result<NeckMeasurements> {
-    let scaled_data = lateral_points.into_scaled()?;
-    let measures: Vec<Box<dyn NeckMeasureComponent>> =
-        measures.iter().map(|m| (m, &scaled_data).into()).collect();
-    let measures = measure_all(measures);
-    Ok(NeckMeasurements {
-        measurements: measures,
-        confidences: None,
-        unit_of_length: scaled_data.0.image_metadata.unit.clone(),
-    })
 }
 
 fn measure_neck(
     lateral_points: LateralPoints,
     subcommand: MeasureSubNeckArgs,
+    reduce: crate::cli::ReductionMethod,
 ) -> Result<NeckMeasurements> {
     // perform scaling in [process_neck]
     let measures = subcommand.measures.unwrap_or_else(NeckLateralMeasure::all);
-    process_neck(lateral_points, &measures)
+    let scaled_data = lateral_points.into_scaled()?;
+    let reduce = convert_reduce(reduce);
+    let measures = measure_x(scaled_data, measures, reduce);
+    let measures = measures.into_string_map();
+    Ok(measures)
 }
 
 pub fn cmd(args: MeasureArgs) -> Result<()> {
@@ -353,8 +332,15 @@ mod tests {
         let mut non_scaled = lateral_points.clone();
         non_scaled.image_metadata.spacing_xy = (1.0, 1.0);
         let measures = NeckLateralMeasure::all();
-        let mut measurements = process_neck(lateral_points, &measures)?.measurements;
-        let mut measurements_non_scaled = process_neck(non_scaled, &measures)?.measurements;
+        let subcommand = MeasureSubNeckArgs {
+            measures: Some(measures.clone()),
+            flatten: false,
+        };
+        let reduce = crate::cli::ReductionMethod::Geometric;
+        let mut measurements =
+            measure_neck(lateral_points, subcommand.clone(), reduce)?.measurements;
+        let mut measurements_non_scaled =
+            measure_neck(non_scaled, subcommand, reduce)?.measurements;
 
         for distance_measure in ["Adi", "Sacs", "ModifiedRenawatIndex"] {
             let distance_measurements =

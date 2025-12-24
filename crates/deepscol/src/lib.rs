@@ -12,11 +12,12 @@ use scolrs::{
         generic::{GenericDraw, GenericPoints},
         output3_to_heatmap, AxisMax, EmbeddedData, ImageOverlay,
     },
-    measure::measure_x,
+    head_neck::{self, draw_neck},
+    measure::{measure_x, FlattenResult},
     HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints, Scalable,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 use wasm_bindgen::prelude::*;
 pub type Point = (f32, f32);
 
@@ -26,6 +27,7 @@ pub enum ScanDirection {
     #[default]
     Coronal,
     Sagittal,
+    NeckLateral,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -588,6 +590,36 @@ pub fn create_sagittal_svg(
     Ok(document)
 }
 
+pub fn create_neck_lateral_svg(
+    nlp: head_neck::LateralPoints,
+    lm_data_with_image: LabelMeDataWImage,
+    overlays: Vec<ImageOverlay>,
+    size_config: &SizeConfig,
+) -> Result<SVG, anyhow::Error> {
+    let points_with_image = PointDataWithImage::new(nlp, lm_data_with_image);
+    let draws = head_neck::NeckLateralDraw::all();
+
+    let draw_param = scolrs::draw::DrawParam::default();
+    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
+    let svg_size = size_config.svg_size;
+    let palettes = scolrs::draw::ColorPalettes::default();
+    let hide = vec![];
+    let draw_args = head_neck::NeckLateralDrawArguments {
+        image: points_with_image.data_image.image,
+        data: points_with_image.data,
+        draw_param,
+        resize_param: Some(resize_param),
+        svg_size,
+        palettes,
+        draw: &draws,
+        hide: &hide,
+        overlays,
+    };
+    let document =
+        draw_neck(draw_args).expect("Failed to draw neck lateral generic points and curve");
+    Ok(document)
+}
+
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub struct CroppingParams {
@@ -810,7 +842,10 @@ impl ModelIO {
         }
     }
 
-    pub fn output3_to_heatmap(&self) -> DynamicImage {
+    pub fn output3_to_heatmap(
+        &self,
+        ch_range_rgb: (Range<usize>, Range<usize>, Range<usize>),
+    ) -> DynamicImage {
         let input_image_wh = match self {
             ModelIO::Original(original) => (
                 original.lm_data.imageWidth as u32,
@@ -821,7 +856,7 @@ impl ModelIO {
                 (cropped.cropping_params.max_y - cropped.cropping_params.min_y) as u32,
             ),
         };
-        output3_to_heatmap(self.output3().view(), input_image_wh)
+        output3_to_heatmap(self.output3().view(), input_image_wh, ch_range_rgb)
     }
 }
 pub struct ResultHtmlLmArgs {
@@ -840,7 +875,12 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         size_config,
         title,
     } = args;
-    let heatmap = model_io.output3_to_heatmap();
+    let ch_range_rgb = match scan_direction {
+        ScanDirection::Coronal => (0..2, 2..4, 4..9),
+        ScanDirection::Sagittal => (0..2, 2..4, 4..9),
+        ScanDirection::NeckLateral => (0..2, 2..4, 4..(model_io.output3().shape()[0] - 2)),
+    };
+    let heatmap = model_io.output3_to_heatmap(ch_range_rgb);
     let (x_y, width_height) =
         model_io.overlay_params((heatmap.width(), heatmap.height()), &size_config);
 
@@ -898,7 +938,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         }
         ScanDirection::Sagittal => {
             log::debug!("Creating SagittalPoints");
-            let mut cp: SagittalPoints = SagittalPoints::try_from(model_io.lm_data())?;
+            let mut cp = SagittalPoints::try_from(model_io.lm_data())?;
             let crop_adjusted_cp = SagittalPoints::try_from(model_io.heatmap_lm_data())?;
             *cp.image_metadata_mut() = metadata;
             let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
@@ -910,6 +950,24 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             let scaled_data = cp.clone().into_scaled()?;
             let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
             let svg = create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)?;
+            (svg, measurements)
+        }
+        ScanDirection::NeckLateral => {
+            log::debug!("Creating NeckLateralPoints");
+            let mut cp = head_neck::LateralPoints::try_from(model_io.lm_data())?;
+            let crop_adjusted_cp = head_neck::LateralPoints::try_from(model_io.heatmap_lm_data())?;
+            *cp.image_metadata_mut() = metadata;
+            let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
+            log::trace!("Extracted confidence: {:?}", confidence);
+            *cp.get_confidence_mut() = Some(confidence);
+            let lm_data_with_image = model_io.into_lm_data_w_image();
+            // neck lateral measurements
+            let measures = scolrs::head_neck::NeckLateralMeasure::all();
+            let scaled_data = cp.clone().into_scaled()?;
+            let measurements = measure_x(scaled_data, measures, reduce)
+                .into_string_map()
+                .into_flat();
+            let svg = create_neck_lateral_svg(cp, lm_data_with_image, overlays, &size_config)?;
             (svg, measurements)
         }
     };
@@ -962,6 +1020,7 @@ pub fn embedded_asm(direction: ScanDirection) -> Result<Vec<ActiveShapeModel>, s
             let json = include_str!("../models/sagittal/asms.json");
             serde_json::from_str(json)
         }
+        ScanDirection::NeckLateral => Ok(Vec::new()), // TODO: add lateral neck ASMs
     }
 }
 
