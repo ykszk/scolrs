@@ -109,9 +109,9 @@ where
         None
     };
     let mut measurements: IndexMap<U, Measurement> = Default::default();
-    for measure in measures {
+    for measure in measures.into_iter() {
         let spinal_measure: Box<dyn MeasureComponent> = (&measure, &data).into();
-        measurements.insert(measure.clone(), spinal_measure.measure());
+        measurements.insert(measure, spinal_measure.measure());
     }
     let result = MeasureResult {
         measurements,

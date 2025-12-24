@@ -190,6 +190,15 @@ pub fn load_image(
     }
 }
 
+pub fn load_image_from_path(
+    path: &std::path::Path,
+) -> Result<(image::DynamicImage, ImageMetadata), image::ImageError> {
+    let raw_bytes = std::fs::read(path).map_err(image::ImageError::IoError)?;
+    let (image, mut metadata) = load_image(&raw_bytes)?;
+    metadata.path = path.to_string_lossy().to_string();
+    Ok((image, metadata))
+}
+
 pub fn resize_height(image: &DynamicImage, target_height: u32) -> DynamicImage {
     let width = image.width();
     let height = image.height();
@@ -617,6 +626,7 @@ pub struct OriginalIO {
 impl OriginalIO {
     pub fn new(
         original_image: DynamicImage,
+        image_path: String,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
     ) -> Self {
@@ -625,7 +635,7 @@ impl OriginalIO {
         let lm_scale = original_image_wh.1 as f64 / input_height as f64;
         let lm_data = create_scaled_lm(
             &LABELS,
-            "".to_string(),
+            image_path,
             original_image_wh.0,
             original_image_wh.1,
             lm_scale,
@@ -654,6 +664,7 @@ pub struct CroppedIO {
 impl CroppedIO {
     pub fn new(
         original_image: DynamicImage,
+        image_path: String,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
         cropping_params: CroppingParams,
@@ -667,7 +678,7 @@ impl CroppedIO {
 
         let cropped_lm_data = create_lm(
             &LABELS,
-            "".to_string(),
+            image_path,
             output3.shape()[2] as u32,
             output3.shape()[1] as u32,
             points.as_slice(),
@@ -859,6 +870,12 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title, &[])?;
         return Ok(html);
     }
+    let embedded_lm_data = EmbeddedData::new(
+        "labelme.json".to_string(),
+        serde_json::to_string_pretty(model_io.lm_data())?,
+        "application/json".to_string(),
+    );
+
     let reduce = scolrs::draw::ReductionMethod::GeometricMean;
     let (document, measurements) = match scan_direction {
         ScanDirection::Coronal => {
@@ -924,6 +941,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
             csv_data,
             "text/csv".to_string(),
         ),
+        embedded_lm_data,
     ];
     let html = wrap_in_html(
         document.to_string(),

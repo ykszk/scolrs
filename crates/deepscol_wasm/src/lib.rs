@@ -169,10 +169,21 @@ pub fn process_output(
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
 
     let mut model_io = if let Some(cp) = cropping_params {
-        ModelIO::Cropped(Box::new(CroppedIO::new(image, output3, points, cp)))
+        ModelIO::Cropped(Box::new(CroppedIO::new(
+            image,
+            image_filename.to_string(),
+            output3,
+            points,
+            cp,
+        )))
     } else {
         log::info!("No cropping applied");
-        ModelIO::Original(Box::new(OriginalIO::new(image, output3, points)))
+        ModelIO::Original(Box::new(OriginalIO::new(
+            image,
+            image_filename.to_string(),
+            output3,
+            points,
+        )))
     };
 
     log::debug!("Output tensor shape: {:?}", model_io.output3().shape());

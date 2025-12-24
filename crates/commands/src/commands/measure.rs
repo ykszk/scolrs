@@ -207,7 +207,7 @@ fn measure_coronal(
     data: CoronalPointsAndCurve,
     args: &MeasureArgs,
     subcommand: MeasureSubCoronalArgs,
-) -> Result<MeasureResult<CoronalMeasure, f64>, anyhow::Error> {
+) -> Result<MeasureResult<CoronalMeasure, f64>> {
     let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
     let reduce = convert_reduce(args.reduce);

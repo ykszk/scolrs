@@ -69,7 +69,6 @@ fn main() -> Result<()> {
     let args = CmdArgs::parse();
     let model_path = &args.model;
     let image_path = &args.input_image;
-    // ort::set_api(ort_tract::api());
     let builder = ort::session::Session::builder()
         .expect("Cannot create Session builder.")
         .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
@@ -95,7 +94,8 @@ fn main() -> Result<()> {
         session.inputs[0].input_type.tensor_shape().unwrap()
     );
 
-    let (image, metadata) = deepscol::load_image(&std::fs::read(image_path)?)?;
+    let (image, metadata) = deepscol::load_image_from_path(image_path)
+        .with_context(|| format!("Failed to load image from path {:?}", image_path))?;
     let original_image_width = image.width();
     let original_image_height = image.height();
     log::info!(
@@ -164,6 +164,7 @@ fn main() -> Result<()> {
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
             image,
+            metadata.path.clone(),
             output3,
             points,
             cropping_params,
@@ -172,7 +173,12 @@ fn main() -> Result<()> {
         log::info!("No cropping applied");
         let points = deepscol::extract_points(&output3, point_thresh)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
-        ModelIO::Original(Box::new(OriginalIO::new(image, output3, points)))
+        ModelIO::Original(Box::new(OriginalIO::new(
+            image,
+            metadata.path.clone(),
+            output3,
+            points,
+        )))
     };
 
     if let Some(output_path) = args.output.heatmap {
