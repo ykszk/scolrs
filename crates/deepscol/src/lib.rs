@@ -21,6 +21,8 @@ use std::{collections::HashMap, ops::Range};
 use wasm_bindgen::prelude::*;
 pub type Point = (f32, f32);
 
+pub mod point_config;
+
 #[wasm_bindgen]
 #[derive(Default, Debug, Clone, Copy)]
 pub enum ScanDirection {
@@ -66,12 +68,16 @@ impl Default for DeepscolConfig {
 }
 
 /// Extract landmark point out of the input heatmaps
-pub fn extract_points(arr: &ndarray::Array3<f32>, thresh: f32) -> Result<Vec<Vec<Point>>, String> {
+pub fn extract_points(
+    arr: &ndarray::Array3<f32>,
+    thresh: f32,
+    max_point_counts: &[usize],
+) -> Result<Vec<Vec<Point>>, String> {
     let height = arr.shape()[1];
     let width = arr.shape()[2];
     let ch_axis = Axis(0);
     let mut all_points: Vec<Vec<Point>> = Vec::new();
-    for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(MAX_POINT_COUNTS.iter()) {
+    for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(max_point_counts.iter()) {
         let bin_arr = img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 });
         let bin_img = image::GrayImage::from_raw(
             width as _,
@@ -238,7 +244,7 @@ pub fn to_model_input(
 }
 
 pub fn create_lm(
-    labels: &[&str],
+    labels: &[String],
     image_path: String,
     image_width: u32,
     image_height: u32,
@@ -271,7 +277,7 @@ pub fn create_lm(
         }
     }
     // set flag L4, L5, or L6
-    let tl_label_index = labels.iter().position(|&l| l == "TL");
+    let tl_label_index = labels.iter().position(|l| l == "TL");
     if let Some(tl_index) = tl_label_index {
         let tl_count = points[tl_index].len();
         match tl_count {
@@ -295,7 +301,7 @@ pub fn create_lm(
 }
 
 pub fn create_scaled_lm(
-    labels: &[&str],
+    labels: &[String],
     image_path: String,
     image_width: u32,
     image_height: u32,
@@ -311,7 +317,7 @@ pub fn create_scaled_lm(
 }
 
 pub fn create_lm_from_cropped(
-    labels: &[&str],
+    labels: &[String],
     image_path: String,
     image_width: u32,
     image_height: u32,
@@ -359,39 +365,6 @@ use scolrs::{
     draw::{self, draw_coronal, wrap_in_html},
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw, PointDataWithImage,
 };
-
-pub const LABELS: [&str; 13] = [
-    "TL",
-    "TR",
-    "BL",
-    "BR",
-    "Shoulder",
-    "Clavicle",
-    "Pelvis",
-    "Iliac",
-    "FemoralHead",
-    "C7-TL",
-    "C7-TR",
-    "S-TL",
-    "S-TR",
-];
-
-// '{"TL":19, "TR":19, "BL":18, "BR":18, "Shoulder": 2, "Clavicle": 2, "Pelvis": 2, "Iliac": 2, "FemoralHead": 2, "C7-TL": 1, "C7-TR": 1, "S-TL": 1, "S-TR": 1}'
-pub const MAX_POINT_COUNTS: [usize; 13] = [
-    20, // TL
-    20, // TR
-    19, // BL
-    19, // BR
-    2,  // Shoulder
-    2,  // Clavicle
-    2,  // Pelvis
-    2,  // Iliac
-    2,  // FemoralHead
-    1,  // C7-TL
-    1,  // C7-TR
-    1,  // S-TL
-    1,  // S-TR
-];
 
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
 /// Returns None if no true values are found.
@@ -661,12 +634,13 @@ impl OriginalIO {
         image_path: String,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
+        point_set_config: &point_config::PointSetConfig,
     ) -> Self {
         let original_image_wh = original_image.dimensions();
         let input_height = output3.shape()[1] as u32;
         let lm_scale = original_image_wh.1 as f64 / input_height as f64;
         let lm_data = create_scaled_lm(
-            &LABELS,
+            &point_set_config.labels,
             image_path,
             original_image_wh.0,
             original_image_wh.1,
@@ -700,6 +674,7 @@ impl CroppedIO {
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
         cropping_params: CroppingParams,
+        point_set_config: &point_config::PointSetConfig,
     ) -> Self {
         let CroppingParams {
             min_x,
@@ -709,7 +684,7 @@ impl CroppedIO {
         } = cropping_params;
 
         let cropped_lm_data = create_lm(
-            &LABELS,
+            &point_set_config.labels,
             image_path,
             output3.shape()[2] as u32,
             output3.shape()[1] as u32,

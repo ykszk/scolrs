@@ -6,12 +6,13 @@ use crate::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
         femoral_incidence_angle, points2line, tilt_angle, AsMeasure, CobbAux, ColorPalette,
         ConfidenceComponent, DrawArguments, DrawComponent, DrawCorners, DrawError,
-        MeasureComponent, MeasureError, Named, Painter, CLASS_ANGLE, CLASS_ANNOTATION,
-        CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO, CLASS_TEXT,
+        MeasureComponent, MeasureError, Named, Painter, ReductionMethod, CLASS_ANGLE,
+        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO,
+        CLASS_TEXT,
     },
-    extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids, ContentFilename,
-    Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d, PointConfidence,
-    Scalable, ScaledType, ScolError, ValidateLength, CORNER_LABELS,
+    extract_confidence, extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids,
+    ContentFilename, Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d,
+    PointConfidence, Scalable, ScaledType, ScolError, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
 use lyon_geom::point;
@@ -88,7 +89,7 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LateralPointConfidence {
-    pub corners: Array2<f64>,
+    // pub corners: Array2<f64>,
     pub lamina: Array1<f64>,
 }
 
@@ -114,11 +115,37 @@ pub struct LateralPoints {
 }
 
 impl LateralPoints {
-    fn _extract_point_confidence(
-        &self,
-        _confidence_map: ArrayView3<f64>,
-    ) -> LateralPointConfidence {
-        todo!()
+    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> LateralPointConfidence {
+        // let corners_conf = self
+        //     .corners
+        //     .0
+        //     .axis_iter(Axis(0))
+        //     .map(|point_set| {
+        //         point_set
+        //             .axis_iter(Axis(1))
+        //             .map(|point| {
+        //                 let x = point[0] as usize;
+        //                 let y = point[1] as usize;
+        //                 confidence_map[[0, y, x]]
+        //             })
+        //             .collect::<Array1<f64>>()
+        //     })
+        //     .collect::<Vec<_>>();
+        // let corners_conf = stack![Axis(0), corners_conf];
+        // let lamina_conf = self
+        //     .lamina
+        //     .axis_iter(Axis(0))
+        //     .map(|point| {
+        //         let x = point[0] as usize;
+        //         let y = point[1] as usize;
+        //         confidence_map[[0, y, x]]
+        //     })
+        //     .collect::<Array1<f64>>();
+        let lamina = extract_confidence(self.lamina.view(), confidence_map, 10);
+        LateralPointConfidence {
+            // corners: corners_conf,
+            lamina,
+        }
     }
 }
 
@@ -595,6 +622,19 @@ impl MeasureComponent for Sacs<'_> {
         Ok(lengths)
     }
 }
+impl ConfidenceComponent for Sacs<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// Atlantodental Interval
 #[derive(Named)]
@@ -646,6 +686,19 @@ impl MeasureComponent for Adi<'_> {
         let diff = &self.0.anterior_dens.index_axis(Axis(0), 0)
             - &self.0.anterior_c1_arch.index_axis(Axis(0), 0);
         Ok(vec![diff.l2norm()])
+    }
+}
+impl ConfidenceComponent for Adi<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -725,6 +778,19 @@ impl MeasureComponent for OC2<'_> {
         Ok(vec![angle])
     }
 }
+impl ConfidenceComponent for OC2<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// Wedge (C2-C3 to C7-T1 intervertebral) angles
 #[derive(Named)]
@@ -785,6 +851,19 @@ impl MeasureComponent for WedgeAngle<'_> {
             angles.push(angle);
         }
         Ok(angles)
+    }
+}
+impl ConfidenceComponent for WedgeAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -872,6 +951,19 @@ impl MeasureComponent for ModifiedRenawatIndex<'_> {
         }
     }
 }
+impl ConfidenceComponent for ModifiedRenawatIndex<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// Thoracic Inlet Angle
 #[derive(Named)]
@@ -916,6 +1008,19 @@ impl MeasureComponent for ThoracicInletAngle<'_> {
             &crate::AtMost2(self.0.manubrium.to_owned()),
         )?;
         Ok(vec![angle])
+    }
+}
+impl ConfidenceComponent for ThoracicInletAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -984,6 +1089,19 @@ impl MeasureComponent for NeckTilt<'_> {
         Ok(vec![angle])
     }
 }
+impl ConfidenceComponent for NeckTilt<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// Spino-Cranial Angle
 /// Angle between C7 upper endplate and the line connecting sella and the middle of C7 upper endplate
@@ -1044,6 +1162,19 @@ impl MeasureComponent for SpinoCranialAngle<'_> {
         let (c7_to_sella, c7_mid_to_posterior) = self.prep()?;
         let angle = angle_between(c7_to_sella.view(), c7_mid_to_posterior.view()).to_degrees();
         Ok(vec![angle])
+    }
+}
+impl ConfidenceComponent for SpinoCranialAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -1124,6 +1255,19 @@ impl MeasureComponent for OccipitocervicalInclination<'_> {
         Ok(vec![angle])
     }
 }
+impl ConfidenceComponent for OccipitocervicalInclination<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// Cranial Slope
 /// Angle between McGregor's line and the horizontal line
@@ -1150,6 +1294,19 @@ impl MeasureComponent for CranialSlope<'_> {
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let mcgregor_points = self.0.mcgregor_line()?;
         tilt_angle(self.id(), mcgregor_points.view()).map(|angle| vec![angle])
+    }
+}
+impl ConfidenceComponent for CranialSlope<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -1184,6 +1341,19 @@ impl MeasureComponent for T1Slope<'_> {
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let t1_top_plate = self.prep();
         tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![angle])
+    }
+}
+impl ConfidenceComponent for T1Slope<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -1284,6 +1454,19 @@ impl MeasureComponent for TPR<'_> {
         Ok(ratios)
     }
 }
+impl ConfidenceComponent for TPR<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 fn sagittal_vertical_axis(
     painter: &mut Painter,
@@ -1352,13 +1535,25 @@ impl DrawComponent for C2C7SVA<'_> {
         Ok(group)
     }
 }
-
 impl MeasureComponent for C2C7SVA<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (c2_lower_middle, c7_tr) = self.prep()?;
         let distance = c7_tr[0] - c2_lower_middle[0];
         Ok(vec![distance])
+    }
+}
+impl ConfidenceComponent for C2C7SVA<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -1416,6 +1611,19 @@ impl MeasureComponent for EACSVA<'_> {
         Ok(vec![distance])
     }
 }
+impl ConfidenceComponent for EACSVA<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
 
 /// End plate angle
 #[derive(Named)]
@@ -1425,13 +1633,7 @@ impl NeckSagittalComponent for EndPlateAngle<'_> {}
 impl EndPlateAngle<'_> {
     fn prep(&self) -> Result<Array3<f64>, MeasureError> {
         // (7, 4, 2) -> (14, 2, 2)
-        let endplates = self
-            .0
-            .corners
-            .0
-            .to_owned()
-            .into_shape_with_order((14, 2, 2))
-            .unwrap();
+        let endplates = self.0.corners.0.to_shape((14, 2, 2)).unwrap();
         // remove the first end plate because it is dummy
         let endplates = endplates.slice(s![1.., .., ..]).to_owned();
         Ok(endplates)
@@ -1473,6 +1675,19 @@ impl MeasureComponent for EndPlateAngle<'_> {
             angles.push(angle);
         }
         Ok(angles)
+    }
+}
+impl ConfidenceComponent for EndPlateAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
     }
 }
 
@@ -1648,8 +1863,30 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
 impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
     for Box<dyn ConfidenceComponent<ValueType = Vec<f64>> + 'a>
 {
-    fn from(_value: (&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
-        todo!()
+    fn from(value: (&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)) -> Self {
+        let (measure, lateral_points) = value;
+        let lateral_points = &lateral_points.0;
+        match measure {
+            NeckLateralMeasure::Adi => Box::new(Adi(lateral_points)),
+            NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
+            NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
+            NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralMeasure::ModifiedRenawatIndex => {
+                Box::new(ModifiedRenawatIndex(lateral_points))
+            }
+            NeckLateralMeasure::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
+            NeckLateralMeasure::NeckTilt => Box::new(NeckTilt(lateral_points)),
+            NeckLateralMeasure::SpinoCranialAngle => Box::new(SpinoCranialAngle(lateral_points)),
+            NeckLateralMeasure::OccipitocervicalInclination => {
+                Box::new(OccipitocervicalInclination(lateral_points))
+            }
+            NeckLateralMeasure::CranialSlope => Box::new(CranialSlope(lateral_points)),
+            NeckLateralMeasure::T1Slope => Box::new(T1Slope(lateral_points)),
+            NeckLateralMeasure::TPR => Box::new(TPR(lateral_points)),
+            NeckLateralMeasure::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
+            NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
+            NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
+        }
     }
 }
 

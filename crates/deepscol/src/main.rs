@@ -133,6 +133,15 @@ fn main() -> Result<()> {
 
     let point_thresh = ds_config.thresh;
 
+    let (point_set_config, its_spine_not_neck) = match args.direction {
+        Direction::Coronal => (deepscol::point_config::PointSetConfig::spine(), true),
+        Direction::Sagittal => (deepscol::point_config::PointSetConfig::spine(), true),
+        Direction::NeckLateral => (
+            deepscol::point_config::PointSetConfig::neck_lateral(),
+            false,
+        ),
+    };
+
     let mut model_io = if let Some(cropping_params) = cropping_params {
         log::info!("cropping image to bounding box: {:?}", cropping_params);
         let CroppingParams {
@@ -160,7 +169,7 @@ fn main() -> Result<()> {
         log::info!("Model run completed on cropped input");
         // convert to ndarray
         output3 = deepscol::extract_array_from_output(outputs);
-        let points = deepscol::extract_points(&output3, point_thresh)
+        let points = deepscol::extract_points(&output3, point_thresh, &point_set_config.max_counts)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
@@ -169,16 +178,18 @@ fn main() -> Result<()> {
             output3,
             points,
             cropping_params,
+            &point_set_config,
         )))
     } else {
         log::info!("No cropping applied");
-        let points = deepscol::extract_points(&output3, point_thresh)
+        let points = deepscol::extract_points(&output3, point_thresh, &point_set_config.max_counts)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
             image,
             metadata.path.clone(),
             output3,
             points,
+            &point_set_config,
         )))
     };
 
@@ -213,8 +224,12 @@ fn main() -> Result<()> {
         }
     }
 
-    // check spine point counts
-    if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
+    // check spine point counts and it's spine (i.e. its_spine_not_neck == true)
+    if let Err(e) = if its_spine_not_neck {
+        scolrs::C7TLS::check_counts(model_io.lm_data())
+    } else {
+        Ok(())
+    } {
         log::info!("Point counts are invalid: {}", e);
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
