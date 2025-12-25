@@ -2,7 +2,8 @@ use indexmap::IndexMap;
 
 use crate::{
     draw::{
-        ConfidenceComponent, ConfidenceDisplay, MeasureComponent, MeasureError, ReductionMethod,
+        ConfidenceComponent, ConfidenceDisplay, MapKey, MeasureComponent, MeasureError,
+        ReductionMethod,
     },
     HasImageMetadata, PointConfidence, Scalable, ScaledType,
 };
@@ -12,7 +13,7 @@ use std::result;
 #[derive(Serialize, Deserialize, Default)]
 pub struct MeasureResult<K, T>
 where
-    K: std::hash::Hash + Eq + std::cmp::Ord,
+    K: MapKey,
 {
     pub measurements: IndexMap<K, result::Result<T, MeasureError>>,
     pub confidences: Option<IndexMap<K, result::Result<T, MeasureError>>>,
@@ -81,7 +82,7 @@ pub struct TransposedEntry<T> {
 
 pub struct TransposedResult<K, T>
 where
-    K: std::hash::Hash + Eq + std::cmp::Ord,
+    K: MapKey,
 {
     pub entries: IndexMap<K, TransposedEntry<T>>,
     pub unit_of_length: String,
@@ -89,7 +90,7 @@ where
 
 impl<K, T> MeasureResult<K, T>
 where
-    K: std::hash::Hash + Eq + std::cmp::Ord,
+    K: MapKey,
     T: std::fmt::Display + Clone,
 {
     pub fn into_transposed(self) -> TransposedResult<K, T> {
@@ -116,7 +117,7 @@ where
 
 impl<V, T> MeasureResult<V, T>
 where
-    V: std::hash::Hash + Eq + std::cmp::Ord + ToString,
+    V: MapKey + ToString,
 {
     /// Change key type to String
     pub fn into_string_map(self) -> MeasureResult<String, T> {
@@ -139,7 +140,7 @@ where
 #[derive(Serialize, Deserialize)]
 pub struct MeasureLine<K, T>
 where
-    K: std::hash::Hash + Eq + std::cmp::Ord,
+    K: MapKey,
 {
     pub filename: String,
     pub content: MeasureResult<K, T>,
@@ -153,7 +154,7 @@ pub fn measure_x<T, U, V: ConfidenceDisplay>(
 ) -> MeasureResult<U, V>
 where
     T: HasImageMetadata + Scalable + PointConfidence,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
+    U: MapKey + std::fmt::Debug,
     for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn MeasureComponent<ValueType = V> + 'b>>
         + Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
 {
@@ -185,7 +186,7 @@ fn confidence_x<T, U, V: ConfidenceDisplay>(
 ) -> ConfResult<U, V>
 where
     T: Scalable,
-    U: std::hash::Hash + Eq + std::cmp::Ord + Clone + std::fmt::Debug,
+    U: MapKey + std::fmt::Debug,
     for<'a, 'b> (&'a U, &'b ScaledType<T>): Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
 {
     let mut measurements: IndexMap<U, result::Result<V, MeasureError>> = Default::default();

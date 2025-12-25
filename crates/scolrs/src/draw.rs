@@ -1,9 +1,9 @@
 use crate::draw::generic::{GenericDraw, GenericPoints};
-use crate::implant::ScrewSpine;
+use crate::implant::{self, ScrewSpine};
 use crate::{
-    angle_from_lines, CoronalDraw, CoronalPointsAndCurve, HasCornerPoints, HasImageMetadata,
-    ImplantDraw, L2Norm, SagittalDraw, SagittalPoints, Scalable, ScaledType, ValidateLength,
-    CORNER_LABELS,
+    angle_from_lines, head_neck, CoronalDraw, CoronalMeasure, CoronalPointsAndCurve,
+    HasCornerPoints, HasImageMetadata, ImplantDraw, L2Norm, SagittalDraw, SagittalMeasure,
+    SagittalPoints, Scalable, ScaledType, ValidateLength, CORNER_LABELS,
 };
 use crate::{Curve, Spine, VERTEBRAL_LABELS};
 use labelme_rs::image::{self, DynamicImage};
@@ -994,9 +994,23 @@ pub trait ConfidenceComponent: Named {
     }
 }
 
+pub trait MapKey: Clone + std::hash::Hash + PartialEq + Eq + std::cmp::Ord {}
+
+impl MapKey for String {}
+impl MapKey for CoronalDraw {}
+impl MapKey for CoronalMeasure {}
+impl MapKey for SagittalDraw {}
+impl MapKey for SagittalMeasure {}
+impl MapKey for head_neck::NeckLateralDraw {}
+impl MapKey for head_neck::NeckLateralMeasure {}
+impl MapKey for ImplantDraw {}
+// impl MapKey for ImplantMeasure {}
+impl MapKey for implant::DummyMeasureType {}
+impl MapKey for generic::GenericMeasure {}
+
 /// Convert draw component to measure component
 pub trait AsMeasure {
-    type MeasureType: std::hash::Hash + ToString;
+    type MeasureType: MapKey;
     fn as_measure(&self) -> Option<Self::MeasureType>;
 }
 
@@ -1798,7 +1812,7 @@ pub fn draw_components<'a, T, S, V>(
 ) -> Result<Vec<Box<dyn Node>>, DrawError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq + AsMeasure,
+    S: Clone + PartialEq + AsMeasure,
     for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
         Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
     T: HasImageMetadata + Scalable,
@@ -1870,7 +1884,7 @@ pub struct DrawArguments<'a, T, S> {
 pub fn draw_on_image<'a, T, S, V>(args: DrawArguments<'a, T, S>) -> Result<element::SVG, DrawError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq + AsMeasure,
+    S: Clone + PartialEq + AsMeasure,
     for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
         Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
     T: HasImageMetadata + Scalable,

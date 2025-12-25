@@ -11,7 +11,7 @@ use scolrs::{
     draw::{
         generic::{GenericDraw, GenericPoints},
         output3_to_heatmap, AsMeasure, AxisMax, ConfidenceComponent, ConfidenceDisplay,
-        DrawComponent, EmbeddedData, ImageOverlay, MeasureComponent,
+        DrawComponent, EmbeddedData, ImageOverlay, MapKey, MeasureComponent,
     },
     head_neck::{self},
     measure::{measure_x, FlattenResult, MeasureResult},
@@ -68,23 +68,9 @@ impl ScanDirection {
             for<'b> (&'b Draw, &'b ScaledType<PointType>): Into<Box<dyn DrawComponent + 'b>>,
             for<'a, 'b> (&'a Draw::MeasureType, &'b ScaledType<PointType>): Into<Box<dyn MeasureComponent<ValueType = ValueType> + 'b>>
                 + Into<Box<dyn ConfidenceComponent<ValueType = ValueType> + 'b>>,
-            Draw: Clone
-                + Copy
-                + PartialEq
-                + Eq
-                + std::cmp::Ord
-                + std::hash::Hash
-                + AsMeasure
-                + std::fmt::Display
-                + DefaultDraws,
-            <Draw as AsMeasure>::MeasureType: std::hash::Hash,
-            <Draw as scolrs::draw::AsMeasure>::MeasureType: Clone
-                + std::cmp::Ord
-                + PartialEq
-                + Eq
-                + std::hash::Hash
-                + std::fmt::Debug
-                + MeasureAndDraw,
+            Draw: MapKey + AsMeasure + DefaultDraws + std::fmt::Display,
+            <Draw as AsMeasure>::MeasureType:
+                MapKey + MeasureAndDraw + std::fmt::Display + std::fmt::Debug,
             ValueType: ConfidenceDisplay,
             MeasureResult<String, ValueType>: FlattenResult<FlatType = MeasureResult<String, f64>>,
         {
@@ -95,7 +81,7 @@ impl ScanDirection {
             let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
             *cp.get_confidence_mut() = Some(confidence);
             let lm_data_with_image = model_io.into_lm_data_w_image();
-            // sagittal measurements
+
             let measures = <Draw as AsMeasure>::MeasureType::all();
             let scaled_data = cp.clone().into_scaled()?;
             let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
@@ -655,7 +641,7 @@ where
     for<'b> (&'b Draw, &'b ScaledType<PointType>): Into<Box<dyn DrawComponent + 'b>>,
     for<'b> (&'b Draw::MeasureType, &'b ScaledType<PointType>):
         Into<Box<dyn ConfidenceComponent<ValueType = ValueType> + 'b>>,
-    Draw: Clone + Copy + PartialEq + AsMeasure + DefaultDraws,
+    Draw: Clone + PartialEq + AsMeasure + DefaultDraws,
     ValueType: ConfidenceDisplay,
 {
     let draws = Draw::draws();
