@@ -133,13 +133,10 @@ fn main() -> Result<()> {
 
     let point_thresh = ds_config.thresh;
 
-    let (point_set_config, its_spine_not_neck) = match args.direction {
-        Direction::Coronal => (deepscol::point_config::PointSetConfig::spine(), true),
-        Direction::Sagittal => (deepscol::point_config::PointSetConfig::spine(), true),
-        Direction::NeckLateral => (
-            deepscol::point_config::PointSetConfig::neck_lateral(),
-            false,
-        ),
+    let point_set_config = match args.direction {
+        Direction::Coronal => deepscol::point_config::PointSetConfig::spine(),
+        Direction::Sagittal => deepscol::point_config::PointSetConfig::spine(),
+        Direction::NeckLateral => deepscol::point_config::PointSetConfig::neck_lateral(),
     };
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
@@ -229,11 +226,7 @@ fn main() -> Result<()> {
         Direction::NeckLateral => deepscol::ScanDirection::NeckLateral,
     };
     // check spine point counts and it's spine (i.e. its_spine_not_neck == true)
-    if let Err(e) = if its_spine_not_neck {
-        scan_direction.check_counts(model_io.lm_data())
-    } else {
-        Ok(())
-    } {
+    if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
         log::info!("Point counts are invalid: {}", e);
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
@@ -261,7 +254,8 @@ fn main() -> Result<()> {
             log::debug!("ASM fitting configuration: {:?}", asm_config);
             asms.push((asm, asm_config));
         }
-        let result_best_asm_lm_data = deepscol::apply_asms(&model_io, output3_f64.view(), asms);
+        let result_best_asm_lm_data =
+            deepscol::apply_asms(&model_io, output3_f64.view(), &point_set_config, asms);
         match result_best_asm_lm_data {
             Err(e) => {
                 log::warn!("Failed to apply ASM models: {}", e);

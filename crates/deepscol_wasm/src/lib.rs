@@ -204,7 +204,8 @@ pub fn process_output(
             .map(|asm| (asm, asm_config.clone()))
             .collect();
         let output_f64 = model_io.output3().mapv(|x| x as f64);
-        let result_best_asm_lm_data = deepscol::apply_asms(&model_io, output_f64.view(), asms);
+        let result_best_asm_lm_data =
+            deepscol::apply_asms(&model_io, output_f64.view(), &point_set_config, asms);
         match result_best_asm_lm_data {
             Err(e) => {
                 log::warn!("Failed to apply ASM models: {}", e);

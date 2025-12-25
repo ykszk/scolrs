@@ -368,27 +368,6 @@ pub fn create_lm(
             lm_data.shapes.push(shape);
         }
     }
-    // set flag L4, L5, or L6
-    let tl_label_index = labels.iter().position(|l| l == "TL");
-    if let Some(tl_index) = tl_label_index {
-        let tl_count = points[tl_index].len();
-        match tl_count {
-            18 => {
-                lm_data.flags.insert("L4".to_string(), true);
-            }
-            19 => {
-                lm_data.flags.insert("L5".to_string(), true);
-            }
-            20 => {
-                lm_data.flags.insert("L6".to_string(), true);
-            }
-            _ => {
-                log::warn!("Unexpected TL point count: {}", tl_count);
-                lm_data.flags.insert("L?".to_string(), true);
-            }
-        };
-    }
-
     lm_data
 }
 
@@ -457,6 +436,8 @@ use scolrs::{
     draw::{self, wrap_in_html},
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw,
 };
+
+use crate::point_config::PointSetConfig;
 
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
 /// Returns None if no true values are found.
@@ -1040,9 +1021,29 @@ pub fn embedded_asm(direction: ScanDirection) -> Result<Vec<ActiveShapeModel>, s
 fn _apply_asms(
     model_io: &ModelIO,
     output3: ArrayView3<f64>,
+    point_config: &PointSetConfig,
     asms: Vec<(ActiveShapeModel, AsmConfig)>,
 ) -> Result<Vec<(String, labelme_rs::LabelMeData, f64)>, AsmError> {
-    let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(output3);
+    if asms.is_empty() {
+        log::info!("No ASM models provided for fitting.");
+        return Ok(Vec::new());
+    }
+    let first_asm = &asms[0].0;
+    let mut required_ch_indices = Vec::new();
+    for label in first_asm.labels.iter() {
+        let ch_index = point_config.labels.iter().position(|l| l == label);
+        if let Some(ch_index) = ch_index {
+            required_ch_indices.push(ch_index);
+        } else {
+            panic!(
+                "Label {} not found in point_config.labels ({:?})",
+                label, point_config.labels
+            )
+        };
+    }
+    log::debug!("ASM required channel indices: {:?}", required_ch_indices);
+    let heatmaps = output3.select(Axis(0), &required_ch_indices);
+    let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(heatmaps.view());
     let mut asm_results = Vec::new();
     for (asm, asm_config) in asms {
         let mut heatmap_lm = model_io.heatmap_lm_data().to_owned();
@@ -1085,9 +1086,10 @@ fn _apply_asms(
 pub fn apply_asms(
     model_io: &ModelIO,
     output3: ArrayView3<f64>,
+    point_config: &PointSetConfig,
     asms: Vec<(ActiveShapeModel, AsmConfig)>,
 ) -> Result<Option<LabelMeData>, AsmError> {
-    let mut asm_results = _apply_asms(model_io, output3, asms)?;
+    let mut asm_results = _apply_asms(model_io, output3, point_config, asms)?;
     // Choose the model with minimum loss
     asm_results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
     asm_results
