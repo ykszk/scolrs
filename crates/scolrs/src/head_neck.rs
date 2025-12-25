@@ -31,14 +31,14 @@ use svg::node::element;
 #[derive(Debug, Clone, PartialEq)]
 pub struct VertebralCornerPoints(pub Array3<f64>);
 
-impl TryFrom<&LabelMeData> for VertebralCornerPoints {
-    type Error = ScolError;
-
-    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
-        let mut corners = CORNER_LABELS
-            .iter()
-            .map(|label| extract_points(data, label))
-            .collect::<Result<Vec<_>, _>>()?;
+impl VertebralCornerPoints {
+    pub fn check_corner_counts(corners: &[Array2<f64>]) -> Result<(), ScolError> {
+        if corners[0].shape()[0] != 6 {
+            return Err(ScolError::InvalidPointCount(
+                "TL should be 6".into(),
+                corners[0].shape()[0],
+            ));
+        }
         if corners[0].shape()[0] != corners[1].shape()[0] {
             return Err(ScolError::InvalidPointCombo(
                 "TL".into(),
@@ -71,12 +71,26 @@ impl TryFrom<&LabelMeData> for VertebralCornerPoints {
                 corners[2].shape()[0] - 1,
             ));
         }
-        if corners[0].shape()[0] != 6 {
-            return Err(ScolError::InvalidPointCount(
-                "TL should be 6".into(),
-                corners[0].shape()[0],
-            ));
-        }
+        Ok(())
+    }
+    pub fn check_counts(lm_data: &LabelMeData) -> Result<(), ScolError> {
+        let corners = CORNER_LABELS
+            .iter()
+            .map(|label| extract_points(lm_data, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        VertebralCornerPoints::check_corner_counts(&corners)
+    }
+}
+
+impl TryFrom<&LabelMeData> for VertebralCornerPoints {
+    type Error = ScolError;
+
+    fn try_from(data: &LabelMeData) -> Result<Self, Self::Error> {
+        let mut corners = CORNER_LABELS
+            .iter()
+            .map(|label| extract_points(data, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        VertebralCornerPoints::check_corner_counts(&corners)?;
         // prepend first points of TL and TR
         let first = corners[0].index_axis(Axis(0), 0).insert_axis(Axis(0));
         corners[0] = concatenate(Axis(0), &[first, corners[0].view()]).unwrap();

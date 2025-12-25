@@ -15,6 +15,7 @@ use scolrs::{
     head_neck::{self, draw_neck},
     measure::{measure_x, FlattenResult},
     HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints, Scalable,
+    ScolError,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Range};
@@ -30,6 +31,16 @@ pub enum ScanDirection {
     Coronal,
     Sagittal,
     NeckLateral,
+}
+
+impl ScanDirection {
+    pub fn check_counts(&self, lm_data: &LabelMeData) -> Result<(), ScolError> {
+        match self {
+            ScanDirection::Coronal => scolrs::C7TLS::check_counts(lm_data),
+            ScanDirection::Sagittal => scolrs::C7TLS::check_counts(lm_data),
+            ScanDirection::NeckLateral => head_neck::VertebralCornerPoints::check_counts(lm_data),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -874,9 +885,10 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
     let model_output_f64 = model_io.output3().mapv(|x| x as f64);
     let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
 
-    if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
+    if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
         log::warn!(
-            "Incorrect number of points for Spine falling back to heatmap display: {}",
+            "Incorrect number of points for {:?} falling back to heatmap display: {}",
+            scan_direction,
             e
         );
         let mut gp = GenericPoints::from(model_io.lm_data().clone());

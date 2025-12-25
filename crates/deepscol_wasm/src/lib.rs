@@ -163,9 +163,11 @@ pub fn process_output(
     )
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
+    let point_set_config = deepscol::point_config::PointSetConfig::spine();
+
     // apply sigmoid
     let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-    let points = extract_points(&output3, 0.1)
+    let points = extract_points(&output3, 0.1, &point_set_config.max_counts)
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
 
     let mut model_io = if let Some(cp) = cropping_params {
@@ -175,6 +177,7 @@ pub fn process_output(
             output3,
             points,
             cp,
+            &point_set_config,
         )))
     } else {
         log::info!("No cropping applied");
@@ -183,6 +186,7 @@ pub fn process_output(
             image_filename.to_string(),
             output3,
             points,
+            &point_set_config,
         )))
     };
 

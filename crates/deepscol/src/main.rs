@@ -223,10 +223,14 @@ fn main() -> Result<()> {
             );
         }
     }
-
+    let scan_direction = match args.direction {
+        Direction::Coronal => deepscol::ScanDirection::Coronal,
+        Direction::Sagittal => deepscol::ScanDirection::Sagittal,
+        Direction::NeckLateral => deepscol::ScanDirection::NeckLateral,
+    };
     // check spine point counts and it's spine (i.e. its_spine_not_neck == true)
     if let Err(e) = if its_spine_not_neck {
-        scolrs::C7TLS::check_counts(model_io.lm_data())
+        scan_direction.check_counts(model_io.lm_data())
     } else {
         Ok(())
     } {
@@ -303,11 +307,7 @@ fn main() -> Result<()> {
             p.set_extension("html");
             p
         });
-        let scan_direction = match args.direction {
-            Direction::Coronal => deepscol::ScanDirection::Coronal,
-            Direction::Sagittal => deepscol::ScanDirection::Sagittal,
-            Direction::NeckLateral => deepscol::ScanDirection::NeckLateral,
-        };
+
         let title = format!(
             "{} - Deepscol",
             image_path.file_stem().unwrap_or_default().to_string_lossy()
