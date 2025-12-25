@@ -3,6 +3,7 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
+use deepscol as ds;
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
@@ -95,7 +96,7 @@ fn main() -> Result<()> {
         session.inputs[0].input_type.tensor_shape().unwrap()
     );
 
-    let (image, metadata) = deepscol::load_image_from_path(image_path)
+    let (image, metadata) = ds::load_image_from_path(image_path)
         .with_context(|| format!("Failed to load image from path {:?}", image_path))?;
     let original_image_width = image.width();
     let original_image_height = image.height();
@@ -105,7 +106,7 @@ fn main() -> Result<()> {
     );
     log::debug!("Expected model input {:?}", session);
     let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
-    let arr4 = deepscol::to_model_input(&image, model_input_height)?;
+    let arr4 = ds::to_model_input(&image, model_input_height)?;
     let input = ort::value::Tensor::from_array(arr4)?;
     log::debug!(
         "Image converted to tensor successfully with shape: {:?}",
@@ -119,11 +120,21 @@ fn main() -> Result<()> {
     log::info!("Model run completed");
 
     // convert to ndarray
-    let mut output3 = deepscol::extract_array_from_output(outputs);
+    let mut output3 = ds::extract_array_from_output(outputs);
 
-    let ds_config = deepscol::DeepscolConfig::default();
+    let ds_config: ds::DeepscolConfig = config::Config::builder()
+        .add_source(config::Config::try_from(&ds::DeepscolConfig::default())?)
+        .add_source(
+            config::Environment::with_prefix("DS")
+                .separator("__")
+                .list_separator(",")
+                .try_parsing(true),
+        )
+        .build()?
+        .try_deserialize()?;
+    log::debug!("Deepscol configuration: {:?}", ds_config);
 
-    let cropping_params = deepscol::calculate_crop_parameters(
+    let cropping_params = ds::calculate_crop_parameters(
         &output3,
         &ds_config.crop_config,
         original_image_height,
@@ -134,9 +145,9 @@ fn main() -> Result<()> {
     let point_thresh = ds_config.thresh;
 
     let point_set_config = match args.direction {
-        Direction::Coronal => deepscol::point_config::PointSetConfig::spine(),
-        Direction::Sagittal => deepscol::point_config::PointSetConfig::spine(),
-        Direction::NeckLateral => deepscol::point_config::PointSetConfig::neck_lateral(),
+        Direction::Coronal => ds::point_config::PointSetConfig::spine(),
+        Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
+        Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
     };
 
     let mut model_io = if let Some(cropping_params) = cropping_params {
@@ -154,7 +165,7 @@ fn main() -> Result<()> {
             (max_x - min_x) as u32,
             (max_y - min_y) as u32,
         );
-        let arr4 = deepscol::to_model_input(&cropped_image, model_input_height)?;
+        let arr4 = ds::to_model_input(&cropped_image, model_input_height)?;
 
         // update the input tensor
         let input3 = ort::value::Tensor::from_array(arr4)?;
@@ -165,8 +176,8 @@ fn main() -> Result<()> {
         let outputs: ort::session::SessionOutputs = session.run(inputs)?;
         log::info!("Model run completed on cropped input");
         // convert to ndarray
-        output3 = deepscol::extract_array_from_output(outputs);
-        let points = deepscol::extract_points(&output3, point_thresh, &point_set_config.max_counts)
+        output3 = ds::extract_array_from_output(outputs);
+        let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
 
         ModelIO::Cropped(Box::new(CroppedIO::new(
@@ -179,7 +190,7 @@ fn main() -> Result<()> {
         )))
     } else {
         log::info!("No cropping applied");
-        let points = deepscol::extract_points(&output3, point_thresh, &point_set_config.max_counts)
+        let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
             .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
             image,
@@ -221,9 +232,9 @@ fn main() -> Result<()> {
         }
     }
     let scan_direction = match args.direction {
-        Direction::Coronal => deepscol::ScanDirection::Coronal,
-        Direction::Sagittal => deepscol::ScanDirection::Sagittal,
-        Direction::NeckLateral => deepscol::ScanDirection::NeckLateral,
+        Direction::Coronal => ds::ScanDirection::Coronal,
+        Direction::Sagittal => ds::ScanDirection::Sagittal,
+        Direction::NeckLateral => ds::ScanDirection::NeckLateral,
     };
     // check spine point counts and it's spine (i.e. its_spine_not_neck == true)
     if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
@@ -255,7 +266,7 @@ fn main() -> Result<()> {
             asms.push((asm, asm_config));
         }
         let result_best_asm_lm_data =
-            deepscol::apply_asms(&model_io, output3_f64.view(), &point_set_config, asms);
+            ds::apply_asms(&model_io, output3_f64.view(), &point_set_config, asms);
         match result_best_asm_lm_data {
             Err(e) => {
                 log::warn!("Failed to apply ASM models: {}", e);
@@ -306,14 +317,14 @@ fn main() -> Result<()> {
             "{} - Deepscol",
             image_path.file_stem().unwrap_or_default().to_string_lossy()
         );
-        let html_args = deepscol::ResultHtmlLmArgs {
+        let html_args = ds::ResultHtmlLmArgs {
             model_io,
             metadata,
             scan_direction,
             size_config: ds_config.size_config,
             title,
         };
-        let html = deepscol::create_result_html_from_lm(html_args)?;
+        let html = ds::create_result_html_from_lm(html_args)?;
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }

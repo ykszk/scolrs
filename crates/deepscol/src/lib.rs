@@ -179,7 +179,7 @@ pub fn extract_points(
         .unwrap();
         let cced = connected_components(&bin_img, Connectivity::Four, image::Luma([0u8]));
         let n_cc = *cced.iter().max().unwrap();
-        debug!("# of CC is {}", n_cc);
+        log::trace!("# of CC in {} is {}", img_ch, n_cc);
 
         let mut local_maximas: HashMap<u32, (f32, usize, usize)> = HashMap::new();
         // traverse each pixel in cced with the coordinates
