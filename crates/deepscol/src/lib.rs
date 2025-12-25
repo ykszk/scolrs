@@ -1,4 +1,5 @@
 extern crate wasm_bindgen;
+use core::fmt;
 use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption};
 pub use image;
 use image::{DynamicImage, GenericImageView};
@@ -8,14 +9,14 @@ use ndarray::{s, Array3, Array4, ArrayView3, Axis, NewAxis};
 use scolrs::{
     asm::{model::ActiveShapeModel, AsmConfig, AsmError},
     draw::{
-        draw_generic, draw_sagittal,
         generic::{GenericDraw, GenericPoints},
-        output3_to_heatmap, AxisMax, EmbeddedData, ImageOverlay,
+        output3_to_heatmap, AsMeasure, AxisMax, ConfidenceComponent, ConfidenceDisplay,
+        DrawComponent, EmbeddedData, ImageOverlay, MeasureComponent,
     },
-    head_neck::{self, draw_neck},
-    measure::{measure_x, FlattenResult},
+    head_neck::{self},
+    measure::{measure_x, FlattenResult, MeasureResult},
     HasImageMetadata, ImageMetadata, PointConfidence, SagittalDraw, SagittalPoints, Scalable,
-    ScolError,
+    ScaledType, ScolError,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Range};
@@ -39,6 +40,100 @@ impl ScanDirection {
             ScanDirection::Coronal => scolrs::C7TLS::check_counts(lm_data),
             ScanDirection::Sagittal => scolrs::C7TLS::check_counts(lm_data),
             ScanDirection::NeckLateral => head_neck::VertebralCornerPoints::check_counts(lm_data),
+        }
+    }
+
+    fn svg_and_measurements(
+        &self,
+        model_io: ModelIO,
+        metadata: ImageMetadata,
+        overlays: Vec<ImageOverlay>,
+        size_config: &SizeConfig,
+        ch_last_output: ArrayView3<f64>,
+        reduce: scolrs::draw::ReductionMethod,
+    ) -> Result<(SVG, MeasureResult<String, f64>), anyhow::Error> {
+        fn _svg_and_measurements<PointType, Draw, ValueType>(
+            model_io: ModelIO,
+            metadata: ImageMetadata,
+            overlays: Vec<ImageOverlay>,
+            size_config: &SizeConfig,
+            ch_last_output: ArrayView3<f64>,
+            reduce: scolrs::draw::ReductionMethod,
+        ) -> Result<(SVG, MeasureResult<String, f64>), anyhow::Error>
+        where
+            PointType: HasImageMetadata + Scalable + PointConfidence + Clone,
+            PointType: for<'a> TryFrom<&'a LabelMeData, Error = ScolError>,
+            <PointType as scolrs::Scalable>::Error:
+                std::error::Error + std::marker::Send + std::marker::Sync + fmt::Debug + 'static,
+            for<'b> (&'b Draw, &'b ScaledType<PointType>): Into<Box<dyn DrawComponent + 'b>>,
+            for<'a, 'b> (&'a Draw::MeasureType, &'b ScaledType<PointType>): Into<Box<dyn MeasureComponent<ValueType = ValueType> + 'b>>
+                + Into<Box<dyn ConfidenceComponent<ValueType = ValueType> + 'b>>,
+            Draw: Clone
+                + Copy
+                + PartialEq
+                + Eq
+                + std::cmp::Ord
+                + std::hash::Hash
+                + AsMeasure
+                + std::fmt::Display
+                + DefaultDraws,
+            <Draw as AsMeasure>::MeasureType: std::hash::Hash,
+            <Draw as scolrs::draw::AsMeasure>::MeasureType: Clone
+                + std::cmp::Ord
+                + PartialEq
+                + Eq
+                + std::hash::Hash
+                + std::fmt::Debug
+                + MeasureAndDraw,
+            ValueType: ConfidenceDisplay,
+            MeasureResult<String, ValueType>: FlattenResult<FlatType = MeasureResult<String, f64>>,
+        {
+            log::debug!("Creating {:}", std::any::type_name::<PointType>());
+            let mut cp = PointType::try_from(model_io.lm_data())?;
+            let crop_adjusted_cp = PointType::try_from(model_io.heatmap_lm_data())?;
+            *cp.image_metadata_mut() = metadata;
+            let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
+            *cp.get_confidence_mut() = Some(confidence);
+            let lm_data_with_image = model_io.into_lm_data_w_image();
+            // sagittal measurements
+            let measures = <Draw as AsMeasure>::MeasureType::all();
+            let scaled_data = cp.clone().into_scaled()?;
+            let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
+            let measurements = measurements.into_flat();
+            let svg = create_svg(cp, lm_data_with_image, overlays, size_config)?;
+            Ok((svg, measurements))
+        }
+        match self {
+            ScanDirection::Coronal => {
+                _svg_and_measurements::<CoronalPointsAndCurve, CoronalDraw, f64>(
+                    model_io,
+                    metadata,
+                    overlays,
+                    size_config,
+                    ch_last_output,
+                    reduce,
+                )
+            }
+            ScanDirection::Sagittal => _svg_and_measurements::<SagittalPoints, SagittalDraw, f64>(
+                model_io,
+                metadata,
+                overlays,
+                size_config,
+                ch_last_output,
+                reduce,
+            ),
+            ScanDirection::NeckLateral => _svg_and_measurements::<
+                head_neck::LateralPoints,
+                head_neck::NeckLateralDraw,
+                Vec<f64>,
+            >(
+                model_io,
+                metadata,
+                overlays,
+                size_config,
+                ch_last_output,
+                reduce,
+            ),
         }
     }
 }
@@ -373,8 +468,8 @@ pub fn extract_array_from_output(
 
 use labelme_rs::{svg::node::element::SVG, LabelMeData, LabelMeDataWImage};
 use scolrs::{
-    draw::{self, draw_coronal, wrap_in_html},
-    CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw, PointDataWithImage,
+    draw::{self, wrap_in_html},
+    CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw,
 };
 
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
@@ -465,143 +560,133 @@ pub fn calculate_crop_parameters(
     None
 }
 
+pub trait DefaultDraws {
+    fn draws() -> Vec<Self>
+    where
+        Self: Sized;
+    fn hides() -> Vec<Self>
+    where
+        Self: Sized;
+}
+
+impl DefaultDraws for GenericDraw {
+    fn draws() -> Vec<Self> {
+        vec![GenericDraw::AllPoints]
+    }
+    fn hides() -> Vec<Self> {
+        vec![GenericDraw::AllPoints]
+    }
+}
+
+impl DefaultDraws for CoronalDraw {
+    fn draws() -> Vec<Self> {
+        let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
+        CoronalDraw::all()
+            .into_iter()
+            .filter(|d| !non_draws.contains(d))
+            .collect::<Vec<_>>()
+    }
+    fn hides() -> Vec<Self> {
+        let non_hide = [
+            CoronalDraw::AllPoints,
+            CoronalDraw::VertebralLabels,
+            CoronalDraw::CobbPT,
+            CoronalDraw::CobbMT,
+            CoronalDraw::CobbTLL,
+        ];
+        CoronalDraw::all()
+            .into_iter()
+            .filter(|d| !non_hide.contains(d))
+            .collect::<Vec<_>>()
+    }
+}
+
+impl DefaultDraws for scolrs::SagittalDraw {
+    fn draws() -> Vec<Self> {
+        scolrs::SagittalDraw::all()
+    }
+    fn hides() -> Vec<Self> {
+        let non_hide = [
+            SagittalDraw::AllPoints,
+            SagittalDraw::VertebralLabels,
+            SagittalDraw::ThoracicKyphosis,
+            SagittalDraw::LumbarLordosis,
+        ];
+        scolrs::SagittalDraw::all()
+            .into_iter()
+            .filter(|d| !non_hide.contains(d))
+            .collect::<Vec<_>>()
+    }
+}
+
+impl DefaultDraws for head_neck::NeckLateralDraw {
+    fn draws() -> Vec<Self> {
+        head_neck::NeckLateralDraw::all()
+    }
+    fn hides() -> Vec<Self> {
+        use head_neck::NeckLateralDraw as ND;
+        let non_hides = vec![
+            ND::CervicalPoints,
+            ND::VertebralLabels,
+            ND::OC2,
+            ND::WedgeAngle,
+            ND::ThoracicInletAngle,
+            ND::NeckTilt,
+            ND::SpinoCranialAngle,
+            ND::OccipitocervicalInclination,
+            ND::CranialSlope,
+        ];
+        head_neck::NeckLateralDraw::all()
+            .into_iter()
+            .filter(|d| !non_hides.contains(d))
+            .collect::<Vec<_>>()
+    }
+}
+
+pub fn create_svg<PointType, Draw, ValueType>(
+    gp: PointType,
+    lm_data_with_image: LabelMeDataWImage,
+    overlays: Vec<ImageOverlay>,
+    size_config: &SizeConfig,
+) -> Result<SVG, anyhow::Error>
+where
+    PointType: HasImageMetadata + Scalable,
+    <PointType as Scalable>::Error: std::fmt::Debug,
+    for<'b> (&'b Draw, &'b ScaledType<PointType>): Into<Box<dyn DrawComponent + 'b>>,
+    for<'b> (&'b Draw::MeasureType, &'b ScaledType<PointType>):
+        Into<Box<dyn ConfidenceComponent<ValueType = ValueType> + 'b>>,
+    Draw: Clone + Copy + PartialEq + AsMeasure + DefaultDraws,
+    ValueType: ConfidenceDisplay,
+{
+    let draws = Draw::draws();
+
+    let draw_param = scolrs::draw::DrawParam::default();
+    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
+    let svg_size = size_config.svg_size;
+    let palettes = scolrs::draw::ColorPalettes::default();
+    let hides = Draw::hides();
+    let draw_args = draw::DrawArguments {
+        image: lm_data_with_image.image,
+        data: gp,
+        draw_param,
+        resize_param: Some(resize_param),
+        svg_size,
+        palettes,
+        draw: &draws,
+        hide: &hides,
+        overlays,
+    };
+    let document = draw::draw_on_image(draw_args).expect("Failed to draw generic points and curve");
+    Ok(document)
+}
+
 pub fn create_generic_svg(
     gp: GenericPoints,
     lm_data_with_image: LabelMeDataWImage,
     overlays: Vec<ImageOverlay>,
     size_config: &SizeConfig,
 ) -> Result<SVG, anyhow::Error> {
-    let points_with_image = PointDataWithImage::new(gp, lm_data_with_image);
-    let draws = vec![GenericDraw::AllPoints];
-
-    let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
-    let svg_size = size_config.svg_size;
-    let palettes = scolrs::draw::ColorPalettes::default();
-    let hide = vec![GenericDraw::AllPoints];
-    let draw_args = draw::GenericDrawArguments {
-        image: points_with_image.data_image.image,
-        data: points_with_image.data,
-        draw_param,
-        resize_param: Some(resize_param),
-        svg_size,
-        palettes,
-        draw: &draws,
-        hide: &hide,
-        overlays,
-    };
-    let document = draw_generic(draw_args).expect("Failed to draw generic points and curve");
-    Ok(document)
-}
-
-pub fn create_coronal_svg(
-    cp: CoronalPointsAndCurve,
-    lm_data_with_image: LabelMeDataWImage,
-    overlays: Vec<ImageOverlay>,
-    size_config: &SizeConfig,
-) -> Result<SVG, anyhow::Error> {
-    let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
-    let non_draws = [CoronalDraw::SpinalLine, CoronalDraw::Centroids];
-    let draws = CoronalDraw::all()
-        .into_iter()
-        .filter(|d| !non_draws.contains(d))
-        .collect::<Vec<_>>();
-
-    let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
-    let svg_size = size_config.svg_size;
-    let palettes = scolrs::draw::ColorPalettes::default();
-    let non_hide = [
-        CoronalDraw::AllPoints,
-        CoronalDraw::VertebralLabels,
-        CoronalDraw::CobbPT,
-        CoronalDraw::CobbMT,
-        CoronalDraw::CobbTLL,
-    ];
-    let hide = CoronalDraw::all()
-        .into_iter()
-        .filter(|d| !non_hide.contains(d))
-        .collect::<Vec<_>>();
-    let draw_args = draw::CoronalDrawArguments {
-        image: points_with_image.data_image.image,
-        data: points_with_image.data,
-        draw_param,
-        resize_param: Some(resize_param),
-        svg_size,
-        palettes,
-        draw: &draws,
-        hide: &hide,
-        overlays,
-    };
-    let document = draw_coronal(draw_args).expect("Failed to draw coronal points and curve");
-    Ok(document)
-}
-
-pub fn create_sagittal_svg(
-    cp: SagittalPoints,
-    lm_data_with_image: LabelMeDataWImage,
-    overlays: Vec<ImageOverlay>,
-    size_config: &SizeConfig,
-) -> Result<SVG, anyhow::Error> {
-    let points_with_image = PointDataWithImage::new(cp, lm_data_with_image);
-    let draws = scolrs::SagittalDraw::all();
-    let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
-    let svg_size = size_config.svg_size;
-    let palettes = scolrs::draw::ColorPalettes::default();
-    let non_hide = [
-        SagittalDraw::AllPoints,
-        SagittalDraw::VertebralLabels,
-        SagittalDraw::ThoracicKyphosis,
-        SagittalDraw::LumbarLordosis,
-    ];
-    let hide = scolrs::SagittalDraw::all()
-        .into_iter()
-        .filter(|d| !non_hide.contains(d))
-        .collect::<Vec<_>>();
-    let draw_args = draw::SagittalDrawArguments {
-        image: points_with_image.data_image.image,
-        data: points_with_image.data,
-        draw_param,
-        resize_param: Some(resize_param),
-        svg_size,
-        palettes,
-        draw: &draws,
-        hide: &hide,
-        overlays,
-    };
-    let document = draw_sagittal(draw_args).expect("Failed to draw sagittal points and curve");
-    Ok(document)
-}
-
-pub fn create_neck_lateral_svg(
-    nlp: head_neck::LateralPoints,
-    lm_data_with_image: LabelMeDataWImage,
-    overlays: Vec<ImageOverlay>,
-    size_config: &SizeConfig,
-) -> Result<SVG, anyhow::Error> {
-    let points_with_image = PointDataWithImage::new(nlp, lm_data_with_image);
-    let draws = head_neck::NeckLateralDraw::all();
-
-    let draw_param = scolrs::draw::DrawParam::default();
-    let resize_param = labelme_rs::ResizeParam::Size(size_config.resize.0, size_config.resize.1);
-    let svg_size = size_config.svg_size;
-    let palettes = scolrs::draw::ColorPalettes::default();
-    let hide = vec![];
-    let draw_args = head_neck::NeckLateralDrawArguments {
-        image: points_with_image.data_image.image,
-        data: points_with_image.data,
-        draw_param,
-        resize_param: Some(resize_param),
-        svg_size,
-        palettes,
-        draw: &draws,
-        hide: &hide,
-        overlays,
-    };
-    let document =
-        draw_neck(draw_args).expect("Failed to draw neck lateral generic points and curve");
-    Ok(document)
+    create_svg::<GenericPoints, GenericDraw, f64>(gp, lm_data_with_image, overlays, size_config)
 }
 
 #[wasm_bindgen]
@@ -904,60 +989,16 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
     );
 
     let reduce = scolrs::draw::ReductionMethod::GeometricMean;
-    let (document, measurements) = match scan_direction {
-        ScanDirection::Coronal => {
-            log::debug!("Creating CoronalPointsAndCurve");
-            let mut cp = CoronalPointsAndCurve::try_from(model_io.lm_data())?;
-            let crop_adjusted_cp = CoronalPointsAndCurve::try_from(model_io.heatmap_lm_data())?;
-            *cp.image_metadata_mut() = metadata;
-            let confidence = crop_adjusted_cp
-                .coronal_points
-                .extract_point_confidence(ch_last_output.view());
-            log::trace!("Extracted confidence: {:?}", confidence);
-            *cp.coronal_points.get_confidence_mut() = Some(confidence);
-            let lm_data_with_image = model_io.into_lm_data_w_image();
-            // coronal measurements
-            let measures = scolrs::CoronalMeasure::all();
-            let scaled_data = cp.clone().into_scaled()?;
-            let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
-            let svg = create_coronal_svg(cp, lm_data_with_image, overlays, &size_config)?;
-            (svg, measurements)
-        }
-        ScanDirection::Sagittal => {
-            log::debug!("Creating SagittalPoints");
-            let mut cp = SagittalPoints::try_from(model_io.lm_data())?;
-            let crop_adjusted_cp = SagittalPoints::try_from(model_io.heatmap_lm_data())?;
-            *cp.image_metadata_mut() = metadata;
-            let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
-            log::trace!("Extracted confidence: {:?}", confidence);
-            *cp.get_confidence_mut() = Some(confidence);
-            let lm_data_with_image = model_io.into_lm_data_w_image();
-            // sagittal measurements
-            let measures = scolrs::SagittalMeasure::all();
-            let scaled_data = cp.clone().into_scaled()?;
-            let measurements = measure_x(scaled_data, measures, reduce).into_string_map();
-            let svg = create_sagittal_svg(cp, lm_data_with_image, overlays, &size_config)?;
-            (svg, measurements)
-        }
-        ScanDirection::NeckLateral => {
-            log::debug!("Creating NeckLateralPoints");
-            let mut cp = head_neck::LateralPoints::try_from(model_io.lm_data())?;
-            let crop_adjusted_cp = head_neck::LateralPoints::try_from(model_io.heatmap_lm_data())?;
-            *cp.image_metadata_mut() = metadata;
-            let confidence = crop_adjusted_cp.extract_point_confidence(ch_last_output.view());
-            log::trace!("Extracted confidence: {:?}", confidence);
-            *cp.get_confidence_mut() = Some(confidence);
-            let lm_data_with_image = model_io.into_lm_data_w_image();
-            // neck lateral measurements
-            let measures = scolrs::head_neck::NeckLateralMeasure::all();
-            let scaled_data = cp.clone().into_scaled()?;
-            let measurements = measure_x(scaled_data, measures, reduce)
-                .into_string_map()
-                .into_flat();
-            let svg = create_neck_lateral_svg(cp, lm_data_with_image, overlays, &size_config)?;
-            (svg, measurements)
-        }
-    };
+
+    let (document, measurements) = scan_direction.svg_and_measurements(
+        model_io,
+        metadata,
+        overlays,
+        &size_config,
+        ch_last_output.view(),
+        reduce,
+    )?;
+
     let measure_json = serde_json::to_string_pretty(&measurements)?;
     let transposed_result = measurements.into_transposed();
     let mut wtr = csv::Writer::from_writer(vec![]);

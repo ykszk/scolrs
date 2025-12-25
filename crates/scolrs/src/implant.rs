@@ -510,7 +510,8 @@ impl<'a, 'b> From<(&'b ImplantDraw, &'a ScaledType<ScrewSpine>)> for Box<dyn Dra
     }
 }
 
-pub struct DummyMeasureType;
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, strum::Display)]
+pub enum DummyMeasureType {}
 impl<'a, 'b> From<(&'b DummyMeasureType, &'a ScaledType<ScrewSpine>)>
     for Box<dyn ConfidenceComponent<ValueType = f64> + 'a>
 {

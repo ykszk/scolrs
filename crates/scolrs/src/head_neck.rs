@@ -1913,7 +1913,18 @@ impl AsMeasure for NeckLateralDraw {
 }
 
 #[derive(
-    strum::EnumString, strum::Display, strum::VariantArray, ValueEnum, Debug, Copy, Clone, PartialEq,
+    strum::EnumString,
+    strum::Display,
+    strum::VariantArray,
+    ValueEnum,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Eq,
 )]
 #[clap(rename_all = "PascalCase")]
 pub enum NeckLateralDraw {

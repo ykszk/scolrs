@@ -996,7 +996,7 @@ pub trait ConfidenceComponent: Named {
 
 /// Convert draw component to measure component
 pub trait AsMeasure {
-    type MeasureType;
+    type MeasureType: std::hash::Hash + ToString;
     fn as_measure(&self) -> Option<Self::MeasureType>;
 }
 

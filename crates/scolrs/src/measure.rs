@@ -25,6 +25,14 @@ pub trait FlattenResult {
     fn into_flat(self) -> Self::FlatType;
 }
 
+impl FlattenResult for MeasureResult<String, f64> {
+    type FlatType = MeasureResult<String, f64>;
+    /// No-op for already flat results
+    fn into_flat(self) -> Self::FlatType {
+        self
+    }
+}
+
 impl FlattenResult for MeasureResult<String, Vec<f64>> {
     type FlatType = MeasureResult<String, f64>;
     fn into_flat(self) -> Self::FlatType {

@@ -30,6 +30,7 @@ pub enum GenericDraw {
     AllPoints,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, strum::Display)]
 pub enum GenericMeasure {}
 
 #[derive(Debug, Clone, PartialEq, HasImageMetadata)]
