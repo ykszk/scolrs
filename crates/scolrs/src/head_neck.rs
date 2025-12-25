@@ -129,7 +129,7 @@ pub struct LateralPoints {
 }
 
 impl LateralPoints {
-    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> LateralPointConfidence {
+    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> LateralPointConfidence {
         // let corners_conf = self
         //     .corners
         //     .0
@@ -216,7 +216,7 @@ impl PointConfidence for LateralPoints {
     }
     fn extract_point_confidence(
         &self,
-        confidence_map: ArrayView3<f64>,
+        confidence_map: ArrayView3<f32>,
     ) -> Self::PointConfidenceType {
         self._extract_point_confidence(confidence_map)
     }

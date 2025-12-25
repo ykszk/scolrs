@@ -12,7 +12,7 @@ use std::{
 
 fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Deserialize<'de>>(
     input_path: &Path,
-    heatmaps: &ndarray::Array3<f64>,
+    heatmaps: &ndarray::Array3<f32>,
     args: &ConfidenceArgs,
 ) -> Result<()> {
     let file =
@@ -32,11 +32,11 @@ fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Dese
     Ok(())
 }
 
-fn read_npz(path: &Path, key: &str) -> Result<ndarray::Array3<f64>> {
+fn read_npz(path: &Path, key: &str) -> Result<ndarray::Array3<f32>> {
     let mut npz = ndarray_npz::NpzReader::new(
         std::fs::File::open(path).with_context(|| format!("Opening {:?}", path))?,
     )?;
-    let array: ndarray::Array3<f64> = npz.by_name(key).with_context(|| match npz.names() {
+    let array: ndarray::Array3<f32> = npz.by_name(key).with_context(|| match npz.names() {
         Ok(names) => {
             if names.is_empty() {
                 "The provided npz file contains no arrays.".to_string()
@@ -128,7 +128,7 @@ pub fn cmd(args: ConfidenceArgs) -> Result<()> {
     let heatmaps = match args.confidence_map.extension() {
         Some(ext) if ext == "npz" => read_npz(&args.confidence_map, &args.key)?,
         Some(ext) if ext == "npy" => {
-            let array: ndarray::Array3<f64> =
+            let array: ndarray::Array3<f32> =
                 ndarray_npz::ndarray_npy::read_npy(&args.confidence_map).with_context(|| {
                     format!("Reading numpy array from {:?}", &args.confidence_map)
                 })?;

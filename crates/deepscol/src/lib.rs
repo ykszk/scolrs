@@ -49,7 +49,7 @@ impl ScanDirection {
         metadata: ImageMetadata,
         overlays: Vec<ImageOverlay>,
         size_config: &SizeConfig,
-        ch_last_output: ArrayView3<f64>,
+        ch_last_output: ArrayView3<f32>,
         reduce: scolrs::draw::ReductionMethod,
     ) -> Result<(SVG, MeasureResult<String, f64>), anyhow::Error> {
         fn _svg_and_measurements<PointType, Draw, ValueType>(
@@ -57,7 +57,7 @@ impl ScanDirection {
             metadata: ImageMetadata,
             overlays: Vec<ImageOverlay>,
             size_config: &SizeConfig,
-            ch_last_output: ArrayView3<f64>,
+            ch_last_output: ArrayView3<f32>,
             reduce: scolrs::draw::ReductionMethod,
         ) -> Result<(SVG, MeasureResult<String, f64>), anyhow::Error>
         where
@@ -953,8 +953,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         width_height,
     )];
 
-    let model_output_f64 = model_io.output3().mapv(|x| x as f64);
-    let ch_last_output = model_output_f64.permuted_axes([1, 2, 0]);
+    let ch_last_output = model_io.output3().to_owned().permuted_axes([1, 2, 0]);
 
     if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
         log::warn!(

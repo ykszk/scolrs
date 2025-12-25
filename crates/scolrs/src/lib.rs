@@ -508,7 +508,7 @@ impl Spine {
 
     /// Extract point confidence from confidence map
     /// The order of classes is assumed to be: 'TL', 'TR', 'BL', 'BR', and others
-    pub fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> Array2<f64> {
+    pub fn extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> Array2<f64> {
         // 3D array with (vertebrae, corners, xy) to (corners, vertebrae, xy)
         let spine_points = self.c7tls.0.view().permuted_axes([1, 0, 2]);
 
@@ -537,7 +537,7 @@ pub trait PointConfidence {
     fn get_confidence_mut(&mut self) -> &mut Option<Self::PointConfidenceType>;
     fn extract_point_confidence(
         &self,
-        confidence_map: ArrayView3<f64>,
+        confidence_map: ArrayView3<f32>,
     ) -> Self::PointConfidenceType;
 }
 
@@ -570,12 +570,12 @@ pub struct CoronalPoints {
 
 trait GetMany {
     #[allow(dead_code)] // TODO: maybe remove?
-    fn get_many(&self, points: Array2<usize>) -> Array1<f64>;
-    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f64>;
+    fn get_many(&self, points: Array2<usize>) -> Array1<f32>;
+    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f32>;
 }
 
-impl GetMany for ArrayView2<'_, f64> {
-    fn get_many(&self, points: Array2<usize>) -> Array1<f64> {
+impl GetMany for ArrayView2<'_, f32> {
+    fn get_many(&self, points: Array2<usize>) -> Array1<f32> {
         let mut result = Array1::zeros(points.len_of(Axis(0)));
         for (i, point) in points.axis_iter(Axis(0)).enumerate() {
             let x = point[0];
@@ -584,7 +584,7 @@ impl GetMany for ArrayView2<'_, f64> {
         }
         result
     }
-    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f64> {
+    fn get_many_clamped(&self, points: Array2<usize>) -> Array1<f32> {
         let height = self.len_of(Axis(0));
         let width = self.len_of(Axis(1));
         let mut result = Array1::zeros(points.len_of(Axis(0)));
@@ -602,7 +602,7 @@ impl GetMany for ArrayView2<'_, f64> {
 /// `confidence_map` is a 3D array with shape (height, width, num_classes)
 fn extract_confidence(
     points: ArrayView2<f64>,
-    confidence_map: ArrayView3<f64>,
+    confidence_map: ArrayView3<f32>,
     class_idx: usize,
 ) -> Array1<f64> {
     let pts = points.mapv(|x| x.round() as usize);
@@ -612,9 +612,10 @@ fn extract_confidence(
         confidence_map.shape(),
         pts
     );
-    confidence_map
+    let v_f32: Array1<f32> = confidence_map
         .slice(s![.., .., class_idx])
-        .get_many_clamped(pts)
+        .get_many_clamped(pts);
+    v_f32.mapv(|x| x as f64)
 }
 
 impl CoronalPoints {
@@ -631,7 +632,7 @@ impl CoronalPoints {
     /// Extract point confidence from confidence map
     /// `confidence_map` is a 3D array with shape (height, width, num_classes)
     /// The order of classes is assumed to be: 'TL', 'TR', 'BL', 'BR', 'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
-    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+    fn _extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> CoronalPointConfidence {
         let c7tls = self.spine.extract_point_confidence(confidence_map);
 
         let shoulder = extract_confidence(self.shoulder.0.view(), confidence_map, 4);
@@ -661,7 +662,7 @@ impl PointConfidence for CoronalPoints {
         &mut self.confidences
     }
 
-    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> CoronalPointConfidence {
         self._extract_point_confidence(confidence_map)
     }
 }
@@ -1457,7 +1458,7 @@ impl SagittalPoints {
 
     fn _extract_point_confidence(
         &self,
-        confidence_map: ArrayView3<f64>,
+        confidence_map: ArrayView3<f32>,
     ) -> SagittalPointConfidence {
         let c7tls = self.spine.extract_point_confidence(confidence_map);
         let femoral_head = extract_confidence(self.femoral_head.0.view(), confidence_map, 8);
@@ -1486,7 +1487,7 @@ impl PointConfidence for SagittalPoints {
         &mut self.confidences
     }
 
-    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> SagittalPointConfidence {
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> SagittalPointConfidence {
         self._extract_point_confidence(confidence_map)
     }
 }
@@ -1808,7 +1809,7 @@ impl PointConfidence for CoronalPointsAndCurve {
         &mut self.coronal_points.confidences
     }
 
-    fn extract_point_confidence(&self, confidence_map: ArrayView3<f64>) -> CoronalPointConfidence {
+    fn extract_point_confidence(&self, confidence_map: ArrayView3<f32>) -> CoronalPointConfidence {
         self.coronal_points.extract_point_confidence(confidence_map)
     }
 }
