@@ -347,7 +347,8 @@ impl ActiveShapeModel {
         self.mean = transformed_mean
             .into_shape_with_order(self.mean.len())
             .unwrap();
-        // // eigenvectors
+        // apply only scaling and rotation to eigenvectors
+        let sr_tf = SimilarityTransform::from_scale_rotation(tr.scale(), tr.rotation());
         for i in 0..self.components.len_of(Axis(0)) {
             let ev_2d = self
                 .components
@@ -355,11 +356,25 @@ impl ActiveShapeModel {
                 .to_owned()
                 .into_shape_with_order((self.components.len_of(Axis(1)) / 2, 2))
                 .unwrap();
-            let transformed_ev: Array2<f64> = tr.transform(&ev_2d);
+            let transformed_ev: Array2<f64> = sr_tf.transform(&ev_2d);
             let ev_flat = transformed_ev
                 .into_shape_with_order(self.components.len_of(Axis(1)))
                 .unwrap();
             self.components.slice_mut(s![i, ..]).assign(&ev_flat);
+        }
+        // repeat for scaled_components
+        for i in 0..self.scaled_components.len_of(Axis(0)) {
+            let ev_2d = self
+                .scaled_components
+                .slice(s![i, ..])
+                .to_owned()
+                .into_shape_with_order((self.scaled_components.len_of(Axis(1)) / 2, 2))
+                .unwrap();
+            let transformed_ev: Array2<f64> = sr_tf.transform(&ev_2d);
+            let ev_flat = transformed_ev
+                .into_shape_with_order(self.scaled_components.len_of(Axis(1)))
+                .unwrap();
+            self.scaled_components.slice_mut(s![i, ..]).assign(&ev_flat);
         }
     }
 }

@@ -35,6 +35,39 @@ impl SimilarityTransform {
         }
     }
 
+    pub fn from_scale_rotation(scale: f64, rotation: f64) -> Self {
+        let a = scale * rotation.cos();
+        let b = scale * rotation.sin();
+
+        Self {
+            matrix: Matrix::new(
+                3,
+                3,
+                vec![
+                    a, -b, 0.0, // First row
+                    b, a, 0.0, // Second row
+                    0.0, 0.0, 1.0, // Third row (homogeneous)
+                ],
+            ),
+        }
+    }
+
+    /// Calculate the scale factor of the transformation
+    pub fn scale(&self) -> f64 {
+        let m = &self.matrix;
+        let a = m[[0, 0]];
+        let b = m[[0, 1]];
+        (a * a + b * b).sqrt()
+    }
+
+    /// Calculate the rotation angle (in radians) of the transformation
+    pub fn rotation(&self) -> f64 {
+        let m = &self.matrix;
+        let a = m[[0, 0]];
+        let b = m[[0, 1]];
+        b.atan2(a)
+    }
+
     /// Estimate similarity transform from source to destination points
     /// Uses least squares to solve for 4 parameters: scale, rotation, tx, ty
     ///
