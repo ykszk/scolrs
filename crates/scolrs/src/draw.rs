@@ -647,10 +647,6 @@ impl Painter {
 
         let linter = sup_line.intersection(&inf_line);
         if let Some(intersection) = linter {
-            let is_inside = intersection.x > 0.0
-                && intersection.x < self.size.0 as f64
-                && intersection.y > 0.0
-                && intersection.y < self.size.1 as f64;
             let angle = angle_from_lines(sup_plate.view(), inf_plate.view()).unwrap(); // lines can't be parallel if there is an intersection point
 
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
@@ -663,14 +659,13 @@ impl Painter {
             let aux_cross =
                 rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
 
-            let d_btw_aux2p = aux_cross
+            let d_btw_aux2p = aux_on_sup
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
                 .unwrap();
-            let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
             let d_btw_int2p = arr_int
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
                 .unwrap();
-            if is_inside && d_btw_aux2p > d_btw_int2p {
+            if d_btw_aux2p > d_btw_int2p {
                 // draw intersection point
                 for plate in [sup_plate.view(), inf_plate.view()] {
                     let i = Self::plate_end(plate, arr_int.view());

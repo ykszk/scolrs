@@ -772,7 +772,7 @@ impl DrawComponent for OC2<'_> {
             group,
             (mcgregor_points, c2_lower_endplate.to_owned()),
             &CobbAux {
-                plate_scale: 10.0,
+                plate_scale: 7.0,
                 flip_sign: false,
                 ..Default::default()
             },
