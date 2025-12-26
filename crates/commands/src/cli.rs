@@ -530,6 +530,10 @@ pub struct AsmParams {
     /// Shape parameters as a comma separated list
     #[clap(short, long)]
     pub list: Option<Vec<f64>>,
+
+    /// Interactive mode to input parameters
+    #[clap(short, long)]
+    pub interactive: bool,
 }
 
 #[derive(Parser, Debug)]

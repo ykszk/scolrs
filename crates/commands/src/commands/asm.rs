@@ -95,6 +95,43 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+enum InteractiveInput {
+    PosValue(usize, f64), // e.g. "0 1.5" sets parameter[0] = 1.5
+    Print,
+    Clear,
+    Quit,
+}
+
+impl TryFrom<&str> for InteractiveInput {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("clear") || trimmed.eq_ignore_ascii_case("c") {
+            Ok(InteractiveInput::Clear)
+        } else if trimmed.eq_ignore_ascii_case("print") || trimmed.eq_ignore_ascii_case("p") {
+            Ok(InteractiveInput::Print)
+        } else if trimmed.is_empty()
+            || trimmed.eq_ignore_ascii_case("quit")
+            || trimmed.eq_ignore_ascii_case("q")
+        {
+            Ok(InteractiveInput::Quit)
+        } else {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() != 2 {
+                return Err("Invalid input format. Expected 'index value', 'clear', or 'quit'.");
+            }
+            let index: usize = parts[0]
+                .parse()
+                .map_err(|_| "Failed to parse index as usize")?;
+            let value: f64 = parts[1]
+                .parse()
+                .map_err(|_| "Failed to parse value as f64")?;
+            Ok(InteractiveInput::PosValue(index, value))
+        }
+    }
+}
+
 fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
     // Create ASM from json file
     let reader = std::fs::File::open(&args.asm_model)
@@ -119,6 +156,95 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
     log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
     asm.global_transform(&tr_asm_to_ref);
 
+    fn recon_and_save(
+        asm: &ActiveShapeModel,
+        shape_params: &ndarray::ArrayBase<ndarray::OwnedRepr<f64>, ndarray::Dim<[usize; 1]>>,
+        ref_lm: &LabelMeData,
+        args: &AsmReconstructArgs,
+    ) -> anyhow::Result<()> {
+        let reconstructed_points = asm.pad_deform(shape_params.view());
+        // save reconstructed points to labelme json
+        let mut output_lm = ref_lm.clone();
+        output_lm.shapes = create_shapes_from_fitted_points(&reconstructed_points, &asm.labels);
+        output_lm.imageWidth = ref_lm.imageWidth;
+        output_lm.imageHeight = ref_lm.imageHeight;
+        output_lm.version = scolrs::VERSION.to_string();
+        // not using `serde_json::to_writer_pretty` to write at once so that inotify can detect file write completion
+        let output_str = serde_json::to_string_pretty(&output_lm)
+            .with_context(|| "Serializing reconstructed labelme data")?;
+        std::fs::write(&args.output, output_str)
+            .with_context(|| format!("Writing labelme data to {:?}", args.output))?;
+        Ok(())
+    }
+
+    if args.params.interactive {
+        log::info!(
+            "Entering interactive mode for shape parameter input. Watch {} for output.",
+            args.output.display()
+        );
+        let mut shape_params = vec![0.0; asm.n_components()];
+        loop {
+            println!("Enter shape parameter index and value separated by space (e.g., '0 1.5'), 'clear' to reset parameters, or 'quit' to exit:");
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .expect("Failed to read line");
+            fn print_shape_params(params: &[f64]) {
+                print!("Current shape parameters:");
+                let last_non_zero = params.iter().rposition(|&x| x.abs() > f64::EPSILON);
+                if last_non_zero.is_none() {
+                    println!("  (all parameters are zero)");
+                    return;
+                }
+                let last_non_zero = last_non_zero.unwrap();
+                for &val in params.iter().take(last_non_zero + 1) {
+                    print!("  {}", val);
+                }
+                println!();
+            }
+            match InteractiveInput::try_from(input.as_str()) {
+                Ok(InteractiveInput::PosValue(index, value)) => {
+                    if index >= shape_params.len() {
+                        println!(
+                            "Index out of bounds. Please enter an index between 0 and {}.",
+                            shape_params.len() - 1
+                        );
+                    } else {
+                        shape_params[index] = value;
+                        log::info!("Set parameter[{}] = {}", index, value);
+                        recon_and_save(
+                            &asm,
+                            &ndarray::Array1::from_vec(shape_params.clone()),
+                            &ref_lm,
+                            &args,
+                        )?;
+                        print_shape_params(&shape_params);
+                    }
+                }
+                Ok(InteractiveInput::Print) => {
+                    print_shape_params(&shape_params);
+                }
+                Ok(InteractiveInput::Clear) => {
+                    shape_params.fill(0.0);
+                    log::info!("Cleared all shape parameters.");
+                    recon_and_save(
+                        &asm,
+                        &ndarray::Array1::from_vec(shape_params.clone()),
+                        &ref_lm,
+                        &args,
+                    )?;
+                }
+                Ok(InteractiveInput::Quit) => {
+                    print!("Exiting interactive mode.");
+                    return Ok(());
+                }
+                Err(e) => {
+                    println!("Invalid input: {}", e);
+                }
+            }
+        }
+    }
+
     let shape_params: Vec<f64> = if let Some(param_file) = &args.params.param_file {
         // load from file
         let file = std::fs::File::open(param_file)
@@ -134,17 +260,7 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
 
     let shape_params: ndarray::ArrayBase<ndarray::OwnedRepr<f64>, ndarray::Dim<[usize; 1]>> =
         ndarray::Array1::from_vec(shape_params);
-    let reconstructed_points = asm.pad_deform(shape_params.view());
-    // save reconstructed points to labelme json
-    let mut output_lm = ref_lm.clone();
-    output_lm.shapes = create_shapes_from_fitted_points(&reconstructed_points, &asm.labels);
-    output_lm.imageWidth = ref_lm.imageWidth;
-    output_lm.imageHeight = ref_lm.imageHeight;
-    output_lm.version = scolrs::VERSION.to_string();
-    let output_file = std::fs::File::create(&args.output)
-        .with_context(|| format!("Creating output file {:?}", args.output))?;
-    serde_json::to_writer_pretty(output_file, &output_lm)
-        .with_context(|| format!("Writing labelme data to {:?}", args.output))?;
+    recon_and_save(&asm, &shape_params, &ref_lm, &args)?;
     println!("Saved reconstructed labelme data to {:?}", args.output);
     Ok(())
 }
