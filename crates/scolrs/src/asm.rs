@@ -46,6 +46,34 @@ impl Default for AsmConfig {
     }
 }
 
+pub fn extract_points(lm_data: &LabelMeData, labels: &[String]) -> Vec<Vec<(f64, f64)>> {
+    let mut points = Vec::new();
+    let shape_dict = lm_data.to_shape_map();
+    let Some(point_map) = shape_dict.get("point") else {
+        log::warn!("No 'point' shape found in labelme data.");
+        return vec![Vec::new(); labels.len()];
+    };
+    for label in labels {
+        match point_map.get(label.as_str()) {
+            Some(p) => {
+                let mut label_points = Vec::new();
+                for point in p {
+                    label_points.push((point[0].0, point[0].1));
+                }
+                points.push(label_points);
+            }
+            None => {
+                log::warn!(
+                    "Point '{}' not found in labelme data, using empty vector.",
+                    label
+                );
+                points.push(Vec::new());
+            }
+        }
+    }
+    points
+}
+
 pub fn extract_reference_points(
     lm_data: &LabelMeData,
     reference_labels: &[String],

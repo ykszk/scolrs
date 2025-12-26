@@ -464,7 +464,7 @@ pub enum AsmSubCommands {
     Fit(AsmFitArgs),
 
     /// Project points to ASM space
-    // Project(AsmProjectArgs), // Future work
+    Project(AsmProjectArgs),
 
     /// Reconstruct points from shape parameters
     Recon(AsmReconstructArgs),
@@ -548,6 +548,19 @@ pub struct AsmReconstructArgs {
     #[clap(value_hint = ValueHint::FilePath)]
     pub lm_in: PathBuf,
     /// Output Labelme json with reconstructed points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+pub struct AsmProjectArgs {
+    /// Input ASM model in json
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub asm_model: PathBuf,
+    /// Labelme json with points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub lm_in: PathBuf,
+    /// Output projected shape parameters in json
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 }

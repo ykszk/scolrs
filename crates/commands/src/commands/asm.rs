@@ -1,17 +1,21 @@
 use anyhow::Context;
+use ndarray::{Array, Array1, Axis};
 
-use crate::cli::{AsmArgs, AsmConfigArgs, AsmFitArgs, AsmReconstructArgs, AsmSubCommands};
+use crate::cli::{
+    AsmArgs, AsmConfigArgs, AsmFitArgs, AsmProjectArgs, AsmReconstructArgs, AsmSubCommands,
+};
 use labelme_rs::LabelMeData;
 
 use scolrs::asm::{
-    self, add_env_config, apply_asm, create_shapes_from_fitted_points, extract_reference_points,
-    model::ActiveShapeModel, AsmConfig,
+    self, add_env_config, apply_asm, create_shapes_from_fitted_points, extract_points,
+    extract_reference_points, model::ActiveShapeModel, AsmConfig,
 };
 use serde_json;
 
 pub fn cmd(args: AsmArgs) -> anyhow::Result<()> {
     match args.command {
         AsmSubCommands::Fit(args) => cmd_fit(args),
+        AsmSubCommands::Project(args) => cmd_project(args),
         AsmSubCommands::Recon(args) => cmd_recon(args),
         AsmSubCommands::Config(args) => cmd_config(args),
     }
@@ -287,5 +291,74 @@ fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {
     )
     .with_context(|| format!("Writing configuration to {:?}", args.output))?;
     println!("Saved configuration file to {:?}", args.output);
+    Ok(())
+}
+
+fn cmd_project(args: AsmProjectArgs) -> anyhow::Result<()> {
+    let reader = std::fs::File::open(&args.asm_model)
+        .with_context(|| format!("Opening ASM model file {:?}", args.asm_model))?;
+    let asm: ActiveShapeModel = serde_json::from_reader(reader)
+        .with_context(|| format!("Loading ASM model from {:?}", args.asm_model))?;
+    let ref_lm: LabelMeData = serde_json::from_reader(
+        std::fs::File::open(&args.lm_in)
+            .with_context(|| format!("Opening labelme file {:?}", args.lm_in))?,
+    )?;
+    // Calculate transform to align ASM template to reference points
+    let ref_points = extract_reference_points(&ref_lm, &asm.reference_labels);
+    let asm_movable_points = asm.to_movable_points();
+
+    let points = extract_points(&ref_lm, &asm.labels);
+    // flatten Vec<Vec<(f64, f64)>> to Vec<f64> to Array1<f64>
+    let flat_points: Vec<f64> = points
+        .iter()
+        .flat_map(|v| v.iter().flat_map(|&(x, y)| vec![x, y]))
+        .collect();
+    let points_arr2 =
+        ndarray::Array2::from_shape_vec((flat_points.len() / 2, 2), flat_points).unwrap();
+
+    let tgt_movable_points = scolrs::asm::alignment::MovablePoints::new(
+        points_arr2,
+        ref_points.clone(),
+        asm_movable_points.point_counts.clone(),
+    );
+
+    log::debug!(
+        "Calculating transform to align ASM {:?} to reference points {:?}",
+        asm.template_reference,
+        ref_points
+    );
+
+    // let tr_asm_to_ref = asm_movable_points.calculate_transform_with_missing(&ref_points, true)?;
+    // let tr_ref_to_asm = asm_movable_points.calculate_transform_with_missing(&ref_points, false)?;
+    // log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
+    // asm.global_transform(&tr_asm_to_ref);
+    // vec to array
+    // let points = extract_points(&ref_lm, &asm.labels);
+    let (tgt_aligned, _tf) = asm_movable_points.align_with_missing(&tgt_movable_points)?;
+    log::debug!("Aligned target points: {:?}", tgt_aligned);
+    log::debug!("Mean shape: {:?}", asm.mean);
+    // flatten Vec<Vec<(f64, f64)>> to Vec<f64> to Array1<f64>
+    // let flat_points: Vec<f64> = points
+    //     .iter()
+    //     .flat_map(|v| v.iter().flat_map(|&(x, y)| vec![x, y]))
+    //     .collect();
+    // let points_array = ndarray::Array1::from(flat_points);
+    // Flatten Array2 to Array1
+    let points_array = tgt_aligned
+        .to_shape((tgt_aligned.len_of(Axis(0)) * tgt_aligned.len_of(Axis(1)),))
+        .unwrap()
+        .to_owned();
+
+    let projected_params = asm.transform(&points_array)?.to_vec();
+    log::debug!(
+        "Projected parameters for given points: {:?}",
+        projected_params
+    );
+    // save projected parameters to file
+    let output_file = std::fs::File::create(&args.output)
+        .with_context(|| format!("Creating output file {:?}", args.output))?;
+    serde_json::to_writer_pretty(output_file, &projected_params)
+        .with_context(|| format!("Writing projected parameters to {:?}", args.output))?;
+    println!("Saved projected parameters to {:?}", args.output);
     Ok(())
 }
