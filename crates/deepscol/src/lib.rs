@@ -352,7 +352,7 @@ pub fn create_lm(
 
     for (i_point, v_point) in points.iter().enumerate() {
         if v_point.is_empty() {
-            log::warn!("No points found for {}", labels[i_point]);
+            log::info!("No points found for {}", labels[i_point]);
             continue; // Skip empty points
         }
         for point in v_point {

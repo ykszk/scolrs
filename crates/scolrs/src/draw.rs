@@ -8,7 +8,7 @@ use crate::{
 use crate::{Curve, Spine, VERTEBRAL_LABELS};
 use labelme_rs::image::{self, DynamicImage};
 use labelme_rs::ResizeParam;
-use log::{debug, warn};
+use log::debug;
 pub use named_derive::Named;
 use ndarray::{s, stack, Array2, ArrayBase, ArrayView1, ArrayView2, Axis, Dim, Ix1, Ix2};
 use ndarray_stats::DeviationExt;
@@ -1840,7 +1840,7 @@ where
 
                 groups.push(g.into());
             }
-            Err(err) => warn!("Failed to draw {}: {:?}", draw_component.id(), err),
+            Err(err) => log::info!("Failed to draw {}: {:?}", draw_component.id(), err),
         }
     }
 
