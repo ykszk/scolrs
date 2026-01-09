@@ -1,5 +1,5 @@
 use anyhow::Context;
-use ndarray::{Array, Array1, Axis};
+use ndarray::Axis;
 
 use crate::cli::{
     AsmArgs, AsmConfigArgs, AsmFitArgs, AsmProjectArgs, AsmReconstructArgs, AsmSubCommands,

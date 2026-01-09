@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use deepscol as ds;
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
+use metaimage::WriteMhd;
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
@@ -205,25 +206,27 @@ fn main() -> Result<()> {
         let output_path = output_path.unwrap_or_else(|| {
             let mut p = image_path.clone();
             log::debug!("Generating heatmap path from image path: {:?}", p);
-            p.set_extension(".npz");
+            p.set_extension(".mha");
             if p == *image_path {
-                p.set_extension("heatmap.npz");
+                p.set_extension("heatmap.mha");
             }
             p
         });
         if output_path.extension().and_then(|s| s.to_str()) == Some("npz") {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
-            //  convert ort's ndarray (v0.15.6) to ndarray_npz's ndarray (v0.16.1). Can be removed when these crates are updated.
-            let output3 = model_io.output3();
-            let ndarray_output3 = ndarray_npz::ndarray::Array3::from_shape_vec(
-                (output3.shape()[0], output3.shape()[1], output3.shape()[2]),
-                output3.clone().into_raw_vec_and_offset().0,
-            )?;
-            let ndarray_output3 = ndarray_output3.mapv(|x| (x * 1000.0) as u16);
+            let ndarray_output3 = model_io.output3().mapv(|x| (x * 1000.0) as u16);
             // save the output
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
+        } else if output_path.extension().and_then(|s| s.to_str()) == Some("mha") {
+            let arr = model_io.output3();
+            // convert to metaimage's ndarray (v0.17). Can be removed the version conflict is resolved.
+            let ndarray_output3 = metaimage::ndarray::Array3::from_shape_vec(
+                (arr.shape()[2], arr.shape()[1], arr.shape()[0]),
+                arr.clone().into_raw_vec_and_offset().0,
+            )?;
+            metaimage::MetaImage::write_mhd(ndarray_output3.view(), &output_path)?
         } else {
             anyhow::bail!(
                 "Unsupported heatmap output format: {:?}",
