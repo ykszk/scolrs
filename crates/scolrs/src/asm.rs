@@ -1,6 +1,7 @@
 pub mod adam;
 pub mod alignment;
 pub mod fit;
+pub mod icp;
 pub mod model;
 
 use crate::asm::{

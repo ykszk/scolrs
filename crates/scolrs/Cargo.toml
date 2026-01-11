@@ -43,7 +43,7 @@ serde_json.workspace = true
 svg.workspace = true
 thiserror.workspace = true
 scraper.workspace = true
-tera = {workspace = true, features = ["urlencode"] }
+tera = { workspace = true, features = ["urlencode"] }
 config.workspace = true
 serde_yaml = "0.9.34"
 
