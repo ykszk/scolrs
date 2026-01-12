@@ -187,7 +187,7 @@ $$2\mathbf{A}\mathbf{b} - 2\mathbf{g} = \mathbf{0}$$
 
 $$\mathbf{A}\mathbf{b} = \mathbf{g}$$
 
-$$\boxed{\mathbf{b}^* = \mathbf{A}^{-1} \mathbf{g}}$$
+$$\mathbf{b}^* = \mathbf{A}^{-1} \mathbf{g}$$
 
 ## Step 8: Final Closed-Form Solution
 

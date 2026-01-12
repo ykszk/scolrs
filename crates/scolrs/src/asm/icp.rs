@@ -1,8 +1,7 @@
 use crate::asm::model::ActiveShapeModel;
-use ndarray::{array, s, Array1, Array2};
+use ndarray::{array, s, Array1, Array2, Axis};
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use rulinalg::matrix::Matrix;
 use rulinalg::vector::Vector;
@@ -30,6 +29,20 @@ pub struct IcpConfig {
     pub tol: f64,
 }
 
+/// Calculate all pairwise squared distances between two sets of points
+fn cdist(a: &Array2<f64>, b: &Array2<f64>) -> Array2<f64> {
+    let na = a.len_of(Axis(0));
+    let nb = b.len_of(Axis(0));
+    let mut dists = Array2::zeros((na, nb));
+    for i in 0..na {
+        for j in 0..nb {
+            let diff = &a.row(i) - &b.row(j);
+            dists[[i, j]] = diff.dot(&diff)
+        }
+    }
+    dists
+}
+
 impl ActiveShapeModel {
     /// Bidirectional ICP-ASM optimization
     ///
@@ -44,7 +57,7 @@ impl ActiveShapeModel {
         target_points: &Array2<f64>,
         config: &IcpConfig,
         b0: Option<Array1<f64>>,
-    ) -> IcpResult {
+    ) -> Result<IcpResult, rulinalg::error::Error> {
         let IcpConfig {
             alpha,
             beta,
@@ -54,7 +67,6 @@ impl ActiveShapeModel {
         } = *config;
 
         let m = self.mean.len() / 2; // number of model points
-        let n = target_points.nrows();
         let k = self.components.nrows();
         let d = 2;
 
@@ -82,61 +94,37 @@ impl ActiveShapeModel {
             mean_blocks.push(mean_i);
         }
 
+        // Precompute P^T P
+        let ptp = {
+            let p = self.scaled_components.view(); // (k, 2m)
+            let pt = p.t();
+            pt.dot(&p)
+        };
+
         for iter in 0..max_iter {
             // 1. Compute current model points
             let x_b = self.inverse_transform(b.view()); // (2m,)
-            let x_b_points = x_b
-                .as_slice()
-                .unwrap()
-                .chunks(2)
-                .map(|xy| [xy[0], xy[1]])
-                .collect::<Vec<_>>(); // Vec<[f64;2]>
+
+            let dists = cdist(
+                &Array2::from_shape_vec((m, 2), x_b.to_vec()).unwrap(),
+                target_points,
+            );
 
             // 2. Forward correspondence: for each model point, find closest target point
-            let mut c_x2y = vec![0; m];
-            for i in 0..m {
-                let xi = &x_b_points[i];
-                let mut min_dist = f64::MAX;
-                let mut min_j = 0;
-                for j in 0..n {
-                    let yj = target_points.row(j);
-                    let dist = (xi[0] - yj[0]).powi(2) + (xi[1] - yj[1]).powi(2);
-                    if dist < min_dist {
-                        min_dist = dist;
-                        min_j = j;
-                    }
-                }
-                c_x2y[i] = min_j;
-            }
+            let c_x2y = dists
+                .axis_iter(Axis(0))
+                .map(|row| row.argmin().unwrap())
+                .collect::<Vec<usize>>();
 
             // 3. Backward correspondence: for each target point, find closest model point
-            let mut c_y2x = vec![0; n];
-            for j in 0..n {
-                let yj = target_points.row(j);
-                let mut min_dist = f64::MAX;
-                let mut min_i = 0;
-                for i in 0..m {
-                    let xi = &x_b_points[i];
-                    let dist = (xi[0] - yj[0]).powi(2) + (xi[1] - yj[1]).powi(2);
-                    if dist < min_dist {
-                        min_dist = dist;
-                        min_i = i;
-                    }
-                }
-                c_y2x[j] = min_i;
-            }
+            let c_y2x = dists
+                .axis_iter(Axis(1))
+                .map(|col| col.argmin().unwrap())
+                .collect::<Vec<usize>>();
 
             // 4. Build system matrix A and vector g
             // A = alpha P^T P + beta sum_j P_{c_y2x(j)}^T P_{c_y2x(j)} + lambda I
             // g = alpha P^T r^{x2y} + beta sum_j P_{c_y2x(j)}^T r_j^{y2x}
-
-            // P^T P
-            let ptp = {
-                let p = self.scaled_components.view(); // (k, 2m)
-                let pt = p.t();
-                let ptp = pt.dot(&p);
-                ptp
-            };
 
             // Count for each model point how many target points map to it
             let mut n_i = vec![0usize; m];
@@ -144,22 +132,20 @@ impl ActiveShapeModel {
                 n_i[i] += 1;
             }
 
-            // beta sum_j P_{c_y2x(j)}^T P_{c_y2x(j)}
-            let mut beta_sum = Array2::<f64>::zeros((k, k));
+            // sum_j P_{c_y2x(j)}^T P_{c_y2x(j)}
+            let mut sum_p_i_t = Array2::<f64>::zeros((k, k));
             for i in 0..m {
                 if n_i[i] > 0 {
                     let p_i = &p_blocks[i]; // (2, k)
                     let p_i_t = p_i.t(); // (k, 2)
                     let prod = p_i_t.dot(p_i); // (k, k)
-                    beta_sum = &beta_sum + &(prod * n_i[i] as f64);
+                    sum_p_i_t = &sum_p_i_t + &(prod * n_i[i] as f64);
                 }
             }
 
             // System matrix A
-            let mut a = ptp.mapv(|v| alpha * v) + beta_sum.mapv(|v| beta * v);
-            for i in 0..k {
-                a[(i, i)] += lambda;
-            }
+            let mut a = alpha * &ptp + beta * &sum_p_i_t;
+            a.diag_mut().iter_mut().for_each(|x| *x += lambda);
 
             // r^{x2y} = y_c^{x2y} - mean
             let mut y_c_x2y = Array1::<f64>::zeros(m * d);
@@ -170,50 +156,49 @@ impl ActiveShapeModel {
             }
             let r_x2y = &y_c_x2y - &self.mean;
 
-            // alpha P^T r^{x2y}
+            // P^T r^{x2y}
             let p = self.scaled_components.view();
-            let alpha_ptr = p.t().dot(&r_x2y) * alpha;
+            let pt_r = p.t().dot(&r_x2y);
 
-            // beta sum_j P_{c_y2x(j)}^T r_j^{y2x}
-            let mut beta_sum_vec = Array1::<f64>::zeros(k);
-            for j in 0..n {
-                let i = c_y2x[j];
+            // sum_j P_{c_y2x(j)}^T r_j^{y2x}
+            let mut sum_pit_r = Array1::<f64>::zeros(k);
+            for (j, &i) in c_y2x.iter().enumerate() {
                 let p_i = &p_blocks[i]; // (2, k)
                 let p_i_t = p_i.t(); // (k, 2)
                 let yj = target_points.row(j);
                 let mean_i = &mean_blocks[i];
                 let r_j = array![yj[0] - mean_i[0], yj[1] - mean_i[1]];
-                let contrib = p_i_t.dot(&r_j) * beta;
-                beta_sum_vec = &beta_sum_vec + &contrib;
+                let contrib = p_i_t.dot(&r_j);
+                sum_pit_r = &sum_pit_r + &contrib;
             }
 
-            let g = &alpha_ptr + &beta_sum_vec;
+            let g = alpha * &pt_r + beta * &sum_pit_r;
 
             // Solve A b = g
             // Convert to rulinalg for solving
             let a_mat = Matrix::from_fn(k, k, |i, j| a[(i, j)]);
             let g_vec = Vector::from_fn(k, |i| g[i]);
-            let b_new = a_mat.solve(g_vec).unwrap();
-            let b_new_arr = Array1::from(b_new.data().clone());
+            let b_new = a_mat.solve(g_vec)?;
+            let b_new_arr = Array1::from(b_new.into_vec());
 
             // Compute energy
-            let mut energy = 0.0;
-            // Model-to-target
-            for i in 0..m {
-                let xi = &x_b_points[i];
-                let j = c_x2y[i];
-                let yj = target_points.row(j);
-                energy += alpha * ((xi[0] - yj[0]).powi(2) + (xi[1] - yj[1]).powi(2));
-            }
+            let energy_m2t = c_x2y
+                .iter()
+                .enumerate()
+                .map(|(i, &j)| dists[[i, j]])
+                .sum::<f64>();
+
             // Target-to-model
-            for j in 0..n {
-                let i = c_y2x[j];
-                let xi = &x_b_points[i];
-                let yj = target_points.row(j);
-                energy += beta * ((xi[0] - yj[0]).powi(2) + (xi[1] - yj[1]).powi(2));
-            }
+            let energy_t2m = c_y2x
+                .iter()
+                .enumerate()
+                .map(|(j, &i)| dists[[i, j]])
+                .sum::<f64>();
+
             // Regularization
-            energy += lambda * b_new_arr.dot(&b_new_arr);
+            let energy_reg = b_new_arr.dot(&b_new_arr);
+
+            let energy = alpha * energy_m2t + beta * energy_t2m + lambda * energy_reg;
 
             // Check convergence
             let rel_change = ((energy - prev_energy).abs() / prev_energy.abs()).min(1.0);
@@ -227,13 +212,19 @@ impl ActiveShapeModel {
             b = b_new_arr;
             prev_energy = energy;
             n_iter = iter + 1;
+            log::trace!(
+                "ICP iter {}: energy={:.6}, rel_change={:.6}",
+                iter,
+                energy,
+                rel_change
+            );
         }
 
-        IcpResult {
+        Ok(IcpResult {
             b,
             energy: prev_energy,
             n_iter,
             converged,
-        }
+        })
     }
 }
