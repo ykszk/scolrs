@@ -1,5 +1,5 @@
 use crate::asm::model::ActiveShapeModel;
-use ndarray::{array, s, Array1, Array2, Axis};
+use ndarray::{array, s, Array1, Array2, ArrayView2, Axis};
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 
@@ -43,7 +43,7 @@ impl Default for IcpConfig {
 }
 
 /// Calculate all pairwise squared distances between two sets of points
-fn cdist(a: &Array2<f64>, b: &Array2<f64>) -> Array2<f64> {
+fn cdist(a: ArrayView2<f64>, b: ArrayView2<f64>) -> Array2<f64> {
     let na = a.len_of(Axis(0));
     let nb = b.len_of(Axis(0));
     let mut dists = Array2::zeros((na, nb));
@@ -54,6 +54,13 @@ fn cdist(a: &Array2<f64>, b: &Array2<f64>) -> Array2<f64> {
         }
     }
     dists
+}
+#[derive(thiserror::Error, Debug)]
+pub enum IcpError {
+    #[error("Rulinalg error: {0}")]
+    RulinalgError(#[from] rulinalg::error::Error),
+    #[error("Point set count mismatch: expected {expected}, got {got}")]
+    PointSetCountMismatch { expected: usize, got: usize },
 }
 
 impl ActiveShapeModel {
@@ -67,10 +74,16 @@ impl ActiveShapeModel {
     /// * `b0` - initial shape parameters (optional)
     pub fn icp_optimize(
         &self,
-        target_points: &Array2<f64>,
+        target_point_sets: &[Array2<f64>],
         config: &IcpConfig,
         b0: Option<Array1<f64>>,
-    ) -> Result<IcpResult, rulinalg::error::Error> {
+    ) -> Result<IcpResult, IcpError> {
+        if target_point_sets.len() != self.labels.len() {
+            return Err(IcpError::PointSetCountMismatch {
+                expected: self.labels.len(),
+                got: target_point_sets.len(),
+            });
+        }
         let IcpConfig {
             alpha,
             beta,
@@ -116,34 +129,63 @@ impl ActiveShapeModel {
 
         for iter in 0..max_iter {
             // 1. Compute current model points
-            let x_b = self.inverse_transform(b.view()); // (2m,)
+            let x_b_all = self.pad_deform(b.view());
 
-            let dists = cdist(
-                &Array2::from_shape_vec((m, 2), x_b.to_vec()).unwrap(),
-                target_points,
-            );
+            let mut n_i = Vec::new();
+            let mut c_x2y = Vec::new();
+            let mut dist_x2y = Vec::new();
+            let mut c_y2x = Vec::new();
+            let mut dist_y2x = Vec::new();
+            let mut y_c_x2y: Vec<f64> = Vec::new();
 
-            // 2. Forward correspondence: for each model point, find closest target point
-            let c_x2y = dists
-                .axis_iter(Axis(0))
-                .map(|row| row.argmin().unwrap())
-                .collect::<Vec<usize>>();
+            // sum_j P_{c_y2x(j)}^T r_j^{y2x}
+            let mut sum_pit_r = Array1::<f64>::zeros(k);
 
-            // 3. Backward correspondence: for each target point, find closest model point
-            let c_y2x = dists
-                .axis_iter(Axis(1))
-                .map(|col| col.argmin().unwrap())
-                .collect::<Vec<usize>>();
+            for (x_b, target_points) in x_b_all.iter().zip(target_point_sets.iter()) {
+                let dists = cdist(x_b.view(), target_points.view());
+
+                // 2. Forward correspondence: for each model point, find closest target point
+                let sub_c_x2y = dists
+                    .axis_iter(Axis(0))
+                    .map(|row| row.argmin().unwrap())
+                    .collect::<Vec<usize>>();
+                c_x2y.extend_from_slice(&sub_c_x2y);
+                dist_x2y.extend(sub_c_x2y.iter().enumerate().map(|(i, &j)| dists[[i, j]]));
+                sub_c_x2y.iter().for_each(|&j| {
+                    let yp = target_points.row(j);
+                    y_c_x2y.push(yp[0]);
+                    y_c_x2y.push(yp[1]);
+                });
+
+                // 3. Backward correspondence: for each target point, find closest model point
+                let sub_c_y2x = dists
+                    .axis_iter(Axis(1))
+                    .map(|col| col.argmin().unwrap())
+                    .collect::<Vec<usize>>();
+                c_y2x.extend_from_slice(&sub_c_y2x);
+                dist_y2x.extend(sub_c_y2x.iter().enumerate().map(|(j, &i)| dists[[i, j]]));
+
+                // Count for each model point how many target points map to it
+                let mut sub_n_i = vec![0usize; m];
+                for &i in &c_y2x {
+                    sub_n_i[i] += 1;
+                }
+                n_i.extend_from_slice(&sub_n_i);
+
+                for (j, &i) in c_y2x.iter().enumerate() {
+                    let p_i = &p_blocks[i]; // (2, k)
+                    let p_i_t = p_i.t(); // (k, 2)
+                    let yj = target_points.row(j);
+                    let mean_i = &mean_blocks[i];
+                    let r_j = array![yj[0] - mean_i[0], yj[1] - mean_i[1]];
+                    let contrib = p_i_t.dot(&r_j);
+                    sum_pit_r = &sum_pit_r + &contrib;
+                }
+            }
 
             // 4. Build system matrix A and vector g
             // A = alpha P^T P + beta sum_j P_{c_y2x(j)}^T P_{c_y2x(j)} + lambda I
             // g = alpha P^T r^{x2y} + beta sum_j P_{c_y2x(j)}^T r_j^{y2x}
-
-            // Count for each model point how many target points map to it
-            let mut n_i = vec![0usize; m];
-            for &i in &c_y2x {
-                n_i[i] += 1;
-            }
 
             // sum_j P_{c_y2x(j)}^T P_{c_y2x(j)}
             let mut sum_p_i_t = Array2::<f64>::zeros((k, k));
@@ -161,29 +203,12 @@ impl ActiveShapeModel {
             a.diag_mut().iter_mut().for_each(|x| *x += lambda);
 
             // r^{x2y} = y_c^{x2y} - mean
-            let mut y_c_x2y = Array1::<f64>::zeros(m * d);
-            for i in 0..m {
-                let j = c_x2y[i];
-                y_c_x2y[i * d] = target_points[[j, 0]];
-                y_c_x2y[i * d + 1] = target_points[[j, 1]];
-            }
+            let y_c_x2y = Array1::from(y_c_x2y);
             let r_x2y = &y_c_x2y - &self.mean;
 
             // P^T r^{x2y}
             let p = self.scaled_components.view();
             let pt_r = p.t().dot(&r_x2y);
-
-            // sum_j P_{c_y2x(j)}^T r_j^{y2x}
-            let mut sum_pit_r = Array1::<f64>::zeros(k);
-            for (j, &i) in c_y2x.iter().enumerate() {
-                let p_i = &p_blocks[i]; // (2, k)
-                let p_i_t = p_i.t(); // (k, 2)
-                let yj = target_points.row(j);
-                let mean_i = &mean_blocks[i];
-                let r_j = array![yj[0] - mean_i[0], yj[1] - mean_i[1]];
-                let contrib = p_i_t.dot(&r_j);
-                sum_pit_r = &sum_pit_r + &contrib;
-            }
 
             let g = alpha * &pt_r + beta * &sum_pit_r;
 
@@ -195,19 +220,9 @@ impl ActiveShapeModel {
             let b_new_arr = Array1::from(b_new.into_vec());
 
             // Compute energy
-            let energy_m2t = c_x2y
-                .iter()
-                .enumerate()
-                .map(|(i, &j)| dists[[i, j]])
-                .sum::<f64>();
-
+            let energy_m2t = dist_x2y.iter().sum::<f64>();
             // Target-to-model
-            let energy_t2m = c_y2x
-                .iter()
-                .enumerate()
-                .map(|(j, &i)| dists[[i, j]])
-                .sum::<f64>();
-
+            let energy_t2m = dist_y2x.iter().sum::<f64>();
             // Regularization
             let energy_reg = b_new_arr.dot(&b_new_arr);
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use ndarray::Axis;
+use ndarray::{Array2, Axis};
 
 use crate::cli::{
     AsmArgs, AsmConfigArgs, AsmFitArgs, AsmIcpArgs, AsmProjectArgs, AsmReconstructArgs,
@@ -285,12 +285,13 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     let asm_movable_points = asm.to_movable_points();
 
     let points = extract_points(&tgt_lm, &asm.labels);
-    let flat_points: Vec<f64> = points
+    let target_point_sets: Vec<Array2<f64>> = points
         .iter()
-        .flat_map(|v| v.iter().flat_map(|&(x, y)| vec![x, y]))
+        .map(|pts| {
+            let flat: Vec<f64> = pts.iter().flat_map(|&(x, y)| vec![x, y]).collect();
+            Array2::from_shape_vec((flat.len() / 2, 2), flat).unwrap()
+        })
         .collect();
-    let points_arr2 =
-        ndarray::Array2::from_shape_vec((flat_points.len() / 2, 2), flat_points).unwrap();
 
     let tr_asm_to_ref =
         asm_movable_points.calculate_transform_with_missing(&tgt_ref_points, true)?;
@@ -302,7 +303,7 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     );
     asm.global_transform(&tr_asm_to_ref);
 
-    let icp_result = asm.icp_optimize(&points_arr2, &icp_config, None)?;
+    let icp_result = asm.icp_optimize(&target_point_sets, &icp_config, None)?;
     log::info!("ICP optimization result: {:?}", icp_result);
 
     let params = icp_result.b.to_owned();
