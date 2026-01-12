@@ -68,6 +68,12 @@ impl SimilarityTransform {
         b.atan2(a)
     }
 
+    /// Calculate the translation vector of the transformation
+    pub fn t(&self) -> (f64, f64) {
+        let m = &self.matrix;
+        (m[[0, 2]], m[[1, 2]])
+    }
+
     /// Estimate similarity transform from source to destination points
     /// Uses least squares to solve for 4 parameters: scale, rotation, tx, ty
     ///

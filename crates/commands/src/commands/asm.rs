@@ -1,14 +1,17 @@
+use std::path::Path;
+
 use anyhow::Context;
 use ndarray::Axis;
 
 use crate::cli::{
-    AsmArgs, AsmConfigArgs, AsmFitArgs, AsmProjectArgs, AsmReconstructArgs, AsmSubCommands,
+    AsmArgs, AsmConfigArgs, AsmFitArgs, AsmIcpArgs, AsmProjectArgs, AsmReconstructArgs,
+    AsmSubCommands,
 };
 use labelme_rs::LabelMeData;
 
 use scolrs::asm::{
     self, add_env_config, apply_asm, create_shapes_from_fitted_points, extract_points,
-    extract_reference_points, model::ActiveShapeModel, AsmConfig,
+    extract_reference_points, icp, model::ActiveShapeModel, AsmConfig,
 };
 use serde_json;
 
@@ -17,16 +20,14 @@ pub fn cmd(args: AsmArgs) -> anyhow::Result<()> {
         AsmSubCommands::Fit(args) => cmd_fit(args),
         AsmSubCommands::Project(args) => cmd_project(args),
         AsmSubCommands::Recon(args) => cmd_recon(args),
+        AsmSubCommands::Icp(args) => cmd_icp(args),
         AsmSubCommands::Config(args) => cmd_config(args),
     }
 }
 
 pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     // Create ASM from json file
-    let reader = std::fs::File::open(&args.asm_model)
-        .with_context(|| format!("Opening ASM model file {:?}", args.asm_model))?;
-    let asm: ActiveShapeModel = serde_json::from_reader(reader)
-        .with_context(|| format!("Loading ASM model from {:?}", args.asm_model))?;
+    let asm = read_asm(&args.asm_model)?;
 
     let mut npz = ndarray_npz::NpzReader::new(
         std::fs::File::open(&args.heatmaps)
@@ -137,11 +138,7 @@ impl TryFrom<&str> for InteractiveInput {
 }
 
 fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
-    // Create ASM from json file
-    let reader = std::fs::File::open(&args.asm_model)
-        .with_context(|| format!("Opening ASM model file {:?}", args.asm_model))?;
-    let mut asm: ActiveShapeModel = serde_json::from_reader(reader)
-        .with_context(|| format!("Loading ASM model from {:?}", args.asm_model))?;
+    let mut asm = read_asm(&args.asm_model)?;
     let ref_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.lm_in)
             .with_context(|| format!("Opening labelme file {:?}", args.lm_in))?,
@@ -267,6 +264,68 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
     recon_and_save(&asm, &shape_params, &ref_lm, &args)?;
     println!("Saved reconstructed labelme data to {:?}", args.output);
     Ok(())
+}
+
+fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
+    let mut asm = read_asm(&args.asm_model)?;
+    let mut config_builder =
+        config::Config::builder().add_source(config::Config::try_from(&icp::IcpConfig::default())?);
+    if let Some(config_path) = args.config {
+        log::debug!("Configuration from {:?}", config_path);
+        config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
+    }
+    let config_builder = add_env_config(config_builder).build()?;
+    let icp_config: icp::IcpConfig = config_builder.try_deserialize()?;
+
+    let tgt_lm: LabelMeData = serde_json::from_reader(
+        std::fs::File::open(&args.target_lm)
+            .with_context(|| format!("Opening labelme file {:?}", args.target_lm))?,
+    )?;
+    let tgt_ref_points = extract_reference_points(&tgt_lm, &asm.reference_labels);
+    let asm_movable_points = asm.to_movable_points();
+
+    let points = extract_points(&tgt_lm, &asm.labels);
+    let flat_points: Vec<f64> = points
+        .iter()
+        .flat_map(|v| v.iter().flat_map(|&(x, y)| vec![x, y]))
+        .collect();
+    let points_arr2 =
+        ndarray::Array2::from_shape_vec((flat_points.len() / 2, 2), flat_points).unwrap();
+
+    let tr_asm_to_ref =
+        asm_movable_points.calculate_transform_with_missing(&tgt_ref_points, true)?;
+    log::debug!(
+        "Transform ASM to target reference: scale={}, rotation={:?}, translation={:?}",
+        tr_asm_to_ref.scale(),
+        tr_asm_to_ref.rotation(),
+        tr_asm_to_ref.t()
+    );
+    asm.global_transform(&tr_asm_to_ref);
+
+    let icp_result = asm.icp_optimize(&points_arr2, &icp_config, None)?;
+    log::info!("ICP optimization result: {:?}", icp_result);
+
+    let params = icp_result.b.to_owned();
+    let reconstructed_points = asm.pad_deform(params.view());
+    // save reconstructed points to labelme json
+    let mut output_lm = tgt_lm.clone();
+    output_lm.shapes = create_shapes_from_fitted_points(&reconstructed_points, &asm.labels);
+    output_lm.version = scolrs::VERSION.to_string();
+    // not using `serde_json::to_writer_pretty` to write at once so that inotify can detect file write completion
+    let output_str = serde_json::to_string_pretty(&output_lm)
+        .with_context(|| "Serializing reconstructed labelme data")?;
+    std::fs::write(&args.output, output_str)
+        .with_context(|| format!("Writing labelme data to {:?}", args.output))?;
+
+    Ok(())
+}
+
+fn read_asm(path: &Path) -> Result<ActiveShapeModel, anyhow::Error> {
+    let reader =
+        std::fs::File::open(path).with_context(|| format!("Opening ASM model file {:?}", path))?;
+    let asm: ActiveShapeModel = serde_json::from_reader(reader)
+        .with_context(|| format!("Loading ASM model from {:?}", path))?;
+    Ok(asm)
 }
 
 fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {

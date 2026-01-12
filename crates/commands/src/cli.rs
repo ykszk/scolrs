@@ -469,6 +469,9 @@ pub enum AsmSubCommands {
     /// Reconstruct points from shape parameters
     Recon(AsmReconstructArgs),
 
+    /// Iterative  Closest Point fitting to point sets
+    Icp(AsmIcpArgs),
+
     /// Print configuration file
     Config(AsmConfigArgs),
 }
@@ -563,6 +566,22 @@ pub struct AsmProjectArgs {
     /// Output projected shape parameters in json
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+pub struct AsmIcpArgs {
+    /// Input ASM model in json
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub asm_model: PathBuf,
+    /// Target labelme json with points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub target_lm: PathBuf,
+    /// Output transformed labelme json with points
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// Config
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]

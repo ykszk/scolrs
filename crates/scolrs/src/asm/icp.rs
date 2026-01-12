@@ -8,6 +8,7 @@ use rulinalg::vector::Vector;
 // use std::collections::HashMap;
 
 /// Result of ICP optimization
+#[derive(Debug, Clone)]
 pub struct IcpResult {
     pub b: Array1<f64>,
     pub energy: f64,
@@ -27,6 +28,18 @@ pub struct IcpConfig {
     pub max_iter: usize,
     /// Convergence tolerance (relative energy change)
     pub tol: f64,
+}
+
+impl Default for IcpConfig {
+    fn default() -> Self {
+        IcpConfig {
+            alpha: 1.0,
+            beta: 1.0,
+            lambda: 0.1,
+            max_iter: 100,
+            tol: 1e-6,
+        }
+    }
 }
 
 /// Calculate all pairwise squared distances between two sets of points
@@ -203,6 +216,12 @@ impl ActiveShapeModel {
             // Check convergence
             let rel_change = ((energy - prev_energy).abs() / prev_energy.abs()).min(1.0);
             if rel_change < tol {
+                log::info!(
+                    "ICP converged at iter {}: energy={:.6}, rel_change={:.6}",
+                    iter,
+                    energy,
+                    rel_change
+                );
                 converged = true;
                 n_iter = iter + 1;
                 b = b_new_arr;

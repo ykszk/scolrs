@@ -95,6 +95,12 @@ pub fn extract_reference_points(
                         p.len()
                     );
                 }
+                log::debug!(
+                    "Extracted reference point '{}' at ({}, {})",
+                    label,
+                    p[0][0].0,
+                    p[0][0].1
+                );
                 points.push(Some((p[0][0].0, p[0][0].1)));
             }
             None => {
