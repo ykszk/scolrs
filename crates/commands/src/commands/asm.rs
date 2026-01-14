@@ -268,6 +268,7 @@ fn cmd_recon(args: AsmReconstructArgs) -> anyhow::Result<()> {
 
 fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     let mut asm = read_asm(&args.asm_model)?;
+    log::info!("Loaded ASM model from {:?}", asm.components.shape());
     let mut config_builder =
         config::Config::builder().add_source(config::Config::try_from(&icp::IcpConfig::default())?);
     if let Some(config_path) = args.config {
@@ -276,6 +277,7 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     }
     let config_builder = add_env_config(config_builder).build()?;
     let icp_config: icp::IcpConfig = config_builder.try_deserialize()?;
+    log::debug!("ICP configuration: {:?}", icp_config);
 
     let tgt_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.target_lm)
@@ -285,6 +287,9 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     let asm_movable_points = asm.to_movable_points();
 
     let points = extract_points(&tgt_lm, &asm.labels);
+    for (label, pts) in asm.labels.iter().zip(points.iter()) {
+        log::debug!("Target points for label '{}': {}", label, pts.len());
+    }
     let target_point_sets: Vec<Array2<f64>> = points
         .iter()
         .map(|pts| {
@@ -304,7 +309,7 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
     asm.global_transform(&tr_asm_to_ref);
 
     let icp_result = asm.icp_optimize(&target_point_sets, &icp_config, None)?;
-    log::info!("ICP optimization result: {:?}", icp_result);
+    log::debug!("ICP optimization result: {:?}", icp_result);
 
     let params = icp_result.b.to_owned();
     let reconstructed_points = asm.pad_deform(params.view());

@@ -1,5 +1,5 @@
 use crate::asm::model::ActiveShapeModel;
-use ndarray::{array, s, Array1, Array2, ArrayView2, Axis};
+use ndarray::{s, Array1, Array2, ArrayView2, Axis};
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +50,7 @@ fn cdist(a: ArrayView2<f64>, b: ArrayView2<f64>) -> Array2<f64> {
     for i in 0..na {
         for j in 0..nb {
             let diff = &a.row(i) - &b.row(j);
-            dists[[i, j]] = diff.dot(&diff)
+            dists[[i, j]] = diff.dot(&diff).sqrt();
         }
     }
     dists
@@ -68,9 +68,6 @@ impl ActiveShapeModel {
     ///
     /// # Arguments
     /// * `target_points` - (N, 2) array of target points
-    /// * `alpha`, `beta`, `lambda` - weights for model-to-target, target-to-model, and regularization
-    /// * `max_iter` - maximum number of iterations
-    /// * `tol` - convergence tolerance (relative energy change)
     /// * `b0` - initial shape parameters (optional)
     pub fn icp_optimize(
         &self,
@@ -92,54 +89,52 @@ impl ActiveShapeModel {
             tol,
         } = *config;
 
-        let m = self.mean.len() / 2; // number of model points
-        let k = self.components.nrows();
         let d = 2;
+        let n_points = self.mean.len() / d; // m = number of model points
+        let n_modes = self.components.nrows(); // k = number of modes
 
         // Initial b
-        let mut b = b0.unwrap_or_else(|| Array1::zeros(k));
+        let mut b = b0.unwrap_or_else(|| Array1::zeros(n_modes));
         let mut prev_energy = f64::MAX;
         let mut converged = false;
         let mut n_iter = 0;
 
+        let m_p = self.scaled_components.t(); // (modes, 2m) -> (2m, modes)
+
         // Precompute P_i blocks
-        let mut p_blocks: Vec<Array2<f64>> = Vec::with_capacity(m);
-        for i in 0..m {
-            let p_i = self
-                .scaled_components
-                .slice(s![.., i * d..(i + 1) * d])
-                .t()
-                .to_owned(); // (2, k)
+        let mut p_blocks: Vec<Array2<f64>> = Vec::with_capacity(n_points);
+        for i in 0..n_points {
+            let p_i = m_p.slice(s![i * d..(i + 1) * d, ..]).to_owned(); // (2, k)
             p_blocks.push(p_i);
         }
 
         // Precompute mean_i blocks
-        let mut mean_blocks: Vec<Array1<f64>> = Vec::with_capacity(m);
-        for i in 0..m {
-            let mean_i = self.mean.slice(s![i * d..(i + 1) * d]).to_owned();
-            mean_blocks.push(mean_i);
-        }
+        let mean_2d = self.mean.to_shape((n_points, d)).unwrap();
 
         // Precompute P^T P
         let ptp = {
-            let p = self.scaled_components.view(); // (k, 2m)
+            let p = m_p.view(); // (2m, k)
             let pt = p.t();
             pt.dot(&p)
         };
+
+        // target point count
+        let n_tgt = target_point_sets
+            .iter()
+            .map(|pts| pts.len_of(Axis(0)))
+            .sum::<usize>();
 
         for iter in 0..max_iter {
             // 1. Compute current model points
             let x_b_all = self.pad_deform(b.view());
 
-            let mut n_i = Vec::new();
-            let mut c_x2y = Vec::new();
-            let mut dist_x2y = Vec::new();
-            let mut c_y2x = Vec::new();
-            let mut dist_y2x = Vec::new();
-            let mut y_c_x2y: Vec<f64> = Vec::new();
+            let mut n_i = Vec::with_capacity(n_points); // counts of target points per model point
+            let mut dist_x2y = Vec::with_capacity(n_points);
+            let mut dist_y2x = Vec::with_capacity(n_tgt);
+            let mut y_c_x2y: Vec<f64> = Vec::with_capacity(n_tgt * d);
 
             // sum_j P_{c_y2x(j)}^T r_j^{y2x}
-            let mut sum_pit_r = Array1::<f64>::zeros(k);
+            let mut sum_pit_r = Array1::<f64>::zeros(n_modes);
 
             for (x_b, target_points) in x_b_all.iter().zip(target_point_sets.iter()) {
                 let dists = cdist(x_b.view(), target_points.view());
@@ -149,7 +144,7 @@ impl ActiveShapeModel {
                     .axis_iter(Axis(0))
                     .map(|row| row.argmin().unwrap())
                     .collect::<Vec<usize>>();
-                c_x2y.extend_from_slice(&sub_c_x2y);
+                // c_x2y.extend_from_slice(&sub_c_x2y);
                 dist_x2y.extend(sub_c_x2y.iter().enumerate().map(|(i, &j)| dists[[i, j]]));
                 sub_c_x2y.iter().for_each(|&j| {
                     let yp = target_points.row(j);
@@ -162,34 +157,39 @@ impl ActiveShapeModel {
                     .axis_iter(Axis(1))
                     .map(|col| col.argmin().unwrap())
                     .collect::<Vec<usize>>();
-                c_y2x.extend_from_slice(&sub_c_y2x);
+                // c_y2x.extend_from_slice(&sub_c_y2x);
                 dist_y2x.extend(sub_c_y2x.iter().enumerate().map(|(j, &i)| dists[[i, j]]));
 
                 // Count for each model point how many target points map to it
-                let mut sub_n_i = vec![0usize; m];
-                for &i in &c_y2x {
+                let mut sub_n_i = vec![0usize; x_b.len_of(Axis(0))];
+                for &i in &sub_c_y2x {
                     sub_n_i[i] += 1;
                 }
+                let i_start = n_i.len();
                 n_i.extend_from_slice(&sub_n_i);
 
-                for (j, &i) in c_y2x.iter().enumerate() {
+                for (j, &sub_i) in sub_c_y2x.iter().enumerate() {
+                    let i = sub_i + i_start;
                     let p_i = &p_blocks[i]; // (2, k)
                     let p_i_t = p_i.t(); // (k, 2)
                     let yj = target_points.row(j);
-                    let mean_i = &mean_blocks[i];
-                    let r_j = array![yj[0] - mean_i[0], yj[1] - mean_i[1]];
+                    let mean_i = mean_2d.row(i);
+                    let r_j = &yj - &mean_i;
                     let contrib = p_i_t.dot(&r_j);
                     sum_pit_r = &sum_pit_r + &contrib;
                 }
             }
+
+            let mean_dist_x2y = dist_x2y.iter().sum::<f64>() / (dist_x2y.len() as f64);
+            let mean_dist_y2x = dist_y2x.iter().sum::<f64>() / (dist_y2x.len() as f64);
 
             // 4. Build system matrix A and vector g
             // A = alpha P^T P + beta sum_j P_{c_y2x(j)}^T P_{c_y2x(j)} + lambda I
             // g = alpha P^T r^{x2y} + beta sum_j P_{c_y2x(j)}^T r_j^{y2x}
 
             // sum_j P_{c_y2x(j)}^T P_{c_y2x(j)}
-            let mut sum_p_i_t = Array2::<f64>::zeros((k, k));
-            for i in 0..m {
+            let mut sum_p_i_t = Array2::<f64>::zeros((n_modes, n_modes));
+            for i in 0..n_points {
                 if n_i[i] > 0 {
                     let p_i = &p_blocks[i]; // (2, k)
                     let p_i_t = p_i.t(); // (k, 2)
@@ -199,32 +199,41 @@ impl ActiveShapeModel {
             }
 
             // System matrix A
-            let mut a = alpha * &ptp + beta * &sum_p_i_t;
+            let mut a = alpha * &ptp + beta * &sum_p_i_t; // TODO: sus
             a.diag_mut().iter_mut().for_each(|x| *x += lambda);
 
+            // Vector g
             // r^{x2y} = y_c^{x2y} - mean
             let y_c_x2y = Array1::from(y_c_x2y);
             let r_x2y = &y_c_x2y - &self.mean;
 
             // P^T r^{x2y}
-            let p = self.scaled_components.view();
+            let p = m_p;
             let pt_r = p.t().dot(&r_x2y);
 
             let g = alpha * &pt_r + beta * &sum_pit_r;
 
             // Solve A b = g
             // Convert to rulinalg for solving
-            let a_mat = Matrix::from_fn(k, k, |i, j| a[(i, j)]);
-            let g_vec = Vector::from_fn(k, |i| g[i]);
+            let a_mat = Matrix::from_fn(n_modes, n_modes, |i, j| a[(i, j)]);
+            let g_vec = Vector::from_fn(n_modes, |i| g[i]);
             let b_new = a_mat.solve(g_vec)?;
             let b_new_arr = Array1::from(b_new.into_vec());
 
             // Compute energy
-            let energy_m2t = dist_x2y.iter().sum::<f64>();
+            let energy_m2t = mean_dist_x2y;
             // Target-to-model
-            let energy_t2m = dist_y2x.iter().sum::<f64>();
+            let energy_t2m = mean_dist_y2x;
             // Regularization
-            let energy_reg = b_new_arr.dot(&b_new_arr);
+            let energy_reg = b.dot(&b).sqrt();
+
+            log::trace!(
+                "Iteration {}: energy_m2t={:.6}, energy_t2m={:.6}, energy_reg={:.6}",
+                iter,
+                energy_m2t,
+                energy_t2m,
+                energy_reg
+            );
 
             let energy = alpha * energy_m2t + beta * energy_t2m + lambda * energy_reg;
 
