@@ -9,10 +9,11 @@ use crate::asm::{
     adam::{Stopper, StopperConfig},
     alignment::AlignmentError,
     fit::{fit_asm_to_heatmap, FitConfig, History},
+    icp::IcpConfig,
     model::{ActiveShapeModel, ModeConfig},
 };
 use labelme_rs::{LabelMeData, Shape};
-use ndarray::{Array1, Array2, Array3, ArrayView3, Axis};
+use ndarray::{s, Array1, Array2, Array3, ArrayView3, Axis};
 use ndarray_ndimage as ndi;
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +34,7 @@ pub struct AsmConfig {
     pub stopper: StopperConfig,
     pub sigmas: Vec<f64>,
     pub mode: ModeConfig,
+    pub icp_init: Option<IcpConfig>,
 }
 
 impl Default for AsmConfig {
@@ -43,6 +45,7 @@ impl Default for AsmConfig {
             fit: FitConfig::default(),
             stopper: StopperConfig::default(),
             mode: ModeConfig::default(),
+            icp_init: Some(IcpConfig::default()),
         }
     }
 }
@@ -177,11 +180,8 @@ fn fit_asm(
     asm: &ActiveShapeModel,
     asm_config: AsmConfig,
     cached_heatmaps: &mut CachedHeatmaps,
+    mut initial_params: Array1<f64>,
 ) -> (Vec<asm::fit::History>, Array1<f64>, Vec<Array2<f64>>) {
-    let n_mode = asm.calculate_mode(asm_config.mode);
-    log::info!("Using {} modes for fitting.", n_mode);
-
-    let mut initial_params = Array1::zeros(n_mode);
     if asm_config.sigmas.is_empty() {
         unreachable!("At least one sigma value must be provided for heatmap smoothing.")
     };
@@ -215,12 +215,14 @@ fn fit_asm(
 }
 
 /// Errors that can occur during alignment operations
-#[derive(Debug, thiserror::Error, Clone)]
+#[derive(Debug, thiserror::Error)]
 pub enum AsmError {
     #[error("Alignment error: {0}")]
     AlignmentError(#[from] AlignmentError),
     #[error("Not enough heatmap channels: {0}, but ASM requires {1} channels.")]
     HeatmapError(usize, usize),
+    #[error("ICP error: {0}")]
+    IcpError(#[from] icp::IcpError),
 }
 
 type AsmReturn = (LabelMeData, Vec<History>, Array1<f64>, Vec<Array2<f64>>);
@@ -253,7 +255,52 @@ pub fn apply_asm(
     log::debug!("Transform ASM to reference: {:?}", tr_asm_to_ref);
     let mut asm = asm;
     asm.global_transform(&tr_asm_to_ref);
-    let (histories, optimal_params, fitted_shape) = fit_asm(&asm, asm_config, cached_heatmaps);
+
+    let n_mode = asm.calculate_mode(asm_config.mode);
+    log::info!(
+        "Using {} modes for heatmap fitting. Mode setting: {:?}",
+        n_mode,
+        asm_config.mode
+    );
+
+    let init_params = if let Some(icp_config) = &asm_config.icp_init {
+        log::info!("Performing ICP initialization before heatmap fitting.");
+        let points = extract_points(ref_lm, &asm.labels);
+        let target_point_sets: Vec<Array2<f64>> = points
+            .iter()
+            .map(|pts| {
+                let flat: Vec<f64> = pts.iter().flat_map(|&(x, y)| vec![x, y]).collect();
+                Array2::from_shape_vec((flat.len() / 2, 2), flat).unwrap()
+            })
+            .collect();
+        let icp_result = asm.icp_optimize(&target_point_sets, icp_config, None)?;
+        let icp_params = icp_result.b;
+        if icp_params.len() > n_mode {
+            log::debug!(
+                "ICP returned more parameters ({}) than ASM modes ({}), truncating.",
+                icp_params.len(),
+                n_mode
+            );
+            icp_params.slice(s![..n_mode]).to_owned()
+        } else if icp_params.len() == n_mode {
+            icp_params
+        } else {
+            log::debug!(
+                "ICP returned fewer parameters ({}) than ASM modes ({}), padding with zeros.",
+                icp_params.len(),
+                n_mode
+            );
+            let mut padded = Array1::zeros(n_mode);
+            padded.slice_mut(s![..icp_params.len()]).assign(&icp_params);
+            padded
+        }
+    } else {
+        log::info!("No ICP initialization configured, proceeding to ASM fitting.");
+        Array1::zeros(n_mode)
+    };
+
+    let (histories, optimal_params, fitted_shape) =
+        fit_asm(&asm, asm_config, cached_heatmaps, init_params);
 
     let mut output_lm = ref_lm.clone();
     output_lm.shapes = create_shapes_from_fitted_points(&fitted_shape, &asm.labels);

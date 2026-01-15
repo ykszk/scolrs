@@ -244,8 +244,7 @@ fn main() -> Result<()> {
         log::info!("Point counts are invalid: {}", e);
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
-        for asm_path_config in &args.asm {
-            let (asm_path, asm_config) = asm_path_config;
+        for (asm_path, asm_config) in &args.asm {
             let reader = std::fs::File::open(asm_path)
                 .with_context(|| format!("Opening ASM model file {:?}", asm_path))?;
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
@@ -259,7 +258,7 @@ fn main() -> Result<()> {
                     .build()?;
                 config_builder.try_deserialize()?
             } else {
-                log::debug!("No ASM config file provided, using default configuration and environment variables.");
+                log::debug!("No ASM config associated to the model provided, using default configuration and environment variables.");
                 let config_builder = config::Config::builder()
                     .add_source(config::Config::try_from(&AsmConfig::default())?);
                 let config_builder = scolrs::asm::add_env_config(config_builder).build()?;

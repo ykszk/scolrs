@@ -816,6 +816,8 @@ impl ModelIO {
             ModelIO::Cropped(cropped) => &cropped.cropped_lm_data,
         }
     }
+
+    /// set heatmap lm data and update original lm data accordingly
     pub fn set_heatmap_lm_data(&mut self, lm_data: LabelMeData) {
         match self {
             ModelIO::Original(original) => {

@@ -195,7 +195,7 @@ pub fn fit_asm_to_heatmap(
             reg_objective,
             shape_params: shape_params.to_vec(),
         });
-        log::debug!(
+        log::trace!(
             "Iteration {}: Data Obj = {:.6}, Reg Obj = {:.6}, Total Obj = {:.6}",
             optimizer.timestep(),
             data_objective,
@@ -204,7 +204,7 @@ pub fn fit_asm_to_heatmap(
         );
 
         if objective < best_objective {
-            log::info!(
+            log::debug!(
                 "New best objective at {}: {}",
                 optimizer.timestep(),
                 objective
