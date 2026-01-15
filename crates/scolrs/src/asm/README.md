@@ -1,0 +1,2 @@
+- [Active Shape Model and fitting to a heatmap](asm.md)
+- [Iterative Closest Point](icp.md)
