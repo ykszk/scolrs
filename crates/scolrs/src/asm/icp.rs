@@ -1,4 +1,4 @@
-use crate::asm::model::ActiveShapeModel;
+use crate::asm::model::{ActiveShapeModel, ModeConfig};
 use ndarray::{s, Array1, Array2, ArrayView2, Axis};
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ pub struct IcpResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IcpConfig {
+    pub mode_config: ModeConfig,
     /// Weight for model-to-target term
     pub alpha: f64,
     /// Weight for target-to-model term
@@ -33,6 +34,7 @@ pub struct IcpConfig {
 impl Default for IcpConfig {
     fn default() -> Self {
         IcpConfig {
+            mode_config: ModeConfig::default(),
             alpha: 1.0,
             beta: 1.0,
             lambda: 0.1,
@@ -82,6 +84,7 @@ impl ActiveShapeModel {
             });
         }
         let IcpConfig {
+            mode_config,
             alpha,
             beta,
             lambda,
@@ -91,7 +94,13 @@ impl ActiveShapeModel {
 
         let d = 2;
         let n_points = self.mean.len() / d; // m = number of model points
-        let n_modes = self.components.nrows(); // k = number of modes
+
+        let n_modes = self.calculate_mode(mode_config);
+        log::info!(
+            "ICP-ASM using {} modes for fitting. Mode setting: {:?}",
+            n_modes,
+            mode_config
+        );
 
         // Initial b
         let mut b = b0.unwrap_or_else(|| Array1::zeros(n_modes));
@@ -99,7 +108,9 @@ impl ActiveShapeModel {
         let mut converged = false;
         let mut n_iter = 0;
 
-        let m_p = self.scaled_components.t(); // (modes, 2m) -> (2m, modes)
+        // let m_p = self.scaled_components.t(); // (modes, 2m) -> (2m, modes)
+        let m_p_ = self.scaled_components.slice(s![..n_modes, ..]);
+        let m_p = m_p_.t(); // (2m, modes)
 
         // Precompute P_i blocks
         let mut p_blocks: Vec<Array2<f64>> = Vec::with_capacity(n_points);

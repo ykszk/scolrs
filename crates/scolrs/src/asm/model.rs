@@ -20,7 +20,7 @@ pub enum ModelError {
     InvalidData(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeConfig {
     N(usize),
