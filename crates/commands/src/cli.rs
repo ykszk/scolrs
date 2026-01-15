@@ -39,6 +39,8 @@ pub enum Command {
     Confidence(ConfidenceArgs),
     /// Fit Active Shape Model to heatmap
     Asm(AsmArgs),
+    /// Print config template
+    Config(ConfigArgs),
 }
 
 #[derive(Parser)]
@@ -595,4 +597,30 @@ pub struct AsmConfigArgs {
     /// Load environment variables for configuration
     #[clap(short, long)]
     pub env: bool,
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone, Default)]
+pub enum ConfigFileFormat {
+    #[default]
+    Toml,
+    Json,
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone)]
+pub enum ConfigName {
+    Asm,
+    Icp,
+    Draw,
+    Linecolor,
+    Labelcolor,
+}
+
+#[derive(Parser, Debug)]
+pub struct ConfigArgs {
+    ///  Config to print
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub name: ConfigName,
+    /// Format
+    #[clap(short, long, default_value = "toml")]
+    pub format: ConfigFileFormat,
 }

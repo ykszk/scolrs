@@ -14,17 +14,14 @@ pub fn cmd(args: HtmlArgs) -> Result<()> {
         std::fs::read_to_string(args.input.as_path())
             .with_context(|| format!("Failed to read file: {:?}", args.input))?
     };
-    let title = args.title.map_or_else(
-        || {
-            args.input
-                .file_stem()
-                .filter(|stem| *stem != "-")
-                .map_or(String::from("scolrs html"), |stem| {
-                    stem.to_string_lossy().into_owned()
-                })
-        },
-        |s| s,
-    );
+    let title = args.title.unwrap_or_else(|| {
+        args.input
+            .file_stem()
+            .filter(|stem| *stem != "-")
+            .map_or(String::from("scolrs html"), |stem| {
+                stem.to_string_lossy().into_owned()
+            })
+    });
     let html = wrap_in_html(svg, &args.selector, title, &[])?;
     let mut writer = BufWriter::new(File::create(
         args.output

@@ -1,6 +1,7 @@
 pub mod asm;
 pub mod catalog;
 pub mod confidence;
+pub mod config;
 pub mod conv;
 pub mod curve;
 pub mod html;

@@ -1773,22 +1773,32 @@ pub struct LabelColors {
 
 impl Default for ColorPalettes {
     fn default() -> Self {
-        // embed the content in tests/data/colors.yaml
-        let config: LabelColors =
-            serde_yaml::from_str(include_str!("../../../tests/data/colors.yaml"))
-                .expect("Failed to parse colors.yaml");
-        let label_colors = labelme_rs::LabelColorsHex::from_iter(
-            config.label_colors.into_iter().map(|(k, v)| (k, v.into())),
-        );
+        let label_colors = Self::default_label_colors();
         let label_colors = ColorPalette::new(label_colors);
         // embed the content in tests/data/line_colors.csv
-        let line_colors =
-            load_line_colors(&include_bytes!("../../../tests/data/line_colors.csv")[..]).unwrap();
+        let line_colors = Self::default_line_colors();
         let line_colors = ColorPalette::new(line_colors);
         Self {
             label_colors,
             line_colors,
         }
+    }
+}
+
+impl ColorPalettes {
+    pub fn default_label_colors() -> HashMap<String, String> {
+        // embed the content in tests/data/colors.yaml
+        let config: LabelColors =
+            serde_yaml::from_str(include_str!("../../../tests/data/colors.yaml"))
+                .expect("Failed to parse colors.yaml");
+        labelme_rs::LabelColorsHex::from_iter(
+            config.label_colors.into_iter().map(|(k, v)| (k, v.into())),
+        )
+    }
+    pub fn default_line_colors() -> HashMap<String, String> {
+        // embed the content in tests/data/line_colors.csv
+        load_line_colors(&include_bytes!("../../../tests/data/line_colors.csv")[..])
+            .expect("Failed to load default line colors")
     }
 }
 
