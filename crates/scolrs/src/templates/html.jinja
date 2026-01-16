@@ -69,7 +69,7 @@
         <button onclick="change_all('hidden')">Hide All</button>
         {% include "draw_setting.jinja" %}
         {{save_module}}
-        {% include "embedded_data.jinja" %}
+        {% include "download_module.html" %}
     </div>
 </body>
 
@@ -83,6 +83,7 @@
         convertSvg(svgElement, format, scale, stem_name);
     });
     {% include "draw_setting.js" %}
+    {% include "download_embedded.js" %}
 </script>
 
 </html>

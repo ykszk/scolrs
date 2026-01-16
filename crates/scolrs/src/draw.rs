@@ -6,6 +6,7 @@ use crate::{
     SagittalPoints, Scalable, ScaledType, ValidateLength, CORNER_LABELS,
 };
 use crate::{Curve, Spine, VERTEBRAL_LABELS};
+use base64::Engine;
 use labelme_rs::image::{self, DynamicImage};
 use labelme_rs::ResizeParam;
 use log::debug;
@@ -15,7 +16,7 @@ use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::ops::{AddAssign, Range, SubAssign};
 use svg::node::element;
 use svg::Node;
@@ -1978,6 +1979,31 @@ impl EmbeddedData {
             mime_type,
         }
     }
+
+    pub fn to_script_tag(&self, compress: bool) -> element::Script {
+        let mut b64_content = String::new();
+        if compress {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(self.content.as_bytes()).unwrap();
+            let compressed_bytes = encoder.finish().unwrap();
+            base64::engine::general_purpose::STANDARD
+                .encode_string(&compressed_bytes, &mut b64_content);
+        } else {
+            base64::engine::general_purpose::STANDARD
+                .encode_string(&self.content, &mut b64_content);
+        }
+        let mut tag = element::Script::new(b64_content);
+        if compress {
+            tag = tag.set("type", format!("{}+gzip", self.mime_type))
+        } else {
+            tag = tag.set("type", self.mime_type.clone())
+        }
+        tag = tag.set("encoding", "base64");
+        tag = tag.set("id", format!("embedded-{}", self.name));
+        tag = tag.set("data-filename", self.name.clone());
+        tag
+    }
 }
 
 /// Wrap the SVG in HTML with visibility toggles
@@ -1985,7 +2011,6 @@ pub fn wrap_in_html(
     svg: String,
     selector: &[String],
     title: String,
-    embedded_data: &[EmbeddedData],
 ) -> Result<String, HtmlWrapError> {
     let document = scraper::Html::parse_document(&svg);
 
@@ -2005,8 +2030,12 @@ pub fn wrap_in_html(
             ),
             ("draw_setting.js", include_str!("templates/draw_setting.js")),
             (
-                "embedded_data.jinja",
-                include_str!("templates/embedded_data.jinja"),
+                "download_module.html",
+                include_str!("templates/download_module.html"),
+            ),
+            (
+                "download_embedded.js",
+                include_str!("templates/download_embedded.js"),
             ),
         ])
         .unwrap();
@@ -2058,28 +2087,6 @@ pub fn wrap_in_html(
     context.insert("title", &title);
     context.insert("javascript", &javascript);
     context.insert("save_module", &include_str!("templates/save_module.html"));
-
-    log::debug!("Embedding {} files", embedded_data.len());
-    // let download_links = embedded_data
-    //     .iter()
-    //     .map(|data| {
-    //         let mut b64_content = String::new();
-    //         base64::engine::general_purpose::STANDARD
-    //             .encode_string(&data.content, &mut b64_content);
-    //         let link = format!(
-    //             "data:{mime_type};base64,{content}",
-    //             mime_type = data.mime_type,
-    //             content = b64_content
-    //         );
-    //         let tag = format!(
-    //             r#"<a download="{name}" href="{link}">{name}</a>"#,
-    //             name = data.name,
-    //             link = link
-    //         );
-    //         tag
-    //     })
-    //     .collect::<Vec<_>>();
-    context.insert("embedded_data", &embedded_data);
 
     let html = templates.render("html.jinja", &context)?;
     Ok(html)

@@ -431,7 +431,10 @@ pub fn extract_array_from_output(
     output3.mapv(|x| 1.0 / (1.0 + (-x).exp()))
 }
 
-use labelme_rs::{svg::node::element::SVG, LabelMeData, LabelMeDataWImage};
+use labelme_rs::{
+    svg::node::element::{self, SVG},
+    LabelMeData, LabelMeDataWImage,
+};
 use scolrs::{
     draw::{self, wrap_in_html},
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw,
@@ -947,7 +950,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         let mut gp = GenericPoints::from(model_io.lm_data().clone());
         *gp.image_metadata_mut() = metadata;
         let html = create_generic_svg(gp, model_io.into_lm_data_w_image(), overlays, &size_config)?;
-        let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title, &[])?;
+        let html = wrap_in_html(html.to_string(), &["g.Component".to_string()], title)?;
         return Ok(html);
     }
     let embedded_lm_data = EmbeddedData::new(
@@ -958,7 +961,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
 
     let reduce = scolrs::draw::ReductionMethod::GeometricMean;
 
-    let (document, measurements) = scan_direction.svg_and_measurements(
+    let (mut document, measurements) = scan_direction.svg_and_measurements(
         model_io,
         metadata,
         overlays,
@@ -984,7 +987,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
     ))?;
     let csv_data = String::from_utf8(wtr.into_inner()?)?;
 
-    let embedded_data = vec![
+    let embedded_data = [
         EmbeddedData::new(
             "measurements.json".to_string(),
             measure_json,
@@ -997,12 +1000,13 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         ),
         embedded_lm_data,
     ];
-    let html = wrap_in_html(
-        document.to_string(),
-        &["g.Component".to_string()],
-        title,
-        &embedded_data,
-    )?;
+    let mut scripts = element::Definitions::new().set("id", "downloads");
+    for ed in embedded_data.iter() {
+        let tag = ed.to_script_tag(true);
+        scripts = scripts.add(tag);
+    }
+    document = document.add(scripts);
+    let html = wrap_in_html(document.to_string(), &["g.Component".to_string()], title)?;
     Ok(html)
 }
 

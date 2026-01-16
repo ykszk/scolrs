@@ -91,6 +91,10 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
             "draw_setting.jinja",
             include_str!("../../../scolrs/src/templates/draw_setting.jinja"),
         ),
+        (
+            "download_module.html",
+            include_str!("../../../scolrs/src/templates/download_module.html"),
+        ),
     ])?;
 
     let checkboxes: IndexMap<String, String> = IndexMap::new();
@@ -220,6 +224,8 @@ pub fn cmd(args: CatalogArgs) -> Result<()> {
     writer.ws("</body>\n")?;
     writer.ws("<script>\n")?;
     let javascript = include_str!("../../../scolrs/src/templates/draw_setting.js");
+    writer.ws(javascript)?;
+    let javascript = include_str!("../../../scolrs/src/templates/download_embedded.js");
     writer.ws(javascript)?;
     writer.ws("</script>\n")?;
     writer.ws("</html>\n")?;
