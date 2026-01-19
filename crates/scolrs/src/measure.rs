@@ -93,6 +93,7 @@ where
     K: MapKey,
     T: std::fmt::Display + Clone,
 {
+    /// Transpose the result from (measure[key], confidence[key]) to (key: {measurement, confidence})
     pub fn into_transposed(self) -> TransposedResult<K, T> {
         let mut transposed: IndexMap<K, TransposedEntry<T>> = Default::default();
         for (key, measurement) in self.measurements {

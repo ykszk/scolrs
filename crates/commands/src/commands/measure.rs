@@ -10,6 +10,7 @@ use crate::cli::{
 };
 use crate::utils::Ndjson;
 use anyhow::{Context, Result};
+use indexmap::IndexSet;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use log::debug;
 use scolrs::measure::{measure_x, FlattenResult, MeasureLine, MeasureResult, NeckMeasurements};
@@ -21,23 +22,20 @@ use scolrs::{
 };
 use serde::de::DeserializeOwned;
 
-type SagittalMeasureLine = MeasureLine<SagittalMeasure, f64>;
-type CoronalMeasureLine = MeasureLine<CoronalMeasure, f64>;
-type FlattenedNeckMeasurements = MeasureLine<String, f64>;
-
 fn process_ndjson(args: MeasureArgs) -> Result<()> {
     let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
         Box::new(BufReader::new(std::io::stdin()))
     } else {
         Box::new(BufReader::new(File::open(&args.input)?))
     };
+    let mut csv_buf = Vec::new();
     let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
         Box::new(BufWriter::new(File::create(output)?))
     } else {
         Box::new(std::io::stdout())
     };
     for line in reader.lines() {
-        match args.subcommand.clone() {
+        let measured_line = match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {
                 let mut data_line = load_labelme_or_native::<
                     CoronalPointsAndCurveLine,
@@ -52,11 +50,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     data_line.content.curves = curves;
                 }
                 let results = measure_coronal(data_line.content, subcommand, args.reduce)?;
-                let line = CoronalMeasureLine {
+
+                MeasureLine::<String, f64> {
                     filename: data_line.filename,
                     content: results,
-                };
-                writeln!(writer, "{}", serde_json::to_string(&line)?)?;
+                }
             }
             MeasureSubCommands::Sagittal(subcommand) => {
                 let data_line = load_labelme_or_native::<SagittalPointsLine, LabelMeDataLine>(
@@ -65,11 +63,11 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &line?,
                 )?;
                 let results = measure_sagittal(data_line.content, subcommand, args.reduce)?;
-                let line = SagittalMeasureLine {
+
+                MeasureLine::<String, f64> {
                     filename: data_line.filename,
                     content: results,
-                };
-                writeln!(writer, "{}", serde_json::to_string(&line)?)?;
+                }
             }
             MeasureSubCommands::Neck(measure_sub_neck_args) => {
                 let data_line = load_labelme_or_native::<LateralPointsLine, LabelMeDataLine>(
@@ -77,25 +75,56 @@ fn process_ndjson(args: MeasureArgs) -> Result<()> {
                     &args.input,
                     &line?,
                 )?;
-                let flatten = measure_sub_neck_args.flatten;
                 let results = measure_neck(data_line.content, measure_sub_neck_args, args.reduce)?;
                 let line = MeasureLine {
                     filename: data_line.filename,
                     content: results,
                 };
-                if flatten {
-                    let mut flattened = FlattenedNeckMeasurements {
-                        filename: line.filename,
-                        content: Default::default(),
-                    };
-                    flattened.content.unit_of_length = line.content.unit_of_length.clone();
-                    flattened.content = line.content.into_flat();
-                    writeln!(writer, "{}", serde_json::to_string(&flattened)?)?;
+                let mut flattened = MeasureLine::<String, f64> {
+                    filename: line.filename,
+                    content: Default::default(),
+                };
+                flattened.content.unit_of_length = line.content.unit_of_length.clone();
+                flattened.content = line.content.into_flat();
+                flattened
+            }
+        };
+        if args.csv {
+            csv_buf.push(measured_line);
+        } else {
+            writeln!(writer, "{}", serde_json::to_string(&measured_line)?)?;
+        }
+    }
+    if args.csv {
+        // aggregate keys
+        let keys: IndexSet<&String> = IndexSet::from_iter(
+            csv_buf
+                .iter()
+                .flat_map(|line| line.content.measurements.keys()),
+        );
+        let keys: Vec<String> = keys.into_iter().cloned().collect();
+        let mut writer = csv::Writer::from_writer(writer);
+        // write header
+        let mut header = vec!["filename".to_string(), "unit_of_length".to_string()];
+        for key in keys.iter() {
+            header.push(key.to_string());
+        }
+        writer.write_record(&header)?;
+        for line in csv_buf.into_iter() {
+            let mut record = vec![line.filename, line.content.unit_of_length.clone()];
+            for key in keys.iter() {
+                if let Some(value) = line.content.measurements.get(key) {
+                    match value {
+                        Ok(v) => record.push(v.to_string()),
+                        Err(e) => record.push(e.to_string()),
+                    }
                 } else {
-                    writeln!(writer, "{}", serde_json::to_string(&line)?)?;
+                    record.push("".to_string());
                 }
             }
+            writer.write_record(&record)?;
         }
+        writer.flush()?;
     }
     Ok(())
 }
@@ -125,6 +154,9 @@ where
 }
 
 fn process_json(args: MeasureArgs) -> Result<()> {
+    if args.csv {
+        anyhow::bail!("CSV output is only supported for NDJSON input");
+    }
     debug!("Loading {:?}", args.input);
     let data_str = std::fs::read_to_string(&args.input)?;
 
@@ -185,22 +217,22 @@ fn measure_sagittal(
     sagittal_points: SagittalPoints,
     subcommand: MeasureSubSagittallArgs,
     reduce: crate::cli::ReductionMethod,
-) -> Result<MeasureResult<SagittalMeasure, f64>> {
+) -> Result<MeasureResult<String, f64>> {
     let scaled_data = sagittal_points.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(SagittalMeasure::all);
     let reduce = convert_reduce(reduce);
-    Ok(measure_x(scaled_data, measures, reduce))
+    Ok(measure_x(scaled_data, measures, reduce).into_string_map())
 }
 
 fn measure_coronal(
     data: CoronalPointsAndCurve,
     subcommand: MeasureSubCoronalArgs,
     reduce: crate::cli::ReductionMethod,
-) -> Result<MeasureResult<CoronalMeasure, f64>> {
+) -> Result<MeasureResult<String, f64>> {
     let scaled_data = data.into_scaled()?;
     let measures = subcommand.measures.unwrap_or_else(CoronalMeasure::all);
     let reduce = convert_reduce(reduce);
-    Ok(measure_x(scaled_data, measures, reduce))
+    Ok(measure_x(scaled_data, measures, reduce).into_string_map())
 }
 
 fn measure_neck(
@@ -272,10 +304,12 @@ mod tests {
             .join(format!("lateral{suffix}.json"));
         let output = output_path(&format!("{case_dir}_lateral{suffix}.json"))?;
         let subcommand = MeasureSubCommands::Sagittal(MeasureSubSagittallArgs::default());
+        let csv = false;
         let args = MeasureArgs {
             input,
             output: Some(output),
             labelme,
+            csv,
             reduce,
             subcommand,
         };
@@ -291,6 +325,7 @@ mod tests {
             input,
             output: Some(output),
             labelme,
+            csv,
             reduce,
             subcommand,
         };
@@ -334,7 +369,6 @@ mod tests {
         let measures = NeckLateralMeasure::all();
         let subcommand = MeasureSubNeckArgs {
             measures: Some(measures.clone()),
-            flatten: false,
         };
         let reduce = crate::cli::ReductionMethod::Geometric;
         let mut measurements =

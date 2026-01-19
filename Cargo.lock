@@ -716,6 +716,7 @@ dependencies = [
  "imageproc",
  "labelme-rs",
  "log",
+ "metaimage",
  "ndarray 0.16.1",
  "ndarray-npz",
  "ndarray-stats",
@@ -1369,13 +1370,13 @@ checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
 
 [[package]]
 name = "flate2"
-version = "1.1.5"
+version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
+checksum = "b375d6465b98090a5f25b1c7703f3859783755aa9a80433b36e0379a3ec2f369"
 dependencies = [
  "crc32fast",
- "libz-rs-sys",
  "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -2397,15 +2398,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libz-rs-sys"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15413ef615ad868d4d65dce091cb233b229419c7c0c4bcaa746c0901c49ff39c"
-dependencies = [
- "zlib-rs",
-]
-
-[[package]]
 name = "libz-sys"
 version = "1.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2532,6 +2524,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 
 [[package]]
+name = "metaimage"
+version = "0.1.1"
+source = "git+https://github.com/ykszk/metaimage-rs.git?tag=v0.1.1#fa4087b2ef0a0efb3ea4c577628c12feb879790f"
+dependencies = [
+ "bytemuck",
+ "flate2",
+ "ndarray 0.17.2",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2629,6 +2631,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
 dependencies = [
  "approx",
+ "matrixmultiply 0.3.10",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer 0.2.1",
+]
+
+[[package]]
+name = "ndarray"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
+dependencies = [
  "matrixmultiply 0.3.10",
  "num-complex",
  "num-integer",
@@ -3857,6 +3874,7 @@ dependencies = [
  "dicom-dictionary-std 0.9.0",
  "dicom-object 0.9.0",
  "env_logger",
+ "flate2",
  "indexmap",
  "labelme-rs",
  "log",
@@ -3890,6 +3908,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "config",
+ "csv",
  "env_logger",
  "float-cmp",
  "glob",
@@ -5516,9 +5535,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51f936044d677be1a1168fae1d03b583a285a5dd9d8cbf7b24c23aa1fc775235"
+checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zopfli"
