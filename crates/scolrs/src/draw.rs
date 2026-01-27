@@ -596,6 +596,7 @@ impl Painter {
             title,
             None,
         );
+        group = group.set("data-value", angle_deg);
         (group.add(text), angle_deg)
     }
 
@@ -685,6 +686,7 @@ impl Painter {
                 );
 
                 group = group.add(text);
+                group = group.set("data-value", angle);
             } else {
                 // draw aux lines and its intersection
 
@@ -713,6 +715,7 @@ impl Painter {
                 let angle = if aux_param.flip_sign { -angle } else { angle };
                 let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
                 group = group.add(text);
+                group = group.set("data-value", angle);
             }
         } else {
             // parallel lines
@@ -723,6 +726,7 @@ impl Painter {
                 line.slice_mut(s![1, ..]).add_assign(&d);
                 let line = self.line(line);
                 group = group.add(line);
+                group = group.set("data-value", 0.0);
                 // arrow
                 // disable arrow for now because scaling is not handled properly
                 // let unit_d = &d / d.l2norm();
@@ -1370,14 +1374,15 @@ impl DrawComponent for Lstv<'_> {
 
         let polygon = painter.polygon(corners.view());
         g = g.add(polygon);
-        let (text, title) = match vertebra_count {
-            20 => ("L6", "lumbarization"),
-            19 => ("L5", "normal"),
-            18 => ("L4", "sacralization"),
-            _ => ("N/A", "N/A"),
+        let (value, text, title) = match vertebra_count {
+            20 => (6.0, "L6", "lumbarization"),
+            19 => (5.0, "L5", "normal"),
+            18 => (4.0, "L4", "sacralization"),
+            _ => (f64::NAN, "N/A", "N/A"),
         };
         let text = painter.text(text, corners.mean_axis(Axis(0)).unwrap(), Some(title), None);
         g = g.add(text);
+        g = g.set("data-value", value);
         Ok(g)
     }
 }
@@ -1502,6 +1507,7 @@ pub fn mean_plate_length(scol: &Spine) -> f64 {
     diff.map_axis(Axis(1), |a| a.l2norm()).mean().unwrap()
 }
 
+/// Calculate p(0, index) - p(1, index)
 fn difference_in_index(
     label: &str,
     points: ArrayView2<f64>,
@@ -1511,7 +1517,6 @@ fn difference_in_index(
     Ok(points.index_axis(Axis(0), 0)[index] - points.index_axis(Axis(0), 1)[index])
 }
 
-fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
 /// Calculate x0 - x1
 fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     difference_in_index(label, points, 0)
@@ -1561,6 +1566,7 @@ fn draw_difference_in_x(
         Some(draw_label),
         Some(unit),
     );
+    g = g.set("data-value", dx);
 
     g = g.add(text);
     Ok(g)
@@ -1575,7 +1581,7 @@ fn draw_difference_in_y(
     unit: &str,
 ) -> Result<element::Group, DrawError> {
     let dy = difference_in_y(point_label, points)?;
-    let mut g = group;
+    let mut g = group.set("data-value", dy);
     for c in points.axis_iter(Axis(0)) {
         g = g.add(painter.point(c));
     }

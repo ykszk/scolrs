@@ -1,14 +1,15 @@
 use ndarray::Axis;
+use scolrs::draw::{AsMeasure, ColorPalettes};
 use scolrs::lenke::{
     BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
     RegionalCurveType, SagittalModifier, StructuralReason, Study, KYOPHOSIS_CURVE_MT,
     KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
-use scolrs::Scalable;
 use scolrs::{
-    draw::MeasureComponent, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, Curve, Spine,
-    VertebralIndex,
+    draw::MeasureComponent, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, Curve,
+    MeasureAndDraw, Spine, VertebralIndex,
 };
+use scolrs::{CoronalDraw, Scalable};
 
 use anyhow::{Context, Result};
 use labelme_rs::LabelMeData;
@@ -486,6 +487,9 @@ fn test_measure_case4() -> Result<()> {
 
     // let measures = CoronalMeasure::all();
     let measure_and_pos = [
+        (CobbPT, Pos),
+        (CobbMT, Neg),
+        (CobbTLL, Pos),
         (Avt, Neg),
         (T1TiltAngle, Neg),
         (CoronalBalance, Neg),
@@ -507,6 +511,72 @@ fn test_measure_case4() -> Result<()> {
             measure,
             value
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_measure_draw_equality() -> Result<()> {
+    fn inner(json_path: PathBuf) -> Result<()> {
+        println!("Testing equalities in {:?}", json_path);
+        let json_str = std::fs::read_to_string(&json_path)?;
+        let lm = LabelMeData::try_from(json_str.as_str())?;
+        let coronal = CoronalPointsAndCurve::try_from(&lm)?;
+        let coronal = coronal.into_scaled()?;
+
+        let draws = CoronalDraw::all();
+        let measure_and_draws: Vec<_> = draws
+            .into_iter()
+            .filter_map(|draw| {
+                let measure = draw.as_measure();
+                measure.map(|m| (m, draw))
+            })
+            .collect();
+        let palettes = ColorPalettes::default();
+        let mut label_colors = palettes.label_colors;
+        let mut line_colors = palettes.line_colors;
+        let draw_param = scolrs::draw::DrawParam::default();
+        let svg_size = (500, 500);
+        let mut painter = scolrs::draw::Painter::new(draw_param, svg_size);
+        for (measure, draw) in measure_and_draws.into_iter() {
+            println!("  Testing measure-draw {:?}", measure);
+            let m = Box::<dyn MeasureComponent<ValueType = f64>>::from((&measure, &coronal));
+            let measure_result = m.measure();
+            if let Err(e) = &measure_result {
+                match e {
+                    scolrs::draw::MeasureError::UnableToMeasure(_) => {
+                        panic!("Unable to measure: {:?}", measure)
+                    }
+                    _ => continue,
+                }
+            }
+            let measured_value = measure_result.unwrap();
+            let d = Box::<dyn scolrs::draw::DrawComponent>::from((&draw, &coronal));
+            let group = d.draw(&mut painter, &mut label_colors, &mut line_colors)?;
+
+            let data_attr = group
+                .get_attributes()
+                .get("data-value")
+                .context("data-value attribute not found in drawn group")?;
+            let drawn_value: f64 = data_attr
+                .parse()
+                .context("failed to parse data-value attribute")?;
+            assert!(
+                (measured_value - drawn_value).abs() < 1e-6,
+                "Measure {:?} value mismatch in {}: measured {}, drawn {}",
+                measure,
+                json_path.display(),
+                measured_value,
+                drawn_value
+            );
+        }
+        Ok(())
+    }
+    for case in ["case1", "case2", "case3", "case4"] {
+        for dir in ["frontal", "lateral"] {
+            let json_path = data_directory().join(format!("{}/{}.json", case, dir));
+            inner(json_path)?;
+        }
     }
     Ok(())
 }
