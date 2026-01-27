@@ -54,7 +54,7 @@ macro_rules! impl_cobb_angle {
             type ValueType = f64;
             fn measure(&self) -> Result<Self::ValueType, MeasureError> {
                 if let Some((_curve, angle)) = self.1.as_ref() {
-                    Ok(-*angle)
+                    Ok(*angle)
                 } else {
                     Err(MeasureError::NoCurveFound)
                 }
