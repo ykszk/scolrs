@@ -2358,6 +2358,7 @@ pub enum CoronalDraw {
     CobbPT,
     CobbMT,
     CobbTLL,
+    /// Apical Vertebral Translation
     AVT,
     T1TiltAngle,
     CoronalBalance,
@@ -2366,6 +2367,7 @@ pub enum CoronalDraw {
     PelvicObliquity,
     SacralObliquity,
     LegLengthDiscrepancy,
+    /// Lumbosacral Transitional Vertebra
     LSTV,
 }
 
@@ -2391,6 +2393,7 @@ pub enum CoronalMeasure {
     CobbPT,
     CobbMT,
     CobbTLL,
+    /// Apical Vertebral Translation
     Avt,
     T1TiltAngle,
     CoronalBalance,
@@ -2399,6 +2402,7 @@ pub enum CoronalMeasure {
     PelvicObliquity,
     SacralObliquity,
     LegLengthDiscrepancy,
+    /// Lumbosacral Transitional Vertebra
     LSTV,
 }
 

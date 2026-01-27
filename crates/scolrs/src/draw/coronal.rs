@@ -1,4 +1,4 @@
-use crate::draw::{self, AsMeasure, Named, ReductionMethod};
+use crate::draw::{self, difference_in_y, AsMeasure, Named, ReductionMethod};
 use crate::{ApexSet, Curve, CurveDesc, ScaledType, Spine};
 use crate::{CoronalDraw, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, ValidateLength};
 use ndarray::{concatenate, s, stack, Array1, Array2, Axis};
@@ -462,13 +462,7 @@ impl DrawComponent for ShoulderHeight<'_> {
 impl MeasureComponent for ShoulderHeight<'_> {
     type ValueType = f64;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let coronal_points = self.0;
-        coronal_points
-            .shoulder
-            .0
-            .validate_label_length("Shoulder", 2)?;
-        let points = coronal_points.shoulder.0.view();
-        let dy = points.index_axis(Axis(0), 1)[1] - points.index_axis(Axis(0), 0)[1];
+        let dy = difference_in_y("Shoulder", self.0.shoulder.0.view())?;
         Ok(dy)
     }
 }
@@ -645,13 +639,8 @@ impl DrawComponent for LegLengthDiscrepancy<'_> {
 impl MeasureComponent for LegLengthDiscrepancy<'_> {
     type ValueType = f64;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let coronal_points = self.0;
-        coronal_points
-            .femoral_head
-            .0
-            .validate_label_length("FemoralHead", 2)?;
-        let points = coronal_points.femoral_head.0.view();
-        let dy = points.index_axis(Axis(0), 1)[1] - points.index_axis(Axis(0), 0)[1];
+        let points = self.0.femoral_head.0.view();
+        let dy = difference_in_y("FemoralHead", points)?;
         Ok(dy)
     }
 }

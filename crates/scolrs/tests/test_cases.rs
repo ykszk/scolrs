@@ -4,7 +4,11 @@ use scolrs::lenke::{
     RegionalCurveType, SagittalModifier, StructuralReason, Study, KYOPHOSIS_CURVE_MT,
     KYOPHOSIS_CURVE_PT, KYOPHOSIS_CURVE_TLL,
 };
-use scolrs::{CoronalPoints, Curve, Spine, VertebralIndex};
+use scolrs::Scalable;
+use scolrs::{
+    draw::MeasureComponent, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, Curve, Spine,
+    VertebralIndex,
+};
 
 use anyhow::{Context, Result};
 use labelme_rs::LabelMeData;
@@ -447,5 +451,62 @@ fn test_lenke_case4() -> Result<()> {
         SagittalModifier::from(study.sagittal.angle_wild(&scolrs::lenke::T5T12_CURVE)),
         SagittalModifier::Hypokyphosis
     );
+    Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+enum Sign {
+    Pos,
+    Neg,
+    Zero,
+}
+
+impl Sign {
+    fn new(value: f64) -> Self {
+        if value > 0.0 {
+            Sign::Pos
+        } else if value < 0.0 {
+            Sign::Neg
+        } else {
+            Sign::Zero
+        }
+    }
+}
+
+#[test]
+fn test_measure_case4() -> Result<()> {
+    let json_filename = data_directory().join("case4/frontal.json");
+    let json_str = std::fs::read_to_string(&json_filename)?;
+    let lm = LabelMeData::try_from(json_str.as_str())?;
+    let coronal = CoronalPointsAndCurve::try_from(&lm)?;
+    let coronal = coronal.into_scaled()?;
+
+    use CoronalMeasure::*;
+    use Sign::*;
+
+    // let measures = CoronalMeasure::all();
+    let measure_and_pos = [
+        (Avt, Neg),
+        (T1TiltAngle, Neg),
+        (CoronalBalance, Neg),
+        (ClavicleAngle, Neg),
+        (ShoulderHeight, Neg),
+        (PelvicObliquity, Pos),
+        (SacralObliquity, Neg),
+        (LegLengthDiscrepancy, Pos),
+        (LSTV, Pos),
+    ];
+    // for measure in measures {
+    for (measure, sign) in measure_and_pos.into_iter() {
+        let m = Box::<dyn MeasureComponent<ValueType = f64>>::from((&measure, &coronal));
+        let value = m.measure()?;
+        assert_eq!(
+            Sign::new(value),
+            sign,
+            "Measure {:?} sign mismatch with value {}",
+            measure,
+            value
+        );
+    }
     Ok(())
 }

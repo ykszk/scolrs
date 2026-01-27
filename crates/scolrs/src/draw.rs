@@ -1512,11 +1512,13 @@ fn difference_in_index(
 }
 
 fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
+/// Calculate x0 - x1
+fn difference_in_x(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     difference_in_index(label, points, 0)
 }
 
-/// Difference in y-coordinates of two points
-/// Return positive value if the first point is above the second point
+/// Calculate y1 - y0
+/// Positive when p1 is below p0
 fn difference_in_y(label: &str, points: ArrayView2<f64>) -> Result<f64, MeasureError> {
     difference_in_index(label, points, 1).map(|dy| -dy)
 }
