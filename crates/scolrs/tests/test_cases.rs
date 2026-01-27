@@ -475,17 +475,43 @@ impl Sign {
 }
 
 #[test]
-fn test_measure_case4() -> Result<()> {
-    let json_filename = data_directory().join("case4/frontal.json");
-    let json_str = std::fs::read_to_string(&json_filename)?;
-    let lm = LabelMeData::try_from(json_str.as_str())?;
-    let coronal = CoronalPointsAndCurve::try_from(&lm)?;
-    let coronal = coronal.into_scaled()?;
+fn test_measure_cases() -> Result<()> {
+    fn inner(json_path: PathBuf, measure_and_pos: &[(CoronalMeasure, Sign)]) -> Result<()> {
+        println!("Testing measures in {:?}", json_path);
+        let json_str = std::fs::read_to_string(&json_path)?;
+        let lm = LabelMeData::try_from(json_str.as_str())?;
+        let coronal = CoronalPointsAndCurve::try_from(&lm)?;
+        let coronal = coronal.into_scaled()?;
+
+        for (measure, sign) in measure_and_pos.iter() {
+            let m = Box::<dyn MeasureComponent<ValueType = f64>>::from((measure, &coronal));
+            let value = m.measure()?;
+            assert_eq!(
+                Sign::new(value),
+                *sign,
+                "Measure {:?} sign mismatch with value {}",
+                measure,
+                value
+            );
+        }
+        Ok(())
+    }
 
     use CoronalMeasure::*;
     use Sign::*;
 
-    // let measures = CoronalMeasure::all();
+    // case2
+    let json_filename = data_directory().join("case2/frontal.json");
+    let measure_and_pos = [(ShoulderHeight, Pos), (LegLengthDiscrepancy, Neg)];
+    inner(json_filename, &measure_and_pos)?;
+
+    // case3
+    let json_filename = data_directory().join("case3/frontal.json");
+    let measure_and_pos = [(ShoulderHeight, Neg), (LegLengthDiscrepancy, Neg)];
+    inner(json_filename, &measure_and_pos)?;
+
+    // case4
+    let json_filename = data_directory().join("case4/frontal.json");
     let measure_and_pos = [
         (CobbPT, Pos),
         (CobbMT, Neg),
@@ -500,18 +526,7 @@ fn test_measure_case4() -> Result<()> {
         (LegLengthDiscrepancy, Pos),
         (LSTV, Pos),
     ];
-    // for measure in measures {
-    for (measure, sign) in measure_and_pos.into_iter() {
-        let m = Box::<dyn MeasureComponent<ValueType = f64>>::from((&measure, &coronal));
-        let value = m.measure()?;
-        assert_eq!(
-            Sign::new(value),
-            sign,
-            "Measure {:?} sign mismatch with value {}",
-            measure,
-            value
-        );
-    }
+    inner(json_filename, &measure_and_pos)?;
     Ok(())
 }
 
@@ -580,3 +595,5 @@ fn test_measure_draw_equality() -> Result<()> {
     }
     Ok(())
 }
+
+// TODO: test equality of neck measure and draw

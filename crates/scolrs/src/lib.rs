@@ -553,6 +553,7 @@ pub struct CoronalPointConfidence {
 }
 
 /// Point sets extracted from a coronal radiograph
+/// Assuming first points are left points for bilateral points
 #[derive(Debug, Clone, PartialEq, HasImageMetadata)]
 pub struct CoronalPoints {
     pub spine: Spine,
