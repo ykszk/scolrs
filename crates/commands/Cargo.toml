@@ -40,6 +40,7 @@ tera.workspace = true
 serde_json.workspace = true
 config.workspace = true
 csv.workspace = true
+clap_mangen = "0.2.31"
 
 [dev-dependencies]
 assert_cmd = "2.1.1"

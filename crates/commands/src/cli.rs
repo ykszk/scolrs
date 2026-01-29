@@ -15,8 +15,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Generate shell completions
-    Complete(CompleteArgs),
     /// Create SVG
     Svg(SvgArgs),
     /// Create SVGs from ndjson
@@ -41,12 +39,22 @@ pub enum Command {
     Asm(AsmArgs),
     /// Print config template
     Config(ConfigArgs),
+    /// Generate shell completions
+    Complete(CompleteArgs),
+    /// Generate man files
+    Man(ManArgs),
 }
 
 #[derive(Parser)]
 pub struct CompleteArgs {
     /// Shell to generate completions for
     pub shell: Shell,
+}
+
+#[derive(Parser)]
+pub struct ManArgs {
+    /// Output directory. e.g. `$MANPATH/man1`
+    pub output: PathBuf,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone, Default)]
