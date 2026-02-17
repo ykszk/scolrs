@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "deepscol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "deepscol_wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "config",
@@ -815,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "devsc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dicom",
@@ -2597,7 +2597,7 @@ dependencies = [
 
 [[package]]
 name = "named_derive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "pyscol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clahe",
  "devsc",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "scolrs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -3917,7 +3917,7 @@ dependencies = [
 
 [[package]]
 name = "scolrs-commands"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "assert_cmd",

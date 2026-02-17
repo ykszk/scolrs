@@ -12,8 +12,8 @@ use numpy::{
 use pyo3::prelude::*;
 use scolrs::{
     draw::{
-        draw_components, ColorPalette, ColorPalettes, DrawComponent, DrawError, DrawParam,
-        MeasureError, Painter,
+        draw_components, AsMeasure, ColorPalette, ColorPalettes, ConfidenceComponent,
+        ConfidenceDisplay, DrawComponent, DrawError, DrawParam, MeasureError, Painter,
     },
     head_neck::{LateralPoints, NeckLateralDraw},
     CoronalDraw, CoronalPointsAndCurve, HasImageMetadata, MeasureAndDraw, PointDataWithImage,
@@ -198,7 +198,7 @@ impl<T> DeserializeAll<T> for Vec<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_on_image<'a, T, S>(
+fn draw_on_image<'a, T, S, V>(
     image: DynamicImage,
     data: T,
     draws: Vec<S>,
@@ -213,8 +213,11 @@ fn draw_on_image<'a, T, S>(
 ) -> Result<String, PyScolError>
 where
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq,
+    S: Clone + Copy + PartialEq + AsMeasure,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
+        Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
     T: HasImageMetadata + Scalable,
+    V: ConfidenceDisplay,
     <T as Scalable>::Error: std::fmt::Debug,
 {
     let draw_param: DrawParam = serde_json::from_str(draw_param_json)?;
@@ -306,7 +309,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_generic<T, S>(
+fn draw_generic<T, S, V>(
     coronal_points_json: &str,
     json_path: &str,
     draws: Vec<String>,
@@ -326,7 +329,10 @@ where
     S: MeasureAndDraw + FromStr,
     <S as std::str::FromStr>::Err: std::fmt::Display,
     for<'b> (&'b S, &'b ScaledType<T>): Into<Box<dyn DrawComponent + 'b>>,
-    S: Clone + Copy + PartialEq,
+    S: Clone + Copy + PartialEq + AsMeasure,
+    for<'b> (&'b S::MeasureType, &'b ScaledType<T>):
+        Into<Box<dyn ConfidenceComponent<ValueType = V> + 'b>>,
+    V: ConfidenceDisplay,
     T: HasImageMetadata + Scalable,
     <T as Scalable>::Error: std::fmt::Debug,
 {
@@ -391,7 +397,7 @@ pub fn py_draw_coronal(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
-    draw_generic::<CoronalPointsAndCurve, CoronalDraw>(
+    draw_generic::<CoronalPointsAndCurve, CoronalDraw, f64>(
         coronal_points_json,
         json_path,
         draws,
@@ -421,7 +427,7 @@ pub fn py_draw_sagittal(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
-    draw_generic::<SagittalPoints, SagittalDraw>(
+    draw_generic::<SagittalPoints, SagittalDraw, f64>(
         coronal_points_json,
         json_path,
         draws,
@@ -451,7 +457,7 @@ pub fn py_draw_neck(
     overlay: Option<PyReadonlyArrayDyn<'_, u8>>,
     point_sets: Option<Vec<(String, PyReadonlyArray2<'_, f64>)>>,
 ) -> Result<String, PyScolError> {
-    draw_generic::<LateralPoints, NeckLateralDraw>(
+    draw_generic::<LateralPoints, NeckLateralDraw, Vec<f64>>(
         lateral_points_json,
         json_path,
         draws,
