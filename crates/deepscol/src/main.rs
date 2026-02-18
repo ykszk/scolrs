@@ -2,10 +2,11 @@ use std::path::PathBuf;
 use std::vec;
 
 use anyhow::{Context, Result};
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use deepscol as ds;
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use metaimage::WriteMhd;
+use ort::session::Session;
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
@@ -49,6 +50,20 @@ fn parse_path_optional_pair(s: &str) -> Result<(PathBuf, Option<PathBuf>), Strin
 #[derive(Parser)]
 #[clap(name=env!("CARGO_BIN_NAME"), author, version = scolrs::VERSION, about, long_about = None)]
 struct CmdArgs {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Process a single image
+    Single(SingleCmdArgs),
+    /// Process a batch of images specified in a text file
+    Batch(BatchCmdArgs),
+}
+
+#[derive(Parser)]
+struct SingleCmdArgs {
     /// Path to the input image file
     input_image: PathBuf,
     /// Path to the onnx model file
@@ -64,38 +79,57 @@ struct CmdArgs {
     output: OutputGroup,
 }
 
+#[derive(clap::Args)]
+#[group(required = true, multiple = true)]
+struct BatchOutputGroup {
+    /// Path to save the output heatmaps or image
+    #[arg(long)]
+    heatmap: bool,
+    /// Save LabelMe format points
+    #[arg(long)]
+    labelme: bool,
+    /// Output html
+    #[arg(long)]
+    html: bool,
+}
+
+#[derive(Parser)]
+struct BatchCmdArgs {
+    /// Text file containing paths to the input image files, one per line
+    input_images_list: PathBuf,
+    /// Path to the onnx model file
+    #[arg(long)]
+    model: Option<PathBuf>,
+    /// Direction of the image
+    #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
+    direction: Direction,
+    /// Path to the ASM model(s) file for fitting (and configuration optionally)
+    #[arg(long, value_parser = parse_path_optional_pair)]
+    asm: Vec<(PathBuf, Option<PathBuf>)>,
+    /// Output directory to save the results
+    output_dir: PathBuf,
+    #[command(flatten)]
+    output: BatchOutputGroup,
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = CmdArgs::parse();
-    let model_path = &args.model;
+    match args.command {
+        Commands::Single(single_args) => single_cmd(single_args),
+        Commands::Batch(batch_args) => batch_cmd(batch_args),
+    }
+}
+
+fn single_cmd(args: SingleCmdArgs) -> Result<()> {
+    let session = load_model(&args.model)?;
+    process_image(args, session)?;
+    Ok(())
+}
+
+fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
     let image_path = &args.input_image;
-    let builder = ort::session::Session::builder()
-        .expect("Cannot create Session builder.")
-        .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
-        .expect("Cannot optimize graph.")
-        .with_parallel_execution(true)
-        .expect("Cannot activate parallel execution.")
-        .with_intra_threads(2)
-        .expect("Cannot set intra thread count.")
-        .with_inter_threads(1)
-        .expect("Cannot set inter thread count.");
-    let mut session = if let Some(model_path) = model_path {
-        log::info!("Loading model from file: {:?}", model_path);
-        builder
-            .commit_from_file(model_path)
-            .expect("Cannot load model from file.")
-    } else {
-        log::info!("Loading bundled model from memory");
-        builder
-            .commit_from_memory(include_bytes!("../models/spine_mobileone_s1.onnx"))
-            .expect("Cannot load model from memory.")
-    };
-    log::info!("Model loaded successfully");
-    log::debug!(
-        "model input dimensions {:?}",
-        session.inputs[0].input_type.tensor_shape().unwrap()
-    );
 
     let (image, metadata) = ds::load_image_from_path(image_path)
         .with_context(|| format!("Failed to load image from path {:?}", image_path))?;
@@ -330,5 +364,90 @@ fn main() -> Result<()> {
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }
+    Ok(session)
+}
+
+fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
+    let model_path = &args.model;
+    let mut session = load_model(model_path)?;
+
+    let input_images_list =
+        std::fs::read_to_string(&args.input_images_list).with_context(|| {
+            format!(
+                "Failed to read input images list from {:?}",
+                args.input_images_list
+            )
+        })?;
+    let image_paths: Vec<PathBuf> = input_images_list
+        .lines()
+        .map(|line| PathBuf::from(line.trim()))
+        .collect();
+    log::info!("Found {} images to process", image_paths.len());
+
+    for image_path in image_paths {
+        log::info!("Processing image: {:?}", image_path);
+        let file_stem = image_path.file_stem().unwrap_or_default().to_string_lossy();
+        let heatmap = if args.output.heatmap {
+            let path = args.output_dir.join(format!("{}.mha", file_stem));
+            Some(Some(path))
+        } else {
+            None
+        };
+        let labelme = if args.output.labelme {
+            let path = args.output_dir.join(format!("{}.json", file_stem));
+            Some(Some(path))
+        } else {
+            None
+        };
+        let html = if args.output.html {
+            let path = args.output_dir.join(format!("{}.html", file_stem));
+            Some(Some(path))
+        } else {
+            None
+        };
+        let single_args = SingleCmdArgs {
+            input_image: image_path,
+            model: None,
+            direction: args.direction.clone(),
+            asm: args.asm.clone(),
+
+            output: OutputGroup {
+                heatmap,
+                labelme,
+                html,
+            },
+        };
+        session = process_image(single_args, session)?;
+    }
     Ok(())
+}
+
+fn load_model(model_path: &Option<PathBuf>) -> Result<Session> {
+    let builder = Session::builder()
+        .expect("Cannot create Session builder.")
+        .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
+        .expect("Cannot optimize graph.")
+        .with_parallel_execution(true)
+        .expect("Cannot activate parallel execution.")
+        .with_intra_threads(2)
+        .expect("Cannot set intra thread count.")
+        .with_inter_threads(1)
+        .expect("Cannot set inter thread count.");
+    let session = if let Some(model_path) = model_path {
+        log::info!("Loading model from file: {:?}", model_path);
+        builder
+            .commit_from_file(model_path)
+            .expect("Cannot load model from file.")
+    } else {
+        log::info!("Loading bundled model from memory");
+        builder
+            .commit_from_memory(include_bytes!("../models/spine_mobileone_s1.onnx"))
+            .expect("Cannot load model from memory.")
+    };
+    log::info!("Model loaded successfully");
+    log::debug!(
+        "model input dimensions {:?}",
+        session.inputs[0].input_type.tensor_shape().unwrap()
+    );
+    Ok(session)
 }
