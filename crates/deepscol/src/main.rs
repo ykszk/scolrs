@@ -15,6 +15,7 @@ enum Direction {
     Coronal,
     #[clap(alias = "lateral")]
     Sagittal,
+    #[clap(alias = "neck")]
     NeckLateral,
 }
 
@@ -50,9 +51,6 @@ fn parse_path_optional_pair(s: &str) -> Result<(PathBuf, Option<PathBuf>), Strin
 struct CmdArgs {
     /// Path to the input image file
     input_image: PathBuf,
-    /// Text file of labels for the points in LabelMe format
-    #[arg(long)]
-    labels: Option<PathBuf>,
     /// Path to the onnx model file
     #[arg(long)]
     model: Option<PathBuf>,
@@ -83,10 +81,12 @@ fn main() -> Result<()> {
         .with_inter_threads(1)
         .expect("Cannot set inter thread count.");
     let mut session = if let Some(model_path) = model_path {
+        log::info!("Loading model from file: {:?}", model_path);
         builder
             .commit_from_file(model_path)
             .expect("Cannot load model from file.")
     } else {
+        log::info!("Loading bundled model from memory");
         builder
             .commit_from_memory(include_bytes!("../models/spine_mobileone_s1.onnx"))
             .expect("Cannot load model from memory.")

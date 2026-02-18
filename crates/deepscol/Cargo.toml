@@ -54,7 +54,7 @@ ndarray-npz = { version = "0.4.2", default-features = false, features = [
     "compressed",
 ] }
 metaimage = { git = "https://github.com/ykszk/metaimage-rs.git", tag = "v0.1.1"}
-ort = { version = "2.0.0-rc.10", default-features = false, features = [
+ort = { version = "=2.0.0-rc.10", default-features = false, features = [
     "ndarray",
 ] }
 tracing-subscriber = "0.3.22"
