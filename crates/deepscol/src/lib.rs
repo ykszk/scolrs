@@ -126,6 +126,7 @@ impl ScanDirection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SizeConfig {
+    #[serde(rename = "image_resize")]
     pub resize: (u32, u32),
     pub svg_size: Option<(usize, usize)>,
 }
@@ -140,23 +141,24 @@ impl Default for SizeConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeepscolConfig {
+pub struct HeatmapConfig {
     /// Threshold for heatmap binarization for point extraction
     pub thresh: f32,
-    /// SVG size and resize parameters
-    pub size_config: SizeConfig,
-
-    pub crop_config: CropConfig,
 }
 
-impl Default for DeepscolConfig {
+impl Default for HeatmapConfig {
     fn default() -> Self {
-        Self {
-            thresh: 0.1,
-            size_config: SizeConfig::default(),
-            crop_config: CropConfig::default(),
-        }
+        Self { thresh: 0.1 }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeepscolConfig {
+    pub heatmap: HeatmapConfig,
+    /// SVG size and resize parameters
+    pub size: SizeConfig,
+
+    pub crop: CropConfig,
 }
 
 /// Extract landmark point out of the input heatmaps

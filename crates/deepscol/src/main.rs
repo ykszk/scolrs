@@ -60,12 +60,12 @@ enum Commands {
     Single(SingleCmdArgs),
     /// Process a batch of images specified in a text file
     Batch(BatchCmdArgs),
+    /// Print default configuration
+    Config(ConfigArgs),
 }
 
-#[derive(Parser)]
-struct SingleCmdArgs {
-    /// Path to the input image file
-    input_image: PathBuf,
+#[derive(Parser, Clone)]
+struct CommonArgs {
     /// Path to the onnx model file
     #[arg(long)]
     model: Option<PathBuf>,
@@ -75,6 +75,18 @@ struct SingleCmdArgs {
     /// Path to the ASM model(s) file for fitting (and configuration optionally)
     #[arg(long, value_parser = parse_path_optional_pair)]
     asm: Vec<(PathBuf, Option<PathBuf>)>,
+    /// Configuration file (TOML or JSON). See `config` subcommand for the default configuration.
+    /// Additionally, use environment variables with prefix `DS__` (e.g. `DS__HEATMAP__THRESH=0.5`).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+#[derive(Parser)]
+struct SingleCmdArgs {
+    /// Path to the input image file
+    input_image: PathBuf,
+    #[command(flatten)]
+    common: CommonArgs,
     #[command(flatten)]
     output: OutputGroup,
 }
@@ -97,19 +109,25 @@ struct BatchOutputGroup {
 struct BatchCmdArgs {
     /// Text file containing paths to the input image files, one per line
     input_images_list: PathBuf,
-    /// Path to the onnx model file
-    #[arg(long)]
-    model: Option<PathBuf>,
-    /// Direction of the image
-    #[arg(short, long, value_enum, default_value_t = Direction::Coronal)]
-    direction: Direction,
-    /// Path to the ASM model(s) file for fitting (and configuration optionally)
-    #[arg(long, value_parser = parse_path_optional_pair)]
-    asm: Vec<(PathBuf, Option<PathBuf>)>,
+    #[command(flatten)]
+    common: CommonArgs,
     /// Output directory to save the results
     output_dir: PathBuf,
     #[command(flatten)]
     output: BatchOutputGroup,
+}
+
+#[derive(ValueEnum, Debug, Clone)]
+enum ConfigFormat {
+    Json,
+    Toml,
+}
+
+#[derive(Parser)]
+struct ConfigArgs {
+    /// Output format for the default configuration (json or yaml)
+    #[arg(default_value = "toml")]
+    format: ConfigFormat,
 }
 
 fn main() -> Result<()> {
@@ -119,11 +137,12 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Single(single_args) => single_cmd(single_args),
         Commands::Batch(batch_args) => batch_cmd(batch_args),
+        Commands::Config(config_args) => config_cmd(config_args),
     }
 }
 
 fn single_cmd(args: SingleCmdArgs) -> Result<()> {
-    let session = load_model(&args.model)?;
+    let session = load_model(&args.common.model)?;
     process_image(args, session)?;
     Ok(())
 }
@@ -157,8 +176,15 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
     // convert to ndarray
     let mut output3 = ds::extract_array_from_output(outputs);
 
-    let ds_config: ds::DeepscolConfig = config::Config::builder()
-        .add_source(config::Config::try_from(&ds::DeepscolConfig::default())?)
+    let mut builder = config::Config::builder()
+        .add_source(config::Config::try_from(&ds::DeepscolConfig::default())?);
+    if let Some(config_path) = args.common.config.as_ref() {
+        log::info!("Loading configuration from file: {:?}", config_path);
+        builder = builder.add_source(config::File::from(config_path.as_path()));
+    } else {
+        log::debug!("No configuration file provided, using default configuration and environment variables.");
+    };
+    let ds_config: ds::DeepscolConfig = builder
         .add_source(
             config::Environment::with_prefix("DS")
                 .separator("__")
@@ -171,15 +197,15 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
 
     let cropping_params = ds::calculate_crop_parameters(
         &output3,
-        &ds_config.crop_config,
+        &ds_config.crop,
         original_image_height,
         original_image_width,
         model_input_height,
     );
 
-    let point_thresh = ds_config.thresh;
+    let point_thresh = ds_config.heatmap.thresh;
 
-    let point_set_config = match args.direction {
+    let point_set_config = match args.common.direction {
         Direction::Coronal => ds::point_config::PointSetConfig::spine(),
         Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
         Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
@@ -268,7 +294,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
             );
         }
     }
-    let scan_direction = match args.direction {
+    let scan_direction = match args.common.direction {
         Direction::Coronal => ds::ScanDirection::Coronal,
         Direction::Sagittal => ds::ScanDirection::Sagittal,
         Direction::NeckLateral => ds::ScanDirection::NeckLateral,
@@ -278,7 +304,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
         log::info!("Point counts are invalid: {}", e);
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
-        for (asm_path, asm_config) in &args.asm {
+        for (asm_path, asm_config) in &args.common.asm {
             let reader = std::fs::File::open(asm_path)
                 .with_context(|| format!("Opening ASM model file {:?}", asm_path))?;
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
@@ -357,7 +383,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
             model_io,
             metadata,
             scan_direction,
-            size_config: ds_config.size_config,
+            size_config: ds_config.size,
             title,
         };
         let html = ds::create_result_html_from_lm(html_args)?;
@@ -368,7 +394,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
 }
 
 fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
-    let model_path = &args.model;
+    let model_path = &args.common.model;
     let mut session = load_model(model_path)?;
 
     let input_images_list =
@@ -407,10 +433,7 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
         };
         let single_args = SingleCmdArgs {
             input_image: image_path,
-            model: None,
-            direction: args.direction.clone(),
-            asm: args.asm.clone(),
-
+            common: args.common.clone(),
             output: OutputGroup {
                 heatmap,
                 labelme,
@@ -450,4 +473,14 @@ fn load_model(model_path: &Option<PathBuf>) -> Result<Session> {
         session.inputs[0].input_type.tensor_shape().unwrap()
     );
     Ok(session)
+}
+
+fn config_cmd(args: ConfigArgs) -> Result<()> {
+    let ds_config = ds::DeepscolConfig::default();
+    let output = match args.format {
+        ConfigFormat::Json => serde_json::to_string_pretty(&ds_config)?,
+        ConfigFormat::Toml => toml::to_string_pretty(&ds_config)?,
+    };
+    println!("{}", output);
+    Ok(())
 }
