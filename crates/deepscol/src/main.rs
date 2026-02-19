@@ -3,10 +3,11 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use deepscol as ds;
+use deepscol::{self as ds, SessionConfig};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use metaimage::WriteMhd;
 use ort::execution_providers::ExecutionProvider;
+use ort::session::builder::SessionBuilder;
 use ort::session::Session;
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
@@ -161,12 +162,43 @@ fn main() -> Result<()> {
 }
 
 fn single_cmd(args: SingleCmdArgs) -> Result<()> {
-    let session = load_model(&args.common.model, &args.common.accelerators)?;
-    process_image(args, session)?;
+    let ds_config = load_config(&args.common.config)?;
+    let session = load_model(
+        &args.common.model,
+        &args.common.accelerators,
+        &ds_config.session,
+    )?;
+    process_image(args, session, &ds_config)?;
     Ok(())
 }
 
-fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
+fn load_config(path: &Option<PathBuf>) -> Result<ds::DeepscolConfig> {
+    let mut builder = config::Config::builder()
+        .add_source(config::Config::try_from(&ds::DeepscolConfig::default())?);
+    if let Some(config_path) = path.as_ref() {
+        log::info!("Loading configuration from file: {:?}", config_path);
+        builder = builder.add_source(config::File::from(config_path.as_path()));
+    } else {
+        log::debug!("No configuration file provided, using default configuration and environment variables.");
+    };
+    let config = builder
+        .add_source(
+            config::Environment::with_prefix("DS")
+                .separator("__")
+                .list_separator(",")
+                .try_parsing(true),
+        )
+        .build()?
+        .try_deserialize()?;
+    log::debug!("Deepscol configuration: {:?}", config);
+    Ok(config)
+}
+
+fn process_image(
+    args: SingleCmdArgs,
+    mut session: Session,
+    ds_config: &ds::DeepscolConfig,
+) -> Result<Session> {
     let image_path = &args.input_image;
 
     let (image, metadata) = ds::load_image_from_path(image_path)
@@ -194,25 +226,6 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
 
     // convert to ndarray
     let mut output3 = ds::extract_array_from_output(outputs);
-
-    let mut builder = config::Config::builder()
-        .add_source(config::Config::try_from(&ds::DeepscolConfig::default())?);
-    if let Some(config_path) = args.common.config.as_ref() {
-        log::info!("Loading configuration from file: {:?}", config_path);
-        builder = builder.add_source(config::File::from(config_path.as_path()));
-    } else {
-        log::debug!("No configuration file provided, using default configuration and environment variables.");
-    };
-    let ds_config: ds::DeepscolConfig = builder
-        .add_source(
-            config::Environment::with_prefix("DS")
-                .separator("__")
-                .list_separator(",")
-                .try_parsing(true),
-        )
-        .build()?
-        .try_deserialize()?;
-    log::debug!("Deepscol configuration: {:?}", ds_config);
 
     let cropping_params = ds::calculate_crop_parameters(
         &output3,
@@ -402,7 +415,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
             model_io,
             metadata,
             scan_direction,
-            size_config: ds_config.size,
+            size_config: ds_config.size.clone(),
             title,
         };
         let html = ds::create_result_html_from_lm(html_args)?;
@@ -414,7 +427,8 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
 
 fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
     let model_path = &args.common.model;
-    let mut session = load_model(model_path, &args.common.accelerators)?;
+    let ds_config = load_config(&args.common.config)?;
+    let mut session = load_model(model_path, &args.common.accelerators, &ds_config.session)?;
 
     let input_images_list =
         std::fs::read_to_string(&args.input_images_list).with_context(|| {
@@ -459,22 +473,36 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
                 html,
             },
         };
-        session = process_image(single_args, session)?;
+        session = process_image(single_args, session, &ds_config)?;
     }
     Ok(())
 }
 
-fn load_model(model_path: &Option<PathBuf>, accelerators: &[Accelerator]) -> Result<Session> {
-    let mut builder = Session::builder()
+fn set_builder_config(builder: SessionBuilder, config: &SessionConfig) -> Result<SessionBuilder> {
+    let builder = builder.with_parallel_execution(config.parallel_execution)?;
+    let builder = if let Some(intra_threads) = config.intra_threads {
+        builder.with_intra_threads(intra_threads)?
+    } else {
+        builder
+    };
+    let builder = if let Some(inter_threads) = config.inter_threads {
+        builder.with_inter_threads(inter_threads)?
+    } else {
+        builder
+    };
+    Ok(builder)
+}
+
+fn load_model(
+    model_path: &Option<PathBuf>,
+    accelerators: &[Accelerator],
+    session_config: &SessionConfig,
+) -> Result<Session> {
+    let builder = Session::builder()
         .expect("Cannot create Session builder.")
         .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
-        .expect("Cannot optimize graph.")
-        .with_parallel_execution(true)
-        .expect("Cannot activate parallel execution.")
-        .with_intra_threads(2)
-        .expect("Cannot set intra thread count.")
-        .with_inter_threads(1)
-        .expect("Cannot set inter thread count.");
+        .expect("Cannot optimize graph.");
+    let mut builder = set_builder_config(builder, session_config)?;
     let eps = accelerators
         .iter()
         .map(|acc| {

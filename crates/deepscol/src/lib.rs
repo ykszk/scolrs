@@ -152,13 +152,30 @@ impl Default for HeatmapConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionConfig {
+    pub parallel_execution: bool,
+    pub intra_threads: Option<usize>,
+    pub inter_threads: Option<usize>,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            parallel_execution: false,
+            intra_threads: Some(4),
+            inter_threads: Some(1),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeepscolConfig {
     pub heatmap: HeatmapConfig,
     /// SVG size and resize parameters
     pub size: SizeConfig,
-
     pub crop: CropConfig,
+    pub session: SessionConfig,
 }
 
 /// Extract landmark point out of the input heatmaps
