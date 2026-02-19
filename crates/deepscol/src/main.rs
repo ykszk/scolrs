@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use deepscol as ds;
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use metaimage::WriteMhd;
+use ort::execution_providers::ExecutionProvider;
 use ort::session::Session;
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
@@ -64,6 +65,21 @@ enum Commands {
     Config(ConfigArgs),
 }
 
+#[derive(ValueEnum, Debug, Clone)]
+enum Accelerator {
+    Cuda,
+}
+
+impl Accelerator {
+    fn to_ep(&self) -> Result<Box<dyn ExecutionProvider>> {
+        match self {
+            Accelerator::Cuda => Ok(Box::new(
+                ort::execution_providers::cuda::CUDAExecutionProvider::default(),
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Clone)]
 struct CommonArgs {
     /// Path to the onnx model file
@@ -79,6 +95,9 @@ struct CommonArgs {
     /// Additionally, use environment variables with prefix `DS__` (e.g. `DS__HEATMAP__THRESH=0.5`).
     #[arg(long)]
     config: Option<PathBuf>,
+    /// Accelerators
+    #[arg(short, long)]
+    accelerators: Vec<Accelerator>,
 }
 
 #[derive(Parser)]
@@ -142,7 +161,7 @@ fn main() -> Result<()> {
 }
 
 fn single_cmd(args: SingleCmdArgs) -> Result<()> {
-    let session = load_model(&args.common.model)?;
+    let session = load_model(&args.common.model, &args.common.accelerators)?;
     process_image(args, session)?;
     Ok(())
 }
@@ -395,7 +414,7 @@ fn process_image(args: SingleCmdArgs, mut session: Session) -> Result<Session> {
 
 fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
     let model_path = &args.common.model;
-    let mut session = load_model(model_path)?;
+    let mut session = load_model(model_path, &args.common.accelerators)?;
 
     let input_images_list =
         std::fs::read_to_string(&args.input_images_list).with_context(|| {
@@ -445,8 +464,8 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
     Ok(())
 }
 
-fn load_model(model_path: &Option<PathBuf>) -> Result<Session> {
-    let builder = Session::builder()
+fn load_model(model_path: &Option<PathBuf>, accelerators: &[Accelerator]) -> Result<Session> {
+    let mut builder = Session::builder()
         .expect("Cannot create Session builder.")
         .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
         .expect("Cannot optimize graph.")
@@ -456,6 +475,20 @@ fn load_model(model_path: &Option<PathBuf>) -> Result<Session> {
         .expect("Cannot set intra thread count.")
         .with_inter_threads(1)
         .expect("Cannot set inter thread count.");
+    let eps = accelerators
+        .iter()
+        .map(|acc| {
+            log::info!("Adding execution provider for accelerator: {:?}", acc);
+            acc.to_ep()
+        })
+        .collect::<Result<Vec<Box<dyn ExecutionProvider>>>>()?;
+    log::info!("Using execution providers: {:?}", accelerators);
+    for ep in eps {
+        let reg_result = ep.register(&mut builder);
+        if let Err(e) = reg_result {
+            log::warn!("Failed to register execution provider: {}", e);
+        }
+    }
     let session = if let Some(model_path) = model_path {
         log::info!("Loading model from file: {:?}", model_path);
         builder

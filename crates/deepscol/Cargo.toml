@@ -21,8 +21,10 @@ path = "src/dev.rs"
 
 [features]
 default = ["std"]
-std = ["ort/std", "ort/download-binaries"]
+std = ["cuda", "ort/std", "ort/download-binaries"]
 wasm = ["ort/alternative-backend"]
+gdcm = ["dicom-pixeldata/gdcm"]
+cuda = ["ort/cuda", "ort/copy-dylibs"]
 
 [dependencies]
 scolrs = { path = "../scolrs", features = ['dicom'] }

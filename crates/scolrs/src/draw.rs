@@ -1859,7 +1859,7 @@ where
 
                 groups.push(g.into());
             }
-            Err(err) => log::info!("Failed to draw {}: {:?}", draw_component.id(), err),
+            Err(err) => log::debug!("Failed to draw {}: {:?}", draw_component.id(), err),
         }
     }
 
