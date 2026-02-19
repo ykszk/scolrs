@@ -1012,6 +1012,7 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
     Ok(html)
 }
 
+#[cfg(feature = "embed_asm")]
 pub fn embedded_asm(direction: ScanDirection) -> Result<Vec<ActiveShapeModel>, serde_json::Error> {
     match direction {
         ScanDirection::Coronal => {
