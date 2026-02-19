@@ -658,7 +658,9 @@ pub struct Adi<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for Adi<'_> {}
 impl Adi<'_> {
     fn prep(&self) -> Result<(), MeasureError> {
-        self.0.anterior_dens.validate_label_length("Dens", 1)?;
+        self.0
+            .anterior_dens
+            .validate_label_length("AnteriorDens", 1)?;
         self.0
             .anterior_c1_arch
             .validate_label_length("AnteriorC1Arch", 1)?;
@@ -1773,33 +1775,61 @@ impl DrawComponent for VertebralLabels<'_> {
     ) -> Result<element::Group, DrawError> {
         let mut group = self.default_group();
         let mut c2t1_corners = self.0.corners.0.clone();
-        let dens = concatenate(
-            Axis(0),
-            &[self.0.anterior_dens.view(), self.0.posterior_dens.view()],
-        )
-        .unwrap();
-        let c2 = c2t1_corners.index_axis(Axis(0), 0);
-        let c2_bl_br = c2.slice(s![2.., ..]);
+        let missing_dens = self
+            .0
+            .anterior_dens
+            .validate_label_length("AnteriorDens", 1)
+            .is_err();
+        let missing_dens = missing_dens
+            || self
+                .0
+                .posterior_dens
+                .validate_label_length("PosteriorDens", 1)
+                .is_err();
+        if missing_dens {
+            // Create C3 to T1 labels
+            let c3t1_centroids =
+                Centroids::from(Corners(c2t1_corners.slice(s![1.., .., ..]).to_owned()));
+            for (i, centroid) in c3t1_centroids.axis_iter(Axis(0)).enumerate() {
+                let label = if i <= 4 {
+                    // C3 to C7
+                    format!("C{}", i + 3)
+                } else {
+                    "T1".to_string()
+                };
+                let text = painter.text(&label, centroid, None, None);
+                group = group.add(text);
+            }
+        } else {
+            // Create C1 and  C2 label positions based on the dens position
+            let dens = concatenate(
+                Axis(0),
+                &[self.0.anterior_dens.view(), self.0.posterior_dens.view()],
+            )
+            .unwrap();
+            let c2 = c2t1_corners.index_axis(Axis(0), 0);
+            let c2_bl_br = c2.slice(s![2.., ..]);
 
-        // Use the middle point of the dens and c2 lower endplate as the pseudo c2 top endplate
-        let c2_tl_tr = 2.0 * &dens / 3.0 + &c2_bl_br / 3.0;
-        c2t1_corners
-            .index_axis_mut(Axis(0), 0)
-            .slice_mut(s![..2, ..])
-            .assign(&c2_tl_tr);
-        let c1_centroid = dens.mean_axis(Axis(0)).unwrap();
-        let c2t1_centroids = Centroids::from(Corners(c2t1_corners));
-        let c1t1_centroids =
-            concatenate![Axis(0), c1_centroid.insert_axis(Axis(0)), c2t1_centroids];
-        for (i, centroid) in c1t1_centroids.axis_iter(Axis(0)).enumerate() {
-            let label = if i <= 6 {
-                // C1 to C7
-                format!("C{}", i + 1)
-            } else {
-                "T1".to_string()
-            };
-            let text = painter.text(&label, centroid, None, None);
-            group = group.add(text);
+            // Use the middle point of the dens and c2 lower endplate as the pseudo c2 top endplate
+            let c2_tl_tr = 2.0 * &dens / 3.0 + &c2_bl_br / 3.0;
+            c2t1_corners
+                .index_axis_mut(Axis(0), 0)
+                .slice_mut(s![..2, ..])
+                .assign(&c2_tl_tr);
+            let c1_centroid = dens.mean_axis(Axis(0)).unwrap();
+            let c2t1_centroids = Centroids::from(Corners(c2t1_corners));
+            let c1t1_centroids =
+                concatenate![Axis(0), c1_centroid.insert_axis(Axis(0)), c2t1_centroids];
+            for (i, centroid) in c1t1_centroids.axis_iter(Axis(0)).enumerate() {
+                let label = if i <= 6 {
+                    // C1 to C7
+                    format!("C{}", i + 1)
+                } else {
+                    "T1".to_string()
+                };
+                let text = painter.text(&label, centroid, None, None);
+                group = group.add(text);
+            }
         }
         Ok(group)
     }
