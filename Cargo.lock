@@ -3934,6 +3934,7 @@ dependencies = [
  "indexmap",
  "labelme-rs",
  "log",
+ "metaimage",
  "ndarray 0.16.1",
  "ndarray-npz",
  "ndarray-stats",

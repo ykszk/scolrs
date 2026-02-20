@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
+use metaimage::WriteMhd;
 use ndarray::{Array2, Axis};
 
 use crate::cli::{
@@ -10,8 +11,8 @@ use crate::cli::{
 use labelme_rs::LabelMeData;
 
 use scolrs::asm::{
-    self, add_env_config, apply_asm, create_shapes_from_fitted_points, extract_points,
-    extract_reference_points, icp, model::ActiveShapeModel, AsmConfig,
+    self, apply_asm, create_shapes_from_fitted_points, extract_points, extract_reference_points,
+    icp, model::ActiveShapeModel, point_config::PointSetConfig, AddEnvConfig, AsmConfig,
 };
 use serde_json;
 
@@ -22,6 +23,7 @@ pub fn cmd(args: AsmArgs) -> anyhow::Result<()> {
         AsmSubCommands::Recon(args) => cmd_recon(args),
         AsmSubCommands::Icp(args) => cmd_icp(args),
         AsmSubCommands::Config(args) => cmd_config(args),
+        AsmSubCommands::PointConfig(args) => cmd_point_config(args),
     }
 }
 
@@ -29,18 +31,86 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
     // Create ASM from json file
     let asm = read_asm(&args.asm_model)?;
 
-    let mut npz = ndarray_npz::NpzReader::new(
-        std::fs::File::open(&args.heatmaps)
-            .with_context(|| format!("Opening {:?}", args.heatmaps))?,
-    )?;
-    let heatmaps: ndarray::Array3<f64> = npz
-        .by_name(&args.key)
-        .with_context(|| format!("Reading array with key '{}' from npz", args.key))?;
+    let point_set: PointSetConfig = toml::from_str(&std::fs::read_to_string(&args.point_config)?)?;
+    log::debug!("Loaded point set configuration: {:?}", point_set);
+
+    let heatmap_extension = args
+        .heatmaps
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
+    let heatmaps = if heatmap_extension == "npz" {
+        let mut npz = ndarray_npz::NpzReader::new(
+            std::fs::File::open(&args.heatmaps)
+                .with_context(|| format!("Opening {:?}", args.heatmaps))?,
+        )?;
+        let heatmaps: std::result::Result<ndarray::Array3<f64>, _> = npz.by_name(&args.key);
+        let heatmaps = if let Err(e) = &heatmaps {
+            match e {
+                ndarray_npz::ReadNpzError::Npy(
+                    ndarray_npz::ndarray_npy::ReadNpyError::WrongDescriptor(_),
+                ) => {
+                    log::debug!(
+                        "Failed to read heatmaps from {:?} with key '{}': {:?}",
+                        args.heatmaps,
+                        args.key,
+                        e
+                    );
+                    // try u16
+                    let heatmaps_u16: ndarray::Array3<u16> =
+                        npz.by_name(&args.key).with_context(|| {
+                            format!("Reading array with key '{}' from npz", args.key)
+                        })?;
+                    heatmaps_u16.mapv(|v| v as f64)
+                }
+                _ => {
+                    anyhow::bail!(
+                        "Failed to read heatmaps from {:?} with key '{}': {:?}",
+                        args.heatmaps,
+                        args.key,
+                        e
+                    )
+                }
+            }
+        } else {
+            heatmaps.unwrap()
+        };
+        heatmaps
+    } else if heatmap_extension == "mha" || heatmap_extension == "mhd" {
+        let mhd = metaimage::MetaImage::read(&args.heatmaps)?;
+        let heatmaps = match mhd.data.element_type() {
+            metaimage::ElementType::Float => mhd.data.into_f32_array().unwrap().mapv(|v| v as f64),
+            metaimage::ElementType::Double => mhd.data.into_f64_array().unwrap(),
+            _ => {
+                anyhow::bail!(
+                    "Unsupported data type in heatmap file {:?}: {:?}. Only float and double are supported.",
+                    args.heatmaps,
+                    mhd.data.element_type()
+                )
+            }
+        };
+        // ndarray 17 to 16
+        let heatmaps = ndarray::Array3::from_shape_vec(
+            (
+                heatmaps.shape()[0],
+                heatmaps.shape()[1],
+                heatmaps.shape()[2],
+            ),
+            heatmaps.into_raw_vec_and_offset().0,
+        )?;
+        heatmaps
+    } else {
+        anyhow::bail!(
+            "Unsupported heatmap file format: {:?}. Only .npz and .mha/.mhd are supported.",
+            heatmap_extension
+        );
+    };
     log::debug!(
         "Loaded heatmaps with shape {:?} from {:?}",
         heatmaps.dim(),
         args.heatmaps
     );
+
     let heatmaps = match args.channel_order {
         crate::cli::ChannelOrder::Last => {
             log::debug!(
@@ -49,26 +119,82 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
             heatmaps.permuted_axes([2, 0, 1])
         }
         crate::cli::ChannelOrder::First => heatmaps,
+        crate::cli::ChannelOrder::Auto => {
+            // Heuristic: if the number of channels in the last dimension matches the number of ASM labels, assume channel-last format. Otherwise, assume channel-first format.
+            if heatmaps.shape()[2] == asm.labels.len() {
+                log::debug!(
+                    "Auto-detected heatmap format as channel-last (H, W, C) based on the last dimension size {} matching the number of ASM labels {}.",
+                    heatmaps.shape()[2],
+                    asm.labels.len()
+                );
+                heatmaps.permuted_axes([2, 0, 1])
+            } else if heatmaps.shape()[0] == asm.labels.len() {
+                log::debug!(
+                    "Auto-detected heatmap format as channel-first (C, H, W) based on the first dimension size {} matching the number of ASM labels {}.",
+                    heatmaps.shape()[0],
+                    asm.labels.len()
+                );
+                heatmaps
+            } else {
+                anyhow::bail!(
+                    "Failed to auto-detect heatmap format: last dimension size is {}, first dimension size is {}, but number of ASM labels is {}. Please specify the channel order explicitly.",
+                    heatmaps.shape()[2],
+                    heatmaps.shape()[0],
+                    asm.labels.len()
+                );
+            }
+        }
     };
+    let heatmaps = point_set.select_channels(heatmaps.view(), &asm.labels);
+    if let Some(path) = args.selected_heatmaps {
+        // save selected heatmaps for debugging
+        use metaimage::MetaImage;
+        // convert to metaimage's ndarray (v0.17). Can be removed the version conflict is resolved.
+        let out_heatmaps = metaimage::ndarray::Array3::from_shape_vec(
+            (
+                heatmaps.shape()[2],
+                heatmaps.shape()[1],
+                heatmaps.shape()[0],
+            ),
+            heatmaps.clone().into_raw_vec_and_offset().0,
+        )?;
+        MetaImage::write_mhd(out_heatmaps.view(), &path)?;
+    }
     let ref_lm: LabelMeData = serde_json::from_reader(
         std::fs::File::open(&args.lm_in)
             .with_context(|| format!("Opening labelme file {:?}", args.lm_in))?,
     )?;
+    let lm_scale = heatmaps.shape()[1] as f64 / ref_lm.imageHeight as f64;
+    let mut ref_lm_scaled = ref_lm.clone();
+    ref_lm_scaled.scale(lm_scale);
 
-    let mut config_builder =
-        config::Config::builder().add_source(config::Config::try_from(&AsmConfig::default())?);
-    if let Some(config_path) = args.config {
+    // let mut config_builder =
+    //     config::Config::builder().add_source(config::Config::try_from(&AsmConfig::default())?);
+    let asm_config = if let Some(config_path) = args.config {
         log::debug!("Loading ASM fitting configuration from {:?}", config_path);
-        config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
-    }
-    let config_builder = add_env_config(config_builder).build()?;
+        // config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
+        config::Config::builder()
+            .add_source(config::File::from(config_path.as_path()))
+            .add_asm_env_source()
+            .build()?
+            .try_deserialize()?
+    } else {
+        config::Config::builder()
+            .add_source(config::Config::try_from(&AsmConfig::default())?)
+            .add_asm_env_source()
+            .build()?
+            .try_deserialize()?
+    };
+    // let config_builder = add_env_config(config_builder).build()?;
 
-    let asm_config: AsmConfig = config_builder.try_deserialize()?;
+    // let asm_config: AsmConfig = config_builder.try_deserialize()?;
     log::debug!("ASM fitting configuration: {:?}", asm_config);
 
     let mut cached_heatmaps = asm::CachedHeatmaps::new(heatmaps.view());
-    let (output_lm, histories, optimal_params, _fitted_shape) =
-        apply_asm(asm, asm_config, &mut cached_heatmaps, &ref_lm)?;
+    let (mut output_lm, histories, optimal_params, _fitted_shape) =
+        apply_asm(asm, asm_config, &mut cached_heatmaps, &ref_lm_scaled)?;
+
+    output_lm.scale(1.0 / lm_scale);
 
     if let Some(output_path) = args.output.params {
         // save as json
@@ -275,7 +401,7 @@ fn cmd_icp(args: AsmIcpArgs) -> anyhow::Result<()> {
         log::debug!("Configuration from {:?}", config_path);
         config_builder = config_builder.add_source(config::File::from(config_path.as_path()))
     }
-    let config_builder = add_env_config(config_builder).build()?;
+    let config_builder = config_builder.add_asm_env_source().build()?;
     let icp_config: icp::IcpConfig = config_builder.try_deserialize()?;
     log::debug!("ICP configuration: {:?}", icp_config);
 
@@ -343,7 +469,7 @@ fn cmd_config(args: AsmConfigArgs) -> anyhow::Result<()> {
     }
     if args.env {
         log::debug!("Configuration from environment variables with prefix 'ASM'");
-        config_builder = add_env_config(config_builder);
+        config_builder = config_builder.add_asm_env_source();
     }
     let config_builder = config_builder.build()?;
     let asm_config: AsmConfig = config_builder.try_deserialize()?;
@@ -425,5 +551,22 @@ fn cmd_project(args: AsmProjectArgs) -> anyhow::Result<()> {
     serde_json::to_writer_pretty(output_file, &projected_params)
         .with_context(|| format!("Writing projected parameters to {:?}", args.output))?;
     println!("Saved projected parameters to {:?}", args.output);
+    Ok(())
+}
+
+fn cmd_point_config(args: crate::cli::AsmPointConfigArgs) -> anyhow::Result<()> {
+    let output_file = std::fs::File::create(&args.output)
+        .with_context(|| format!("Creating configuration file {:?}", args.output))?;
+    let ps_config = match args.kind {
+        crate::cli::AsmPointConfigKind::Spine => PointSetConfig::spine(),
+        crate::cli::AsmPointConfigKind::NeckLateral => PointSetConfig::neck_lateral(),
+    };
+    let toml_str = toml::to_string_pretty(&ps_config)?;
+    std::io::Write::write_all(
+        &mut std::io::BufWriter::new(output_file),
+        toml_str.as_bytes(),
+    )
+    .with_context(|| format!("Writing configuration to {:?}", args.output))?;
+    println!("Saved configuration file to {:?}", args.output);
     Ok(())
 }

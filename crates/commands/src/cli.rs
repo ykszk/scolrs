@@ -458,7 +458,7 @@ pub struct ConfidenceArgs {
     pub output: PathBuf,
 
     /// Key in the npz file for the confidence map
-    #[clap(long, default_value = "heatmaps.npy")]
+    #[clap(long, default_value = "heatmaps")]
     pub key: String,
 }
 
@@ -484,6 +484,9 @@ pub enum AsmSubCommands {
 
     /// Print configuration file
     Config(AsmConfigArgs),
+
+    /// Print point set configuration
+    PointConfig(AsmPointConfigArgs),
 }
 
 #[derive(Debug, Args)]
@@ -503,6 +506,7 @@ pub struct AsmOutput {
 #[derive(ValueEnum, Debug, Copy, Clone, Default)]
 pub enum ChannelOrder {
     #[default]
+    Auto,
     Last,
     First,
 }
@@ -531,6 +535,12 @@ pub struct AsmFitArgs {
     /// Config file in toml. Use `asm config` command to generate a template
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config: Option<PathBuf>,
+    /// Point set config
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub point_config: PathBuf,
+    /// Output selected heatmaps for debugging
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub selected_heatmaps: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -605,6 +615,22 @@ pub struct AsmConfigArgs {
     /// Load environment variables for configuration
     #[clap(short, long)]
     pub env: bool,
+}
+
+#[derive(Debug, Copy, Clone, ValueEnum)]
+pub enum AsmPointConfigKind {
+    Spine,
+    NeckLateral,
+}
+
+#[derive(Parser, Debug)]
+pub struct AsmPointConfigArgs {
+    /// Output configuration file in toml
+    #[clap(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// Kind
+    #[clap(short, long, default_value = "spine")]
+    pub kind: AsmPointConfigKind,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone, Default)]
