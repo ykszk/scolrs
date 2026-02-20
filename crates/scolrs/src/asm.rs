@@ -3,6 +3,7 @@ pub mod alignment;
 pub mod fit;
 pub mod icp;
 pub mod model;
+pub mod point_config;
 
 use crate::asm::{
     self,
@@ -17,15 +18,19 @@ use ndarray::{s, Array1, Array2, Array3, ArrayView3, Axis};
 use ndarray_ndimage as ndi;
 use serde::{Deserialize, Serialize};
 
-pub fn add_env_config(
-    builder: config::ConfigBuilder<config::builder::DefaultState>,
-) -> config::ConfigBuilder<config::builder::DefaultState> {
-    builder.add_source(
-        config::Environment::with_prefix("ASM")
-            .separator("__")
-            .list_separator(",")
-            .try_parsing(true),
-    )
+pub trait AddEnvConfig {
+    fn add_asm_env_source(self) -> Self;
+}
+
+impl AddEnvConfig for config::ConfigBuilder<config::builder::DefaultState> {
+    fn add_asm_env_source(self) -> Self {
+        self.add_source(
+            config::Environment::with_prefix("ASM")
+                .separator("__")
+                .list_separator(",")
+                .try_parsing(true),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use ndarray::{Array3, ArrayView3, Axis};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +9,29 @@ pub struct PointSetConfig {
     /// Maximum number of points for each label
     pub max_counts: Vec<usize>,
     pub ch_range_rgb: (Range<usize>, Range<usize>, Range<usize>),
+}
+
+impl PointSetConfig {
+    pub fn select_channels(
+        &self,
+        heatmaps: ArrayView3<f64>,
+        required_labels: &[String],
+    ) -> Array3<f64> {
+        let mut required_ch_indices = Vec::new();
+        for label in required_labels.iter() {
+            let ch_index = self.labels.iter().position(|l| l == label);
+            if let Some(ch_index) = ch_index {
+                required_ch_indices.push(ch_index);
+            } else {
+                panic!(
+                    "Label {} not found in point_config.labels ({:?})",
+                    label, self.labels
+                )
+            };
+        }
+        log::debug!("ASM required channel indices: {:?}", required_ch_indices);
+        heatmaps.select(Axis(0), &required_ch_indices)
+    }
 }
 
 impl PointSetConfig {

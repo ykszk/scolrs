@@ -23,8 +23,6 @@ use std::{collections::HashMap, ops::Range};
 use wasm_bindgen::prelude::*;
 pub type Point = (f32, f32);
 
-pub mod point_config;
-
 #[wasm_bindgen]
 #[derive(Default, Debug, Clone, Copy)]
 pub enum ScanDirection {
@@ -459,7 +457,7 @@ use scolrs::{
     CoronalDraw, CoronalPointsAndCurve, MeasureAndDraw,
 };
 
-use crate::point_config::PointSetConfig;
+pub use scolrs::asm::point_config::{self, PointSetConfig};
 
 /// Returns the bounding box (min_x, min_y, max_x, max_y) of the true values in a 2D boolean ndarray.
 /// Returns None if no true values are found.
@@ -719,7 +717,7 @@ impl OriginalIO {
         image_path: String,
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
-        point_set_config: &point_config::PointSetConfig,
+        point_set_config: &PointSetConfig,
     ) -> Self {
         let original_image_wh = original_image.dimensions();
         let input_height = output3.shape()[1] as u32;
@@ -759,7 +757,7 @@ impl CroppedIO {
         output3: Array3<f32>,
         points: Vec<Vec<(f32, f32)>>,
         cropping_params: CroppingParams,
-        point_set_config: &point_config::PointSetConfig,
+        point_set_config: &PointSetConfig,
     ) -> Self {
         let CroppingParams {
             min_x,
@@ -1055,20 +1053,7 @@ fn _apply_asms(
         return Ok(Vec::new());
     }
     let first_asm = &asms[0].0;
-    let mut required_ch_indices = Vec::new();
-    for label in first_asm.labels.iter() {
-        let ch_index = point_config.labels.iter().position(|l| l == label);
-        if let Some(ch_index) = ch_index {
-            required_ch_indices.push(ch_index);
-        } else {
-            panic!(
-                "Label {} not found in point_config.labels ({:?})",
-                label, point_config.labels
-            )
-        };
-    }
-    log::debug!("ASM required channel indices: {:?}", required_ch_indices);
-    let heatmaps = output3.select(Axis(0), &required_ch_indices);
+    let heatmaps = point_config.select_channels(output3, &first_asm.labels);
     let mut cached_heatmaps = scolrs::asm::CachedHeatmaps::new(heatmaps.view());
     let mut asm_results = Vec::new();
     for (asm, asm_config) in asms {

@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::vec;
 
@@ -9,6 +10,7 @@ use metaimage::WriteMhd;
 use ort::execution_providers::ExecutionProvider;
 use ort::session::builder::SessionBuilder;
 use ort::session::Session;
+use scolrs::asm::AddEnvConfig;
 use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 
 #[derive(Debug, Clone, Default, ValueEnum)]
@@ -304,14 +306,19 @@ fn process_image(
             }
             p
         });
-        if output_path.extension().and_then(|s| s.to_str()) == Some("npz") {
+        let file_ext = output_path
+            .extension()
+            .and_then(OsStr::to_str)
+            .unwrap_or("")
+            .to_lowercase();
+        if file_ext == "npz" {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
             let ndarray_output3 = model_io.output3().mapv(|x| (x * 1000.0) as u16);
             // save the output
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
-        } else if output_path.extension().and_then(|s| s.to_str()) == Some("mha") {
+        } else if file_ext == "mha" || file_ext == "mhd" {
             let arr = model_io.output3();
             // convert to metaimage's ndarray (v0.17). Can be removed the version conflict is resolved.
             let ndarray_output3 = metaimage::ndarray::Array3::from_shape_vec(
@@ -320,10 +327,7 @@ fn process_image(
             )?;
             metaimage::MetaImage::write_mhd(ndarray_output3.view(), &output_path)?
         } else {
-            anyhow::bail!(
-                "Unsupported heatmap output format: {:?}",
-                output_path.extension()
-            );
+            anyhow::bail!("Unsupported heatmap output format: {:?}", file_ext);
         }
     }
     let scan_direction = match args.common.direction {
@@ -337,23 +341,24 @@ fn process_image(
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
         for (asm_path, asm_config) in &args.common.asm {
-            let reader = std::fs::File::open(asm_path)
-                .with_context(|| format!("Opening ASM model file {:?}", asm_path))?;
+            let reader = std::io::BufReader::new(
+                std::fs::File::open(asm_path)
+                    .with_context(|| format!("Opening ASM model file {:?}", asm_path))?,
+            );
             let asm: ActiveShapeModel = serde_json::from_reader(reader)
                 .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
 
             let asm_config: AsmConfig = if let Some(asm_config_path) = asm_config.as_ref() {
                 let config_builder = config::Config::builder()
-                    .add_source(config::Config::try_from(&AsmConfig::default())?);
-                let config_builder = scolrs::asm::add_env_config(config_builder)
                     .add_source(config::File::from(asm_config_path.as_path()))
+                    .add_asm_env_source()
                     .build()?;
                 config_builder.try_deserialize()?
             } else {
                 log::debug!("No ASM config associated to the model provided, using default configuration and environment variables.");
                 let config_builder = config::Config::builder()
                     .add_source(config::Config::try_from(&AsmConfig::default())?);
-                let config_builder = scolrs::asm::add_env_config(config_builder).build()?;
+                let config_builder = config_builder.add_asm_env_source().build()?;
                 config_builder.try_deserialize()?
             };
             log::debug!("ASM fitting configuration: {:?}", asm_config);
