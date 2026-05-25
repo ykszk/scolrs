@@ -1778,6 +1778,7 @@ pub struct ScolDescLine {
 pub struct CoronalPointsAndCurve {
     #[serde(flatten)]
     pub coronal_points: CoronalPoints,
+    #[serde(flatten)]
     pub curves: CurveDesc,
 }
 
