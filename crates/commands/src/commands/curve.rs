@@ -6,12 +6,13 @@ use crate::utils::Ndjson;
 use anyhow::{Context, Result};
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use scolrs::{
-    CoronalPoints, Curve, CurveDesc, CurveScoreSet, CurveSet, CurveSetAlgorithm, VertebraDiscIndex,
+    CoronalPoints, CoronalPointsAndCurve, CoronalPointsAndCurveLine, CoronalPointsLine, Curve,
+    CurveDesc, CurveScoreSet, CurveSet, CurveSetAlgorithm, VertebraDiscIndex,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CurveInfoLine {
+pub struct CurveDescLine {
     pub content: CurveDesc,
     pub filename: String,
 }
@@ -64,14 +65,14 @@ impl TryFrom<(&LabelMeData, &CurveSetAlgorithm)> for CurveInfoAll {
     }
 }
 
-impl TryFrom<(&LabelMeDataLine, &CurveSetAlgorithm)> for CurveInfoLine {
+impl TryFrom<(&LabelMeDataLine, &CurveSetAlgorithm)> for CurveDescLine {
     type Error = anyhow::Error;
 
     fn try_from(
         (data, algorithm): (&LabelMeDataLine, &CurveSetAlgorithm),
     ) -> Result<Self, Self::Error> {
         let content: CurveDesc = (&data.content, algorithm).try_into()?;
-        Ok(CurveInfoLine {
+        Ok(CurveDescLine {
             content,
             filename: data.filename.clone(),
         })
@@ -119,31 +120,87 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
         };
         for line in reader.lines() {
             let line = line?;
-            let data: LabelMeDataLine = line.as_str().try_into()?;
-            if args.all {
-                let info: CurveInfoAllLine = (&data, &algorithm).try_into()?;
-                println!("{}", serde_json::to_string(&info)?);
-            } else {
-                let info: CurveInfoLine = (&data, &algorithm).try_into()?;
-                println!("{}", serde_json::to_string(&info)?);
+            // let data: LabelMeDataLine = line.as_str().try_into()?;
+            let (data, coronal_points): (LabelMeDataLine, Option<CoronalPointsLine>) =
+                if args.labelme {
+                    (line.as_str().try_into()?, None)
+                } else {
+                    let cp: CoronalPointsLine = serde_json::from_str(&line)?;
+                    let content: LabelMeData = cp.content.clone().into();
+                    (
+                        LabelMeDataLine {
+                            filename: cp.filename.clone(),
+                            content,
+                        },
+                        Some(cp),
+                    )
+                };
+            match args.format {
+                cli::CurveSetOutput::Curve => {
+                    let info: CurveDescLine = (&data, &algorithm).try_into()?;
+                    println!("{}", serde_json::to_string(&info)?);
+                }
+                cli::CurveSetOutput::All => {
+                    let info: CurveInfoAllLine = (&data, &algorithm).try_into()?;
+                    println!("{}", serde_json::to_string(&info)?);
+                }
+                cli::CurveSetOutput::Points => {
+                    let info: CurveDescLine = (&data, &algorithm).try_into()?;
+
+                    if let Some(cp) = coronal_points {
+                        let pts_and_curve: CoronalPointsAndCurveLine = CoronalPointsAndCurveLine {
+                            filename: data.filename,
+                            content: CoronalPointsAndCurve {
+                                coronal_points: cp.content,
+                                curves: info.content,
+                            },
+                        };
+                        println!("{}", serde_json::to_string(&pts_and_curve)?);
+                    } else {
+                        log::warn!(
+                            "No coronal points found for file {:?}, skipping points output",
+                            data.filename
+                        );
+                    }
+                }
             }
         }
     } else {
         // single json IO
         let s = std::fs::read_to_string(&args.input)
             .with_context(|| format!("Read string from {:?}", &args.input))?;
-        let data: LabelMeData = if args.labelme {
-            s.try_into()?
+        let (data, coronal_points): (LabelMeData, Option<CoronalPoints>) = if args.labelme {
+            (s.try_into()?, None)
         } else {
             let cp: CoronalPoints = serde_json::from_str(&s)?;
-            cp.into()
+            let lm: LabelMeData = cp.clone().into();
+            (lm, Some(cp))
         };
-        if args.all {
-            let info: CurveInfoAll = (&data, &algorithm).try_into()?;
-            println!("{}", serde_json::to_string(&info)?);
-        } else {
-            let info: CurveDesc = (&data, &algorithm).try_into()?;
-            println!("{}", serde_json::to_string(&info)?);
+        match args.format {
+            cli::CurveSetOutput::Curve => {
+                let info: CurveDesc = (&data, &algorithm).try_into()?;
+                println!("{}", serde_json::to_string(&info)?);
+            }
+            cli::CurveSetOutput::All => {
+                let info: CurveInfoAll = (&data, &algorithm).try_into()?;
+                println!("{}", serde_json::to_string(&info)?);
+            }
+            cli::CurveSetOutput::Points => {
+                let info: CurveDesc = (&data, &algorithm).try_into()?;
+
+                if let Some(cp) = coronal_points {
+                    let pts_and_curve = CoronalPointsAndCurve {
+                        coronal_points: cp,
+                        curves: info,
+                    };
+                    println!("{}", serde_json::to_string(&pts_and_curve)?);
+                } else {
+                    log::warn!(
+                        "No coronal points found for file {:?}, skipping points output",
+                        args.input
+                    );
+                }
+            }
         }
     }
     Ok(())

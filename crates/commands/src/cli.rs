@@ -293,13 +293,23 @@ pub enum CurveSetAlgorithm {
     Apex,
 }
 
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq)]
+pub enum CurveSetOutput {
+    /// Output only the identified curves
+    Curve,
+    /// Output all curves with scores
+    All,
+    /// Output point sets and curves
+    Points,
+}
+
 #[derive(Parser, Debug)]
 pub struct CurveArgs {
     /// Input labelme json/ndjson filename. Specify '-' for stdin with ndjson format
     pub input: PathBuf,
-    /// Output all curves
-    #[clap(short, long)]
-    pub all: bool,
+    /// Output format
+    #[clap(long, default_value = "curve")]
+    pub format: CurveSetOutput,
     /// Input data format is labelme instead of native format
     #[clap(long)]
     pub labelme: bool,
