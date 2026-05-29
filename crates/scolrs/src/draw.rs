@@ -573,6 +573,10 @@ impl Painter {
         let x_axis_rotation = 0;
         let large_arc_flag = 0;
         let angle_rad = angle_between(line1, line2);
+        if angle_rad == 0.0 {
+            log::warn!("Angle between lines is 0. No arc will be drawn");
+            return (group, 0.0);
+        }
         let sweep_flag = if angle_rad < 0.0 { 0 } else { 1 };
         let angle_deg = angle_rad.to_degrees();
         let data = element::path::Data::new()
