@@ -32,6 +32,7 @@ use head_neck::Scale2DPoints;
 use shadow_rs::shadow;
 pub mod asm;
 pub mod measure;
+pub mod reg;
 
 use crate::draw::SpineWithConfidence;
 
