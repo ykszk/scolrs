@@ -186,7 +186,6 @@ pub fn register(
     s_init: f64,
     max_iter: usize,
     tol: f64,
-    verbose: bool,
 ) -> Result<RegistrationResult, PolygonPairError> {
     if pairs.is_empty() {
         return Err(PolygonPairError::Value(
@@ -208,9 +207,7 @@ pub fn register(
     let mut e_prev = objective(pairs, s, &rs, &ts);
     let mut history = vec![e_prev];
 
-    if verbose {
-        println!("  iter  0  |  E = {e_prev:.6e}  |  s = {s:.6}");
-    }
+    log::trace!("  iter  0  |  E = {e_prev:.6e}  |  s = {s:.6}");
 
     let mut n_iter = 0usize;
     for iteration in 1..=max_iter {
@@ -223,26 +220,22 @@ pub fn register(
         let e = objective(pairs, s, &rs, &ts);
         history.push(e);
 
-        if verbose {
-            println!("  iter {iteration:2}  |  E = {e:.6e}  |  s = {s:.6}");
-        }
+        log::trace!("  iter {iteration:2}  |  E = {e:.6e}  |  s = {s:.6}");
 
         let rel_change = (e - e_prev).abs() / (e_prev.abs() + 1e-300);
         n_iter = iteration;
         if rel_change < tol {
-            if verbose {
-                println!(
-                    "  Converged after {iteration} iterations (rel delta E = {rel_change:.2e})"
-                );
-            }
+            log::trace!(
+                "  Converged after {iteration} iterations (rel delta E = {rel_change:.2e})"
+            );
             break;
         }
 
         e_prev = e;
     }
 
-    if max_iter > 0 && n_iter == max_iter && verbose {
-        println!("  Reached max_iter={max_iter} without convergence.");
+    if max_iter > 0 && n_iter == max_iter {
+        log::trace!("  Reached max_iter={max_iter} without convergence.");
     }
 
     let pair_results = rs
@@ -355,7 +348,7 @@ mod tests {
             PolygonPair::new(p2, q2).expect("valid pair 2"),
         ];
 
-        let res = register(&pairs, 1.0, 100, 1e-12, false).expect("registration succeeds");
+        let res = register(&pairs, 1.0, 100, 1e-12).expect("registration succeeds");
 
         assert!((res.s - s_true).abs() < 1e-10);
         assert_eq!(res.pairs.len(), 2);
@@ -389,7 +382,7 @@ mod tests {
         let q = apply_known(&p, s_true, rot(th), t);
 
         let pairs = vec![PolygonPair::new(p.clone(), q.clone()).expect("valid pair")];
-        let res = register(&pairs, 0.9, 100, 1e-12, false).expect("registration succeeds");
+        let res = register(&pairs, 0.9, 100, 1e-12).expect("registration succeeds");
         let mapped = transform(&p, &res, 0).expect("transform succeeds");
 
         for i in 0..mapped.nrows() {
@@ -410,7 +403,7 @@ mod tests {
             PolygonPair::new(p2, q2).expect("valid pair 2"),
         ];
 
-        let err = register(&pairs, 1.0, 10, 1e-8, false).expect_err("must fail for N_tot < 12");
+        let err = register(&pairs, 1.0, 10, 1e-8).expect_err("must fail for N_tot < 12");
         match err {
             PolygonPairError::Value(msg) => assert!(msg.contains("N_tot >= 12")),
             other => panic!("unexpected error type: {other:?}"),
@@ -449,8 +442,7 @@ mod tests {
         ];
 
         let pairs = vec![PolygonPair::new(p, q).expect("valid pair")];
-        let err =
-            register(&pairs, 1.0, 10, 1e-8, false).expect_err("must fail for zero source variance");
+        let err = register(&pairs, 1.0, 10, 1e-8).expect_err("must fail for zero source variance");
         match err {
             PolygonPairError::Value(msg) => assert!(msg.contains("degenerate")),
             other => panic!("unexpected error type: {other:?}"),

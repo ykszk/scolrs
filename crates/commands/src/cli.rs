@@ -37,6 +37,8 @@ pub enum Command {
     Confidence(ConfidenceArgs),
     /// Fit Active Shape Model to heatmap
     Asm(AsmArgs),
+    /// Register two sets of vertebrae
+    Register(RegisterArgs),
     /// Print config template
     Config(ConfigArgs),
     /// Generate shell completions
@@ -641,6 +643,19 @@ pub struct AsmPointConfigArgs {
     /// Kind
     #[clap(short, long, default_value = "spine")]
     pub kind: AsmPointConfigKind,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct RegisterArgs {
+    /// Input json file for the moving set of vertebrae. Specify '-' for stdin
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub moving: PathBuf,
+    /// Input json file for the fixed set of vertebrae. Specify '-' for stdin
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub fixed: PathBuf,
+    /// Output json file with the registered points. Specify '-' for stdout
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone, Default)]

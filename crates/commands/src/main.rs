@@ -34,6 +34,7 @@ fn main() -> Result<()> {
         Command::Implant(args) => commands::implant::cmd(args),
         Command::Confidence(args) => commands::confidence::cmd(args),
         Command::Asm(args) => commands::asm::cmd(args),
+        Command::Register(args) => commands::register::cmd(args),
         Command::Config(args) => commands::config::cmd(args),
         Command::Man(args) => commands::man::cmd(args),
     }
