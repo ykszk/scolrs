@@ -140,9 +140,9 @@ pub fn cmd(args: RegisterArgs) -> Result<()> {
     let moving_str = read_input(&args.moving, "moving")?;
     let fixed_str = read_input(&args.fixed, "fixed")?;
 
-    let mut moving: LateralPoints =
+    let moving: LateralPoints =
         serde_json::from_str(&moving_str).context("parse moving as LateralPoints")?;
-    let fixed: LateralPoints =
+    let mut fixed: LateralPoints =
         serde_json::from_str(&fixed_str).context("parse fixed as LateralPoints")?;
 
     let (pairs, specs) = build_polygon_pairs(&moving, &fixed)?;
@@ -188,19 +188,19 @@ pub fn cmd(args: RegisterArgs) -> Result<()> {
         let reg_poly = polygon_pairs::transform(&moving_poly, &result, pair_index)?;
 
         if spec.include_top {
-            moving.corners.0[[top_row, 0, 0]] = reg_poly[[0, 0]];
-            moving.corners.0[[top_row, 0, 1]] = reg_poly[[0, 1]];
-            moving.corners.0[[top_row, 1, 0]] = reg_poly[[1, 0]];
-            moving.corners.0[[top_row, 1, 1]] = reg_poly[[1, 1]];
-            moving.corners.0[[top_row, 2, 0]] = reg_poly[[2, 0]];
-            moving.corners.0[[top_row, 2, 1]] = reg_poly[[2, 1]];
-            moving.corners.0[[top_row, 3, 0]] = reg_poly[[3, 0]];
-            moving.corners.0[[top_row, 3, 1]] = reg_poly[[3, 1]];
+            fixed.corners.0[[top_row, 0, 0]] = reg_poly[[0, 0]];
+            fixed.corners.0[[top_row, 0, 1]] = reg_poly[[0, 1]];
+            fixed.corners.0[[top_row, 1, 0]] = reg_poly[[1, 0]];
+            fixed.corners.0[[top_row, 1, 1]] = reg_poly[[1, 1]];
+            fixed.corners.0[[top_row, 2, 0]] = reg_poly[[2, 0]];
+            fixed.corners.0[[top_row, 2, 1]] = reg_poly[[2, 1]];
+            fixed.corners.0[[top_row, 3, 0]] = reg_poly[[3, 0]];
+            fixed.corners.0[[top_row, 3, 1]] = reg_poly[[3, 1]];
         } else {
-            moving.corners.0[[top_row, 2, 0]] = reg_poly[[0, 0]];
-            moving.corners.0[[top_row, 2, 1]] = reg_poly[[0, 1]];
-            moving.corners.0[[top_row, 3, 0]] = reg_poly[[1, 0]];
-            moving.corners.0[[top_row, 3, 1]] = reg_poly[[1, 1]];
+            fixed.corners.0[[top_row, 2, 0]] = reg_poly[[0, 0]];
+            fixed.corners.0[[top_row, 2, 1]] = reg_poly[[0, 1]];
+            fixed.corners.0[[top_row, 3, 0]] = reg_poly[[1, 0]];
+            fixed.corners.0[[top_row, 3, 1]] = reg_poly[[1, 1]];
         }
     }
 
@@ -213,7 +213,7 @@ pub fn cmd(args: RegisterArgs) -> Result<()> {
         )
     };
     let mut writer = BufWriter::new(writer);
-    serde_json::to_writer_pretty(&mut writer, &moving)?;
+    serde_json::to_writer_pretty(&mut writer, &fixed)?;
     writeln!(&mut writer)?;
 
     Ok(())
