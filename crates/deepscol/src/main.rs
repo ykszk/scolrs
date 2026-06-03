@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use deepscol::{self as ds, SessionConfig};
 use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use metaimage::WriteMhd;
+use ndarray::{Array3, Array4};
 use ort::execution_providers::ExecutionProvider;
 use ort::session::builder::SessionBuilder;
 use ort::session::Session;
@@ -196,31 +197,68 @@ fn load_config(path: &Option<PathBuf>) -> Result<ds::DeepscolConfig> {
     Ok(config)
 }
 
-fn process_image(
-    args: SingleCmdArgs,
-    mut session: Session,
-    ds_config: &ds::DeepscolConfig,
-) -> Result<Session> {
-    let image_path = &args.input_image;
+/// An image loaded from disk and converted to the model input tensor. Produced
+/// by the preprocessing stage, which touches no ONNX session and so can run in
+/// parallel across images.
+struct Preprocessed {
+    image_path: PathBuf,
+    image: image::DynamicImage,
+    metadata: scolrs::ImageMetadata,
+    model_input_height: u32,
+    input: Array4<f32>,
+}
 
-    let (image, metadata) = ds::load_image_from_path(image_path)
+/// The raw heatmap output for an image. Produced by the inference stage, which
+/// owns the (single) ONNX session. Everything downstream is session-free.
+struct Inferred {
+    image_path: PathBuf,
+    image: image::DynamicImage,
+    metadata: scolrs::ImageMetadata,
+    output3: Array3<f32>,
+    cropping_params: Option<CroppingParams>,
+}
+
+/// Stage 1: load the image from disk and build the model input tensor. No
+/// session involved, so this runs in parallel across images.
+fn preprocess_image(image_path: PathBuf, model_input_height: u32) -> Result<Preprocessed> {
+    let (image, metadata) = ds::load_image_from_path(&image_path)
         .with_context(|| format!("Failed to load image from path {:?}", image_path))?;
-    let original_image_width = image.width();
-    let original_image_height = image.height();
     log::info!(
         "Image with shape w x h {:?} loaded successfully",
-        (original_image_width, original_image_height)
+        (image.width(), image.height())
     );
-    log::debug!("Expected model input {:?}", session);
-    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
-    let arr4 = ds::to_model_input(&image, model_input_height)?;
-    let input = ort::value::Tensor::from_array(arr4)?;
+    let input = ds::to_model_input(&image, model_input_height)?;
     log::debug!(
-        "Image converted to tensor successfully with shape: {:?}",
+        "Image converted to input tensor with shape: {:?}",
         input.shape()
     );
-    // Run the model
-    // let inputs = vec![Value::from_array(session.allocator(), &input)?];
+    Ok(Preprocessed {
+        image_path,
+        image,
+        metadata,
+        model_input_height,
+        input,
+    })
+}
+
+/// Stage 2: run the model (detection pass, then an optional crop-and-rerun).
+/// This is the only stage that needs the session, so it runs single-threaded.
+fn infer_image(
+    session: &mut Session,
+    pre: Preprocessed,
+    ds_config: &ds::DeepscolConfig,
+) -> Result<Inferred> {
+    let Preprocessed {
+        image_path,
+        image,
+        metadata,
+        model_input_height,
+        input,
+    } = pre;
+    let original_image_width = image.width();
+    let original_image_height = image.height();
+
+    let input = ort::value::Tensor::from_array(input)?;
     let inputs = ort::inputs!["modelInput" => input];
     log::info!("Running model");
     let outputs: ort::session::SessionOutputs = session.run(inputs)?;
@@ -237,15 +275,7 @@ fn process_image(
         model_input_height,
     );
 
-    let point_thresh = ds_config.heatmap.thresh;
-
-    let point_set_config = match args.common.direction {
-        Direction::Coronal => ds::point_config::PointSetConfig::spine(),
-        Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
-        Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
-    };
-
-    let mut model_io = if let Some(cropping_params) = cropping_params {
+    if let Some(cropping_params) = cropping_params {
         log::info!("cropping image to bounding box: {:?}", cropping_params);
         let CroppingParams {
             min_x,
@@ -261,20 +291,54 @@ fn process_image(
             (max_y - min_y) as u32,
         );
         let arr4 = ds::to_model_input(&cropped_image, model_input_height)?;
-
-        // update the input tensor
         let input3 = ort::value::Tensor::from_array(arr4)?;
-        // update the inputs
         let inputs = ort::inputs!["modelInput" => input3];
         // run the model again
         log::info!("Running model on cropped input");
         let outputs: ort::session::SessionOutputs = session.run(inputs)?;
         log::info!("Model run completed on cropped input");
-        // convert to ndarray
         output3 = ds::extract_array_from_output(outputs);
-        let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
-            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
+    } else {
+        log::info!("No cropping applied");
+    }
 
+    Ok(Inferred {
+        image_path,
+        image,
+        metadata,
+        output3,
+        cropping_params,
+    })
+}
+
+/// Stage 3: turn the raw model output into points (with optional ASM fitting)
+/// and write the requested outputs (heatmap / LabelMe / HTML). Session-free, so
+/// this runs in parallel across images.
+fn finish_image(
+    inf: Inferred,
+    output: OutputGroup,
+    common: &CommonArgs,
+    ds_config: &ds::DeepscolConfig,
+) -> Result<()> {
+    let Inferred {
+        image_path,
+        image,
+        metadata,
+        output3,
+        cropping_params,
+    } = inf;
+
+    let point_thresh = ds_config.heatmap.thresh;
+
+    let point_set_config = match common.direction {
+        Direction::Coronal => ds::point_config::PointSetConfig::spine(),
+        Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
+        Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
+    };
+
+    let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
+        .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
+    let mut model_io = if let Some(cropping_params) = cropping_params {
         ModelIO::Cropped(Box::new(CroppedIO::new(
             image,
             metadata.path.clone(),
@@ -284,9 +348,6 @@ fn process_image(
             &point_set_config,
         )))
     } else {
-        log::info!("No cropping applied");
-        let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
-            .map_err(|e| anyhow::anyhow!("Failed to extract points from cropped output: {}", e))?;
         ModelIO::Original(Box::new(OriginalIO::new(
             image,
             metadata.path.clone(),
@@ -296,12 +357,12 @@ fn process_image(
         )))
     };
 
-    if let Some(output_path) = args.output.heatmap {
+    if let Some(output_path) = output.heatmap {
         let output_path = output_path.unwrap_or_else(|| {
             let mut p = image_path.clone();
             log::debug!("Generating heatmap path from image path: {:?}", p);
             p.set_extension(".mha");
-            if p == *image_path {
+            if p == image_path {
                 p.set_extension("heatmap.mha");
             }
             p
@@ -330,7 +391,7 @@ fn process_image(
             anyhow::bail!("Unsupported heatmap output format: {:?}", file_ext);
         }
     }
-    let scan_direction = match args.common.direction {
+    let scan_direction = match common.direction {
         Direction::Coronal => ds::ScanDirection::Coronal,
         Direction::Sagittal => ds::ScanDirection::Sagittal,
         Direction::NeckLateral => ds::ScanDirection::NeckLateral,
@@ -340,7 +401,7 @@ fn process_image(
         log::info!("Point counts are invalid: {}", e);
         let output3_f64 = model_io.output3().mapv(|x| x as f64);
         let mut asms = Vec::new();
-        for (asm_path, asm_config) in &args.common.asm {
+        for (asm_path, asm_config) in &common.asm {
             let reader = std::io::BufReader::new(
                 std::fs::File::open(asm_path)
                     .with_context(|| format!("Opening ASM model file {:?}", asm_path))?,
@@ -380,7 +441,7 @@ fn process_image(
         }
     }
 
-    if let Some(labelme_path) = args.output.labelme {
+    if let Some(labelme_path) = output.labelme {
         let labelme_path = labelme_path.unwrap_or_else(|| {
             let mut p = image_path.clone();
             log::debug!("Generating LabelMe path from image path: {:?}", p);
@@ -404,7 +465,7 @@ fn process_image(
             )
         })?;
     }
-    if let Some(html_path) = args.output.html {
+    if let Some(html_path) = output.html {
         let html_path = html_path.unwrap_or_else(|| {
             let mut p = image_path.clone();
             log::debug!("Generating HTML path from image path: {:?}", p);
@@ -427,13 +488,52 @@ fn process_image(
         // Save the HTML to a file
         std::fs::write(html_path, html).expect("Failed to write HTML file");
     }
+    Ok(())
+}
+
+/// Process a single image end to end through all three pipeline stages. Used by
+/// the `single` command; the `batch` command drives the same stages as a
+/// pipeline (see [`batch_cmd`]).
+fn process_image(
+    args: SingleCmdArgs,
+    mut session: Session,
+    ds_config: &ds::DeepscolConfig,
+) -> Result<Session> {
+    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
+    let pre = preprocess_image(args.input_image, model_input_height)?;
+    let inf = infer_image(&mut session, pre, ds_config)?;
+    finish_image(inf, args.output, &args.common, ds_config)?;
     Ok(session)
 }
 
+/// Resolve the per-image output paths for the batch command from the requested
+/// output flags and the output directory.
+fn batch_output_paths(
+    flags: &BatchOutputGroup,
+    output_dir: &std::path::Path,
+    file_stem: &str,
+) -> OutputGroup {
+    OutputGroup {
+        heatmap: flags
+            .heatmap
+            .then(|| Some(output_dir.join(format!("{}.mha", file_stem)))),
+        labelme: flags
+            .labelme
+            .then(|| Some(output_dir.join(format!("{}.json", file_stem)))),
+        html: flags
+            .html
+            .then(|| Some(output_dir.join(format!("{}.html", file_stem)))),
+    }
+}
+
 fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
-    let model_path = &args.common.model;
     let ds_config = load_config(&args.common.config)?;
-    let mut session = load_model(model_path, &args.common.accelerators, &ds_config.session)?;
+    let mut session = load_model(
+        &args.common.model,
+        &args.common.accelerators,
+        &ds_config.session,
+    )?;
+    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
 
     let input_images_list =
         std::fs::read_to_string(&args.input_images_list).with_context(|| {
@@ -444,42 +544,97 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
         })?;
     let image_paths: Vec<PathBuf> = input_images_list
         .lines()
-        .map(|line| PathBuf::from(line.trim()))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
         .collect();
     log::info!("Found {} images to process", image_paths.len());
 
+    // Three-stage pipeline: parallel preprocessing -> single-threaded inference
+    // -> parallel postprocessing + output writing. The inference stage is the
+    // only one that needs the (mutably borrowed) ONNX session, so it stays
+    // single-threaded; the surrounding disk I/O, image decoding and HTML/ASM
+    // work overlaps it instead of blocking it.
+    let num_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let channel_cap = num_workers * 2;
+
+    // Paths are tiny, so an unbounded channel is fine; the Preprocessed/Inferred
+    // channels are bounded to bound memory (each item holds a full image).
+    let (path_tx, path_rx) = std::sync::mpsc::channel::<PathBuf>();
+    let (pre_tx, pre_rx) = std::sync::mpsc::sync_channel::<Preprocessed>(channel_cap);
+    let (inf_tx, inf_rx) = std::sync::mpsc::sync_channel::<Inferred>(channel_cap);
+    let path_rx = std::sync::Arc::new(std::sync::Mutex::new(path_rx));
+    let inf_rx = std::sync::Arc::new(std::sync::Mutex::new(inf_rx));
+
     for image_path in image_paths {
-        log::info!("Processing image: {:?}", image_path);
-        let file_stem = image_path.file_stem().unwrap_or_default().to_string_lossy();
-        let heatmap = if args.output.heatmap {
-            let path = args.output_dir.join(format!("{}.mha", file_stem));
-            Some(Some(path))
-        } else {
-            None
-        };
-        let labelme = if args.output.labelme {
-            let path = args.output_dir.join(format!("{}.json", file_stem));
-            Some(Some(path))
-        } else {
-            None
-        };
-        let html = if args.output.html {
-            let path = args.output_dir.join(format!("{}.html", file_stem));
-            Some(Some(path))
-        } else {
-            None
-        };
-        let single_args = SingleCmdArgs {
-            input_image: image_path,
-            common: args.common.clone(),
-            output: OutputGroup {
-                heatmap,
-                labelme,
-                html,
-            },
-        };
-        session = process_image(single_args, session, &ds_config)?;
+        path_tx.send(image_path).expect("path channel closed");
     }
+    drop(path_tx);
+
+    let ds_config = &ds_config;
+    let common = &args.common;
+    let output_dir = &args.output_dir;
+    let output_flags = &args.output;
+
+    std::thread::scope(|scope| {
+        // Stage 1: preprocessing workers (image load + tensor build).
+        for _ in 0..num_workers {
+            let path_rx = std::sync::Arc::clone(&path_rx);
+            let pre_tx = pre_tx.clone();
+            scope.spawn(move || loop {
+                let Ok(image_path) = ({ path_rx.lock().unwrap().recv() }) else {
+                    break;
+                };
+                log::info!("Processing image: {:?}", image_path);
+                match preprocess_image(image_path, model_input_height) {
+                    Ok(pre) => {
+                        if pre_tx.send(pre).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => log::error!("Failed to preprocess image: {:#}", e),
+                }
+            });
+        }
+        drop(pre_tx);
+
+        // Stage 2: the single inference worker, which owns the session.
+        scope.spawn(move || {
+            for pre in pre_rx {
+                match infer_image(&mut session, pre, ds_config) {
+                    Ok(inf) => {
+                        if inf_tx.send(inf).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => log::error!("Inference failed: {:#}", e),
+                }
+            }
+        });
+
+        // Stage 3: postprocessing + output-writing workers.
+        for _ in 0..num_workers {
+            let inf_rx = std::sync::Arc::clone(&inf_rx);
+            scope.spawn(move || loop {
+                let Ok(inf) = ({ inf_rx.lock().unwrap().recv() }) else {
+                    break;
+                };
+                let file_stem = inf
+                    .image_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let output = batch_output_paths(output_flags, output_dir, &file_stem);
+                if let Err(e) = finish_image(inf, output, common, ds_config) {
+                    log::error!("Failed to process {}: {:#}", file_stem, e);
+                }
+            });
+        }
+    });
+
     Ok(())
 }
 
