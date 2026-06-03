@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use ndarray::{s, Axis};
 use scolrs::{
     head_neck::LateralPoints,
     reg::polygon_pairs::{self, PolygonPair},
@@ -13,7 +14,7 @@ use crate::cli::RegisterArgs;
 
 #[derive(Debug, Clone, Copy)]
 struct PairSpec {
-    top_row: usize,
+    row: usize,
     include_top: bool,
 }
 
@@ -36,9 +37,14 @@ fn build_polygon_pairs(
     let moving_corners = &moving.corners.0;
     let fixed_corners = &fixed.corners.0;
 
-    if moving_corners.dim().1 != 4 || fixed_corners.dim().1 != 4 {
+    if moving_corners.dim().1 != 4
+        || fixed_corners.dim().1 != 4
+        || moving_corners.dim().2 != 2
+        || fixed_corners.dim().2 != 2
+    {
         bail!("Expected corners with shape (N, 4, 2)");
     }
+
     if moving_corners.dim() != fixed_corners.dim() {
         bail!(
             "Moving/fixed corners shape mismatch: moving={:?}, fixed={:?}",
@@ -51,82 +57,27 @@ fn build_polygon_pairs(
     }
 
     let n_rows = moving_corners.dim().0;
-    let mut pairs = Vec::with_capacity(n_rows - 1);
-    let mut specs = Vec::with_capacity(n_rows - 1);
+    let mut pairs = Vec::with_capacity(n_rows);
+    let mut specs = Vec::with_capacity(n_rows);
 
     // Pair strategy:
     // - first non-dummy row: (bl, br)
     // - remaining rows: (tl, tr, bl, br)
-    for top_row in 0..n_rows {
-        let include_top = top_row > 0;
+    for row in 0..n_rows {
+        let include_top = row > 0;
         let moving_poly = if include_top {
-            ndarray::arr2(&[
-                [
-                    moving_corners[[top_row, 0, 0]],
-                    moving_corners[[top_row, 0, 1]],
-                ],
-                [
-                    moving_corners[[top_row, 1, 0]],
-                    moving_corners[[top_row, 1, 1]],
-                ],
-                [
-                    moving_corners[[top_row, 2, 0]],
-                    moving_corners[[top_row, 2, 1]],
-                ],
-                [
-                    moving_corners[[top_row, 3, 0]],
-                    moving_corners[[top_row, 3, 1]],
-                ],
-            ])
+            moving_corners.index_axis(Axis(0), row).to_owned()
         } else {
-            ndarray::arr2(&[
-                [
-                    moving_corners[[top_row, 2, 0]],
-                    moving_corners[[top_row, 2, 1]],
-                ],
-                [
-                    moving_corners[[top_row, 3, 0]],
-                    moving_corners[[top_row, 3, 1]],
-                ],
-            ])
+            moving_corners.slice(s![row, 2.., ..]).to_owned()
         };
         let fixed_poly = if include_top {
-            ndarray::arr2(&[
-                [
-                    fixed_corners[[top_row, 0, 0]],
-                    fixed_corners[[top_row, 0, 1]],
-                ],
-                [
-                    fixed_corners[[top_row, 1, 0]],
-                    fixed_corners[[top_row, 1, 1]],
-                ],
-                [
-                    fixed_corners[[top_row, 2, 0]],
-                    fixed_corners[[top_row, 2, 1]],
-                ],
-                [
-                    fixed_corners[[top_row, 3, 0]],
-                    fixed_corners[[top_row, 3, 1]],
-                ],
-            ])
+            fixed_corners.index_axis(Axis(0), row).to_owned()
         } else {
-            ndarray::arr2(&[
-                [
-                    fixed_corners[[top_row, 2, 0]],
-                    fixed_corners[[top_row, 2, 1]],
-                ],
-                [
-                    fixed_corners[[top_row, 3, 0]],
-                    fixed_corners[[top_row, 3, 1]],
-                ],
-            ])
+            fixed_corners.slice(s![row, 2.., ..]).to_owned()
         };
 
         pairs.push(PolygonPair::new(moving_poly, fixed_poly)?);
-        specs.push(PairSpec {
-            top_row,
-            include_top,
-        });
+        specs.push(PairSpec { row, include_top });
     }
 
     Ok((pairs, specs))
@@ -153,54 +104,26 @@ pub fn cmd(args: RegisterArgs) -> Result<()> {
 
     // Apply each per-level transform back to the moving corners.
     for (pair_index, spec) in specs.iter().enumerate() {
-        let top_row = spec.top_row;
+        let row = spec.row;
         let moving_poly = if spec.include_top {
-            ndarray::arr2(&[
-                [
-                    moving.corners.0[[top_row, 0, 0]],
-                    moving.corners.0[[top_row, 0, 1]],
-                ],
-                [
-                    moving.corners.0[[top_row, 1, 0]],
-                    moving.corners.0[[top_row, 1, 1]],
-                ],
-                [
-                    moving.corners.0[[top_row, 2, 0]],
-                    moving.corners.0[[top_row, 2, 1]],
-                ],
-                [
-                    moving.corners.0[[top_row, 3, 0]],
-                    moving.corners.0[[top_row, 3, 1]],
-                ],
-            ])
+            moving.corners.0.index_axis(Axis(0), row).to_owned()
         } else {
-            ndarray::arr2(&[
-                [
-                    moving.corners.0[[top_row, 2, 0]],
-                    moving.corners.0[[top_row, 2, 1]],
-                ],
-                [
-                    moving.corners.0[[top_row, 3, 0]],
-                    moving.corners.0[[top_row, 3, 1]],
-                ],
-            ])
+            moving.corners.0.slice(s![row, 2.., ..]).to_owned()
         };
         let reg_poly = polygon_pairs::transform(&moving_poly, &result, pair_index)?;
 
         if spec.include_top {
-            fixed.corners.0[[top_row, 0, 0]] = reg_poly[[0, 0]];
-            fixed.corners.0[[top_row, 0, 1]] = reg_poly[[0, 1]];
-            fixed.corners.0[[top_row, 1, 0]] = reg_poly[[1, 0]];
-            fixed.corners.0[[top_row, 1, 1]] = reg_poly[[1, 1]];
-            fixed.corners.0[[top_row, 2, 0]] = reg_poly[[2, 0]];
-            fixed.corners.0[[top_row, 2, 1]] = reg_poly[[2, 1]];
-            fixed.corners.0[[top_row, 3, 0]] = reg_poly[[3, 0]];
-            fixed.corners.0[[top_row, 3, 1]] = reg_poly[[3, 1]];
+            fixed
+                .corners
+                .0
+                .index_axis_mut(Axis(0), row)
+                .assign(&reg_poly);
         } else {
-            fixed.corners.0[[top_row, 2, 0]] = reg_poly[[0, 0]];
-            fixed.corners.0[[top_row, 2, 1]] = reg_poly[[0, 1]];
-            fixed.corners.0[[top_row, 3, 0]] = reg_poly[[1, 0]];
-            fixed.corners.0[[top_row, 3, 1]] = reg_poly[[1, 1]];
+            fixed
+                .corners
+                .0
+                .slice_mut(s![row, 2.., ..])
+                .assign(&reg_poly);
         }
     }
 
