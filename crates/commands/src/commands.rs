@@ -9,5 +9,5 @@ pub mod implant;
 pub mod lenke;
 pub mod man;
 pub mod measure;
-pub mod register;
 pub mod svg;
+pub mod vertebra;

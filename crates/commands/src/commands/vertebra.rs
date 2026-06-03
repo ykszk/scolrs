@@ -10,7 +10,7 @@ use scolrs::{
     reg::polygon_pairs::{self, PolygonPair},
 };
 
-use crate::cli::RegisterArgs;
+use crate::cli::VertebraArgs;
 
 #[derive(Debug, Clone, Copy)]
 struct PairSpec {
@@ -83,7 +83,7 @@ fn build_polygon_pairs(
     Ok((pairs, specs))
 }
 
-pub fn cmd(args: RegisterArgs) -> Result<()> {
+pub fn cmd(args: VertebraArgs) -> Result<()> {
     if args.moving.as_os_str() == "-" && args.fixed.as_os_str() == "-" {
         bail!("Both moving and fixed cannot be '-' because stdin can only be read once");
     }
