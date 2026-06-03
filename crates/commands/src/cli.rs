@@ -645,8 +645,22 @@ pub struct AsmPointConfigArgs {
     pub kind: AsmPointConfigKind,
 }
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Args, Debug)]
 pub struct VertebraArgs {
+    #[clap(subcommand)]
+    pub command: VertebraSubCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum VertebraSubCommands {
+    /// Register two sets of vertebrae
+    Register(VertebraRegisterArgs),
+    /// Normalize vertebral shape across poses, removing annotation and shape variation
+    Normalize(VertebraNormalizeArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct VertebraRegisterArgs {
     /// Input json file for the moving set of vertebrae. Specify '-' for stdin
     #[arg(value_hint = ValueHint::FilePath)]
     pub moving: PathBuf,
@@ -656,6 +670,17 @@ pub struct VertebraArgs {
     /// Output json file with the registered points. Specify '-' for stdout
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct VertebraNormalizeArgs {
+    /// Input ndjson of `LateralPointsLine`s. The first line is the reference pose;
+    /// all others are registered to it. Specify '-' for stdin.
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
+    /// Output ndjson of `LateralPointsLine`s. Defaults to stdout.
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone, Default)]

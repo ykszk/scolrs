@@ -282,6 +282,41 @@ pub fn transform(
     Ok(out)
 }
 
+/// Invert the per-pair transform: given points `q` in the fixed frame, recover the
+/// corresponding source points `p` such that `q = s * R * p + t`. Because `R` is a
+/// rotation, the inverse is `p = R^T * (q - t) / s`.
+pub fn transform_inverse(
+    q: &Array2<f64>,
+    result: &RegistrationResult,
+    pair_index: usize,
+) -> Result<Array2<f64>, PolygonPairError> {
+    if q.ndim() != 2 || q.ncols() != 2 {
+        return Err(PolygonPairError::InvalidShape(
+            "Q must have shape (N, 2).".to_string(),
+        ));
+    }
+
+    let pr = result.pairs.get(pair_index).ok_or_else(|| {
+        PolygonPairError::Value(format!("pair_index out of bounds: {pair_index}"))
+    })?;
+
+    if result.s == 0.0 {
+        return Err(PolygonPairError::Value(
+            "Cannot invert a transform with zero scale.".to_string(),
+        ));
+    }
+
+    let mut out = Array2::<f64>::zeros((q.nrows(), 2));
+    for i in 0..q.nrows() {
+        let dx = q[[i, 0]] - pr.t[0];
+        let dy = q[[i, 1]] - pr.t[1];
+        // R^T applied to (dx, dy): columns of R become rows.
+        out[[i, 0]] = (pr.r[0][0] * dx + pr.r[1][0] * dy) / result.s;
+        out[[i, 1]] = (pr.r[0][1] * dx + pr.r[1][1] * dy) / result.s;
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +423,39 @@ mod tests {
         for i in 0..mapped.nrows() {
             assert!((mapped[[i, 0]] - q[[i, 0]]).abs() < 1e-10);
             assert!((mapped[[i, 1]] - q[[i, 1]]).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn transform_inverse_round_trips() {
+        let p = array![
+            [-1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.5],
+            [2.0, -0.25],
+            [-0.5, -1.5],
+            [1.5, 1.25],
+            [0.25, -0.75],
+            [-1.2, 0.4],
+            [0.9, -1.1],
+            [1.1, 0.8],
+            [-0.7, 1.3],
+            [0.4, 0.2],
+        ];
+        let s_true = 1.2;
+        let th = 0.42;
+        let t = [3.0, -2.0];
+        let q = apply_known(&p, s_true, rot(th), t);
+
+        let pairs = vec![PolygonPair::new(p.clone(), q.clone()).expect("valid pair")];
+        let res = register(&pairs, 0.9, 100, 1e-12).expect("registration succeeds");
+
+        let mapped = transform(&p, &res, 0).expect("transform succeeds");
+        let recovered = transform_inverse(&mapped, &res, 0).expect("inverse succeeds");
+
+        for i in 0..p.nrows() {
+            assert!((recovered[[i, 0]] - p[[i, 0]]).abs() < 1e-10);
+            assert!((recovered[[i, 1]] - p[[i, 1]]).abs() < 1e-10);
         }
     }
 

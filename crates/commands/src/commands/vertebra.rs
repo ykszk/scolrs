@@ -1,21 +1,39 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, Read, Write},
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
 };
 
 use anyhow::{bail, Context, Result};
-use ndarray::{s, Axis};
+use ndarray::{s, Array2, Array3, Axis};
 use scolrs::{
-    head_neck::LateralPoints,
+    head_neck::{LateralPoints, LateralPointsLine},
     reg::polygon_pairs::{self, PolygonPair},
 };
 
-use crate::cli::VertebraArgs;
+use crate::cli::{VertebraArgs, VertebraNormalizeArgs, VertebraRegisterArgs, VertebraSubCommands};
 
 #[derive(Debug, Clone, Copy)]
 struct PairSpec {
     row: usize,
     include_top: bool,
+}
+
+/// Extract the polygon a [`PairSpec`] selects from a corner array.
+fn extract_poly(corners: &Array3<f64>, spec: &PairSpec) -> Array2<f64> {
+    if spec.include_top {
+        corners.index_axis(Axis(0), spec.row).to_owned()
+    } else {
+        corners.slice(s![spec.row, 2.., ..]).to_owned()
+    }
+}
+
+/// Write a polygon back into the location a [`PairSpec`] selects.
+fn assign_poly(corners: &mut Array3<f64>, spec: &PairSpec, poly: &Array2<f64>) {
+    if spec.include_top {
+        corners.index_axis_mut(Axis(0), spec.row).assign(poly);
+    } else {
+        corners.slice_mut(s![spec.row, 2.., ..]).assign(poly);
+    }
 }
 
 fn read_input(path: &std::path::Path, field_name: &str) -> Result<String> {
@@ -65,16 +83,8 @@ fn build_polygon_pairs(
     // - remaining rows: (tl, tr, bl, br)
     for row in 0..n_rows {
         let include_top = row > 0;
-        let moving_poly = if include_top {
-            moving_corners.index_axis(Axis(0), row).to_owned()
-        } else {
-            moving_corners.slice(s![row, 2.., ..]).to_owned()
-        };
-        let fixed_poly = if include_top {
-            fixed_corners.index_axis(Axis(0), row).to_owned()
-        } else {
-            fixed_corners.slice(s![row, 2.., ..]).to_owned()
-        };
+        let moving_poly = extract_poly(moving_corners, &PairSpec { row, include_top });
+        let fixed_poly = extract_poly(fixed_corners, &PairSpec { row, include_top });
 
         pairs.push(PolygonPair::new(moving_poly, fixed_poly)?);
         specs.push(PairSpec { row, include_top });
@@ -83,7 +93,7 @@ fn build_polygon_pairs(
     Ok((pairs, specs))
 }
 
-pub fn cmd(args: VertebraArgs) -> Result<()> {
+fn cmd_register(args: VertebraRegisterArgs) -> Result<()> {
     if args.moving.as_os_str() == "-" && args.fixed.as_os_str() == "-" {
         bail!("Both moving and fixed cannot be '-' because stdin can only be read once");
     }
@@ -104,27 +114,9 @@ pub fn cmd(args: VertebraArgs) -> Result<()> {
 
     // Apply each per-level transform back to the moving corners.
     for (pair_index, spec) in specs.iter().enumerate() {
-        let row = spec.row;
-        let moving_poly = if spec.include_top {
-            moving.corners.0.index_axis(Axis(0), row).to_owned()
-        } else {
-            moving.corners.0.slice(s![row, 2.., ..]).to_owned()
-        };
+        let moving_poly = extract_poly(&moving.corners.0, spec);
         let reg_poly = polygon_pairs::transform(&moving_poly, &result, pair_index)?;
-
-        if spec.include_top {
-            fixed
-                .corners
-                .0
-                .index_axis_mut(Axis(0), row)
-                .assign(&reg_poly);
-        } else {
-            fixed
-                .corners
-                .0
-                .slice_mut(s![row, 2.., ..])
-                .assign(&reg_poly);
-        }
+        assign_poly(&mut fixed.corners.0, spec, &reg_poly);
     }
 
     let writer: Box<dyn Write> = if args.output.as_os_str() == "-" {
@@ -140,4 +132,91 @@ pub fn cmd(args: VertebraArgs) -> Result<()> {
     writeln!(&mut writer)?;
 
     Ok(())
+}
+
+fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
+    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
+        Box::new(BufReader::new(io::stdin()))
+    } else {
+        Box::new(BufReader::new(
+            File::open(&args.input).with_context(|| format!("open {:?}", args.input))?,
+        ))
+    };
+
+    // Each line is one pose. The first is the reference; all others are registered to it.
+    let mut lines: Vec<LateralPointsLine> = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed = serde_json::from_str(&line).context("parse line as LateralPointsLine")?;
+        lines.push(parsed);
+    }
+    if lines.len() < 2 {
+        bail!("normalize needs at least 2 input lines (reference + 1 pose)");
+    }
+
+    let reference = &lines[0].content;
+
+    // Register each non-reference pose onto the reference. All poses share the same
+    // corner layout, so the resulting `PairSpec`s are identical across registrations.
+    let mut regs = Vec::with_capacity(lines.len() - 1);
+    let mut shared_specs: Option<Vec<PairSpec>> = None;
+    for line in &lines[1..] {
+        let (pairs, specs) = build_polygon_pairs(&line.content, reference)?;
+        let result = polygon_pairs::register(&pairs, 1.0, 50, 1e-8)
+            .context("register pose to reference corners")?;
+        shared_specs = Some(specs);
+        regs.push(result);
+    }
+    let specs = shared_specs.expect("at least one non-reference pose");
+
+    // Mean shape, computed per polygon in the reference frame: average the reference
+    // corners with every other pose mapped into the reference frame.
+    let n = lines.len() as f64;
+    let mut mean_corners = reference.corners.0.clone();
+    for (pair_index, spec) in specs.iter().enumerate() {
+        let mut acc = extract_poly(&reference.corners.0, spec);
+        for (line, result) in lines[1..].iter().zip(regs.iter()) {
+            let moving_poly = extract_poly(&line.content.corners.0, spec);
+            let mapped = polygon_pairs::transform(&moving_poly, result, pair_index)?;
+            acc = acc + mapped;
+        }
+        acc.mapv_inplace(|v| v / n);
+        assign_poly(&mut mean_corners, spec, &acc);
+    }
+
+    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
+        Box::new(BufWriter::new(
+            File::create(output).with_context(|| format!("create output {output:?}"))?,
+        ))
+    } else {
+        Box::new(io::stdout())
+    };
+
+    // The reference pose keeps the mean shape as-is (it lives in the reference frame).
+    let mut reference_line = lines[0].clone();
+    reference_line.content.corners.0 = mean_corners.clone();
+    writeln!(writer, "{}", serde_json::to_string(&reference_line)?)?;
+
+    // Each other pose receives the mean shape back-projected into its own frame.
+    for (line, result) in lines[1..].iter().zip(regs.iter()) {
+        let mut out_line = line.clone();
+        for (pair_index, spec) in specs.iter().enumerate() {
+            let mean_poly = extract_poly(&mean_corners, spec);
+            let back = polygon_pairs::transform_inverse(&mean_poly, result, pair_index)?;
+            assign_poly(&mut out_line.content.corners.0, spec, &back);
+        }
+        writeln!(writer, "{}", serde_json::to_string(&out_line)?)?;
+    }
+
+    Ok(())
+}
+
+pub fn cmd(args: VertebraArgs) -> Result<()> {
+    match args.command {
+        VertebraSubCommands::Register(args) => cmd_register(args),
+        VertebraSubCommands::Normalize(args) => cmd_normalize(args),
+    }
 }
