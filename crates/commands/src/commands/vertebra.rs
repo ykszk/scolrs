@@ -134,27 +134,17 @@ fn cmd_register(args: VertebraRegisterArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
-    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(
-            File::open(&args.input).with_context(|| format!("open {:?}", args.input))?,
-        ))
-    };
-
-    // Each line is one pose. The first is the reference; all others are registered to it.
-    let mut lines: Vec<LateralPointsLine> = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let parsed = serde_json::from_str(&line).context("parse line as LateralPointsLine")?;
-        lines.push(parsed);
-    }
+/// Normalize one set of poses. The first line is the reference; all others are
+/// registered to it, averaged into a mean shape, and back-projected into each frame.
+fn normalize_group(lines: &[LateralPointsLine]) -> Result<Vec<LateralPointsLine>> {
     if lines.len() < 2 {
-        bail!("normalize needs at least 2 input lines (reference + 1 pose)");
+        let filename = lines.first().map(|l| l.filename.as_str()).unwrap_or("");
+        log::warn!(
+            "pose set with {} line(s) (first: {filename:?}) has nothing to register; \
+             passing it through unchanged",
+            lines.len()
+        );
+        return Ok(lines.to_vec());
     }
 
     let reference = &lines[0].content;
@@ -187,18 +177,12 @@ fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
         assign_poly(&mut mean_corners, spec, &acc);
     }
 
-    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
-        Box::new(BufWriter::new(
-            File::create(output).with_context(|| format!("create output {output:?}"))?,
-        ))
-    } else {
-        Box::new(io::stdout())
-    };
+    let mut out = Vec::with_capacity(lines.len());
 
     // The reference pose keeps the mean shape as-is (it lives in the reference frame).
     let mut reference_line = lines[0].clone();
     reference_line.content.corners.0 = mean_corners.clone();
-    writeln!(writer, "{}", serde_json::to_string(&reference_line)?)?;
+    out.push(reference_line);
 
     // Each other pose receives the mean shape back-projected into its own frame.
     for (line, result) in lines[1..].iter().zip(regs.iter()) {
@@ -208,7 +192,65 @@ fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
             let back = polygon_pairs::transform_inverse(&mean_poly, result, pair_index)?;
             assign_poly(&mut out_line.content.corners.0, spec, &back);
         }
-        writeln!(writer, "{}", serde_json::to_string(&out_line)?)?;
+        out.push(out_line);
+    }
+
+    Ok(out)
+}
+
+fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
+    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
+        Box::new(BufReader::new(io::stdin()))
+    } else {
+        Box::new(BufReader::new(
+            File::open(&args.input).with_context(|| format!("open {:?}", args.input))?,
+        ))
+    };
+
+    // Each line is one pose. Blank lines delimit independent pose sets (sub-ndjson).
+    let mut groups: Vec<Vec<LateralPointsLine>> = Vec::new();
+    let mut current: Vec<LateralPointsLine> = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        let parsed = serde_json::from_str(&line).context("parse line as LateralPointsLine")?;
+        current.push(parsed);
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    if groups.is_empty() {
+        bail!("no input poses");
+    }
+    log::info!(
+        "Read {} pose sets ({} lines total)",
+        groups.len(),
+        groups.iter().map(|g| g.len()).sum::<usize>()
+    );
+
+    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
+        Box::new(BufWriter::new(
+            File::create(output).with_context(|| format!("create output {output:?}"))?,
+        ))
+    } else {
+        Box::new(io::stdout())
+    };
+
+    // Normalize each set independently, preserving the blank-line delimiters on output.
+    for (group_index, group) in groups.iter().enumerate() {
+        if group_index > 0 {
+            writeln!(writer)?;
+        }
+        let normalized =
+            normalize_group(group).with_context(|| format!("normalize pose set {group_index}"))?;
+        for line in &normalized {
+            writeln!(writer, "{}", serde_json::to_string(line)?)?;
+        }
     }
 
     Ok(())
