@@ -278,8 +278,17 @@ pub fn apply_asm(
                 Array2::from_shape_vec((flat.len() / 2, 2), flat).unwrap()
             })
             .collect();
-        let icp_result = asm.icp_optimize(&target_point_sets, icp_config, None)?;
-        let icp_params = icp_result.b;
+        let icp_result = asm.icp_optimize(&target_point_sets, icp_config, None);
+        let icp_params = match icp_result {
+            Ok(res) => res.b,
+            Err(e) => {
+                log::error!(
+                    "ICP initialization failed: {}, proceeding with zero initialization.",
+                    e
+                );
+                Array1::zeros(n_mode)
+            }
+        };
         if icp_params.len() > n_mode {
             log::debug!(
                 "ICP returned more parameters ({}) than ASM modes ({}), truncating.",

@@ -63,6 +63,8 @@ pub enum IcpError {
     RulinalgError(#[from] rulinalg::error::Error),
     #[error("Point set count mismatch: expected {expected}, got {got}")]
     PointSetCountMismatch { expected: usize, got: usize },
+    #[error("One of the target point sets is empty, which may cause ICP to fail")]
+    EmptyTargetPointSet,
 }
 
 impl ActiveShapeModel {
@@ -134,6 +136,14 @@ impl ActiveShapeModel {
             .iter()
             .map(|pts| pts.len_of(Axis(0)))
             .sum::<usize>();
+
+        // Check that any target point set is not empty
+        for tgt in target_point_sets {
+            if tgt.len_of(Axis(0)) == 0 {
+                log::warn!("One of the target point sets is empty. ICP may fail.");
+                return Err(IcpError::EmptyTargetPointSet);
+            }
+        }
 
         for iter in 0..max_iter {
             // 1. Compute current model points
