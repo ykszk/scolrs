@@ -138,6 +138,9 @@ struct BatchCmdArgs {
     output_dir: PathBuf,
     #[command(flatten)]
     output: BatchOutputGroup,
+    /// Number of concurrent inference workers
+    #[arg(long, default_value_t = 1)]
+    inference_workers: usize,
 }
 
 #[derive(ValueEnum, Debug, Clone)]
@@ -528,12 +531,19 @@ fn batch_output_paths(
 
 fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
     let ds_config = load_config(&args.common.config)?;
-    let mut session = load_model(
-        &args.common.model,
-        &args.common.accelerators,
-        &ds_config.session,
-    )?;
-    let model_input_height = session.inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
+
+    // One independent session per inference worker; each loads its own copy of
+    // the model weights so the workers never contend for a single session.
+    let inference_workers = args.inference_workers.max(1);
+    let mut sessions = Vec::with_capacity(inference_workers);
+    for _ in 0..inference_workers {
+        sessions.push(load_model(
+            &args.common.model,
+            &args.common.accelerators,
+            &ds_config.session,
+        )?);
+    }
+    let model_input_height = sessions[0].inputs[0].input_type.tensor_shape().unwrap()[2] as u32;
 
     let input_images_list =
         std::fs::read_to_string(&args.input_images_list).with_context(|| {
@@ -550,11 +560,11 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
         .collect();
     log::info!("Found {} images to process", image_paths.len());
 
-    // Three-stage pipeline: parallel preprocessing -> single-threaded inference
-    // -> parallel postprocessing + output writing. The inference stage is the
-    // only one that needs the (mutably borrowed) ONNX session, so it stays
-    // single-threaded; the surrounding disk I/O, image decoding and HTML/ASM
-    // work overlaps it instead of blocking it.
+    // Three-stage pipeline: parallel preprocessing -> inference -> parallel
+    // postprocessing + output writing. Inference is the only stage that needs a
+    // (mutably borrowed) ONNX session; it runs on `inference_workers` threads,
+    // each owning its own session. The surrounding disk I/O, image decoding and
+    // HTML/ASM work overlaps inference instead of blocking it.
     let num_workers = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -566,6 +576,7 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
     let (pre_tx, pre_rx) = std::sync::mpsc::sync_channel::<Preprocessed>(channel_cap);
     let (inf_tx, inf_rx) = std::sync::mpsc::sync_channel::<Inferred>(channel_cap);
     let path_rx = std::sync::Arc::new(std::sync::Mutex::new(path_rx));
+    let pre_rx = std::sync::Arc::new(std::sync::Mutex::new(pre_rx));
     let inf_rx = std::sync::Arc::new(std::sync::Mutex::new(inf_rx));
 
     for image_path in image_paths {
@@ -600,9 +611,14 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
         }
         drop(pre_tx);
 
-        // Stage 2: the single inference worker, which owns the session.
-        scope.spawn(move || {
-            for pre in pre_rx {
+        // Stage 2: inference workers, each owning its own session.
+        for mut session in sessions {
+            let pre_rx = std::sync::Arc::clone(&pre_rx);
+            let inf_tx = inf_tx.clone();
+            scope.spawn(move || loop {
+                let Ok(pre) = ({ pre_rx.lock().unwrap().recv() }) else {
+                    break;
+                };
                 match infer_image(&mut session, pre, ds_config) {
                     Ok(inf) => {
                         if inf_tx.send(inf).is_err() {
@@ -611,8 +627,9 @@ fn batch_cmd(args: BatchCmdArgs) -> Result<()> {
                     }
                     Err(e) => log::error!("Inference failed: {:#}", e),
                 }
-            }
-        });
+            });
+        }
+        drop(inf_tx);
 
         // Stage 3: postprocessing + output-writing workers.
         for _ in 0..num_workers {
