@@ -1200,27 +1200,14 @@ impl ConfidenceComponent for SpinoCranialAngle<'_> {
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
 pub struct OccipitocervicalInclination<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for OccipitocervicalInclination<'_> {}
-type OccipitocervicalInclinationPrepResult = Option<(Array2<f64>, Array2<f64>, Array1<f64>)>;
 impl OccipitocervicalInclination<'_> {
-    fn prep(&self) -> Result<OccipitocervicalInclinationPrepResult, MeasureError> {
+    fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         self.0.mcgregor_line()?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let c4 = self.0.corners.0.index_axis(Axis(0), 2);
         let c4_posterior = c4.slice(s![1..;2, ..]);
         let mcgregor_points = self.0.mcgregor_line()?;
-        let c4_line = points2line(c4_posterior);
-        let mcgregor_line = points2line(mcgregor_points.view());
-        let intersection = mcgregor_line.intersection(&c4_line);
-        if let Some(intersection) = intersection {
-            let intersection = Array::from(vec![intersection.x, intersection.y]);
-            Ok(Some((
-                c4_posterior.to_owned(),
-                mcgregor_points,
-                intersection,
-            )))
-        } else {
-            Ok(None)
-        }
+        Ok((c4_posterior.to_owned(), mcgregor_points))
     }
 }
 impl DrawComponent for OccipitocervicalInclination<'_> {
@@ -1232,41 +1219,28 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let prep_data = self.prep()?;
-        let (c4_posterior, mcgregor_points, intersection) = if let Some(data) = prep_data {
-            data
-        } else {
-            // TODO??: draw parallel lines
-            return Ok(group); // No intersection found, nothing to draw
-        };
-        let extended_c4_line = stack![Axis(0), intersection, c4_posterior.index_axis(Axis(0), 1)];
-        let arc_radius = 0.8
-            * c4_posterior
+        let (c4_posterior, mcgregor_points) = self.prep()?;
+        group = painter.cobb_from_plates(
+            group,
+            (mcgregor_points, c4_posterior.to_owned()),
+            &CobbAux {
+                plate_scale: 7.0,
+                flip_sign: false,
+                ..Default::default()
+            },
+            c4_posterior
                 .index_axis(Axis(0), 0)
                 .l2_dist(&c4_posterior.index_axis(Axis(0), 1))
-                .unwrap();
-        group = painter
-            .angle_between(
-                group,
-                mcgregor_points.view(),
-                extended_c4_line.view(),
-                intersection.view(),
-                arc_radius,
-                Some(self.id()),
-            )
-            .0;
+                .unwrap(),
+            Some(self.id()),
+        );
         Ok(group)
     }
 }
 impl MeasureComponent for OccipitocervicalInclination<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let prep_data = self.prep()?;
-        let (c4_posterior, mcgregor_points, _intersection) = if let Some(data) = prep_data {
-            data
-        } else {
-            return Ok(vec![0.0]); // No intersection found, return 0
-        };
+        let (c4_posterior, mcgregor_points) = self.prep()?;
         let angle = angle_between(mcgregor_points.view(), c4_posterior.view()).to_degrees();
         Ok(vec![angle])
     }
