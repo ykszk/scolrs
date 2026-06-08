@@ -19,7 +19,8 @@ use lyon_geom::point;
 
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use ndarray::{
-    concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView1, ArrayView2, ArrayView3, Axis,
+    array, concatenate, s, stack, Array, Array1, Array2, Array3, ArrayView1, ArrayView2,
+    ArrayView3, Axis,
 };
 use ndarray_stats::DeviationExt;
 use serde::{Deserialize, Serialize};
@@ -97,6 +98,8 @@ impl VertebralCornerPoints {
         let posterior_mid_points = stack![Axis(0), tr.view(), br.view()]
             .mean_axis(Axis(0))
             .unwrap();
+
+        // (7, 2, 2)
         let mut midplanes = stack![
             Axis(1),
             anterior_mid_points.view(),
@@ -110,6 +113,21 @@ impl VertebralCornerPoints {
             .index_axis_mut(Axis(0), 0)
             .assign(&c2_inferior_endplate);
         midplanes
+    }
+
+    pub fn calculate_centroids(&self) -> Array2<f64> {
+        let mut centroids = self.0.mean_axis(Axis(1)).unwrap();
+        let c2_inferior_center = self
+            .0
+            .index_axis(Axis(0), 0)
+            .slice(s![2.., ..])
+            .mean_axis(Axis(0))
+            .unwrap();
+        // replace calculated C2 centroid with C2 inferior endplate center
+        centroids
+            .index_axis_mut(Axis(0), 0)
+            .assign(&c2_inferior_center);
+        centroids
     }
 }
 
@@ -1770,6 +1788,120 @@ impl ConfidenceComponent for MidPlaneAngle<'_> {
     }
 }
 
+/// Anteroposterior Vertebral Translation
+/// Anteroposterior Vertebral Translation calculated by the midplane method.
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
+pub struct AnteroposteriorVertebralTranslation<'a>(pub &'a LateralPoints);
+type PrepResult = (Array2<f64>, Vec<f64>, Vec<Array1<f64>>, Vec<Array1<f64>>);
+impl NeckSagittalComponent for AnteroposteriorVertebralTranslation<'_> {}
+impl AnteroposteriorVertebralTranslation<'_> {
+    fn prep(&self) -> Result<PrepResult, MeasureError> {
+        // C2 to C7 inferior plates
+        let infeior_plates = self.0.corners.0.slice(s![..6, 2.., ..]);
+        // C3 to T1 superior plates
+        let superior_plates = self.0.corners.0.slice(s![1.., ..2, ..]).to_owned();
+        let bisectrices = (superior_plates + infeior_plates) / 2.0;
+        // C2 to T1 centroids
+        let centroids = self.0.corners.calculate_centroids();
+
+        let mut translations = Vec::new();
+        let mut proj_ss = Vec::new();
+        let mut proj_is = Vec::new();
+        for i in 1..centroids.shape()[0] {
+            let bisectrix = bisectrices.index_axis(Axis(0), i - 1);
+            let eqn = points2line(bisectrix).equation();
+            // superior centroid
+            let s_c = centroids.index_axis(Axis(0), i - 1);
+            // project s_c to the bisectrix line
+            let p_s = lyon_geom::point(s_c[0], s_c[1]);
+            let proj_s = eqn.project_point(&p_s);
+            let proj_s = array![proj_s.x, proj_s.y];
+
+            // inferior centroid
+            let i_c = centroids.index_axis(Axis(0), i);
+            // project i_c to the bisectrix line
+            let p_i = lyon_geom::point(i_c[0], i_c[1]);
+            let proj_i = eqn.project_point(&p_i);
+            let proj_i = array![proj_i.x, proj_i.y];
+
+            // distance between the two projections
+            let distance = proj_s.l2_dist(&proj_i).unwrap();
+            // determine the direction of the translation
+            let a_to_p = &bisectrix.index_axis(Axis(0), 1) - &bisectrix.index_axis(Axis(0), 0);
+            let proj_s_to_proj_i = &proj_i - &proj_s;
+            // sign of inner product
+            let direction =
+                (a_to_p[0] * proj_s_to_proj_i[0] + a_to_p[1] * proj_s_to_proj_i[1]).signum();
+            let signed_distance = distance * direction;
+            proj_is.push(proj_i);
+            proj_ss.push(proj_s);
+            translations.push(signed_distance);
+        }
+
+        Ok((centroids, translations, proj_ss, proj_is))
+    }
+}
+impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let (centroids, translations, proj_ss, proj_is) = self.prep()?;
+        for i in 1..centroids.shape()[0] {
+            // superior centroid
+            let s_c = centroids.index_axis(Axis(0), i - 1);
+            // inferior centroid
+            let i_c = centroids.index_axis(Axis(0), i);
+
+            let signed_distance = translations[i - 1];
+            let proj_s = &proj_ss[i - 1];
+            let proj_i = &proj_is[i - 1];
+            let mid_point = (proj_s + proj_i) / 2.0;
+            let text = painter.text(
+                &format!("{:.1}", signed_distance),
+                mid_point.view(),
+                Some(self.id()),
+                Some(&self.0.image_metadata.unit),
+            );
+            group = group.add(text);
+            group = group.add(painter.line(stack![Axis(0), s_c.view(), proj_s.view()]));
+            group = group.add(painter.line(stack![Axis(0), i_c.view(), proj_i.view()]));
+            group = group.add(painter.point(proj_s.view()).set("fill", color));
+            group = group.add(painter.point(proj_i.view()).set("fill", color));
+        }
+        for c in centroids.axis_iter(Axis(0)) {
+            let point = painter.point(c).set("fill", color);
+            group = group.add(point);
+        }
+        Ok(group)
+    }
+}
+impl MeasureComponent for AnteroposteriorVertebralTranslation<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
+        let (_centroids, translations, _proj_ss, _proj_is) = self.prep()?;
+        Ok(translations.to_vec())
+    }
+}
+impl ConfidenceComponent for AnteroposteriorVertebralTranslation<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1930,6 +2062,7 @@ pub enum NeckLateralMeasure {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
+    AnteroposteriorVertebralTranslation,
 }
 
 impl NeckLateralMeasure {
@@ -1965,6 +2098,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
+                Box::new(AnteroposteriorVertebralTranslation(lateral_points))
+            }
         }
     }
 }
@@ -1996,6 +2132,9 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
+                Box::new(AnteroposteriorVertebralTranslation(lateral_points))
+            }
         }
     }
 }
@@ -2042,6 +2181,7 @@ pub enum NeckLateralDraw {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
+    AnteroposteriorVertebralTranslation,
 }
 
 impl NeckLateralDraw {
@@ -2075,6 +2215,9 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralDraw::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralDraw::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralDraw::AnteroposteriorVertebralTranslation => {
+                Box::new(AnteroposteriorVertebralTranslation(lateral_points))
+            }
         }
     }
 }
