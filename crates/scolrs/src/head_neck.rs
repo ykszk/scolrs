@@ -80,6 +80,37 @@ impl VertebralCornerPoints {
             .collect::<Result<Vec<_>, _>>()?;
         VertebralCornerPoints::check_corner_counts(&corners)
     }
+
+    pub fn calculate_midplanes(&self) -> Array3<f64> {
+        // Anterior
+        // (7, 4, 2) -> (7, 2)
+        let tl = self.0.slice(s![.., 0, ..]).to_owned();
+        let bl = self.0.slice(s![.., 2, ..]).to_owned();
+        // (7, 2) -> (7, 2)
+        let anterior_mid_points = stack![Axis(0), tl.view(), bl.view()]
+            .mean_axis(Axis(0))
+            .unwrap();
+
+        // Posterior
+        let tr = self.0.slice(s![.., 1, ..]).to_owned();
+        let br = self.0.slice(s![.., 3, ..]).to_owned();
+        let posterior_mid_points = stack![Axis(0), tr.view(), br.view()]
+            .mean_axis(Axis(0))
+            .unwrap();
+        let mut midplanes = stack![
+            Axis(1),
+            anterior_mid_points.view(),
+            posterior_mid_points.view()
+        ];
+
+        // replace calculated C2 mid-plane with C2 inferior endplate
+        let c2 = self.0.index_axis(Axis(0), 0);
+        let c2_inferior_endplate = c2.slice(s![2.., ..]);
+        midplanes
+            .index_axis_mut(Axis(0), 0)
+            .assign(&c2_inferior_endplate);
+        midplanes
+    }
 }
 
 impl TryFrom<&LabelMeData> for VertebralCornerPoints {
@@ -1681,6 +1712,64 @@ impl ConfidenceComponent for EndPlateAngle<'_> {
     }
 }
 
+/// Midplane Angle. C2 mid-plane is C2 inferior endplate
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct MidPlaneAngle<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for MidPlaneAngle<'_> {}
+impl DrawComponent for MidPlaneAngle<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        // let midplanes = self.prep()?;
+        let midplanes = self.0.corners.calculate_midplanes();
+        for plane in midplanes.axis_iter(Axis(0)) {
+            let angle = -crate::draw::tilt_angle(self.id(), plane.view()).unwrap_or_default();
+            let line = painter.line(plane);
+            group = group.add(line);
+            let mid_point = plane.mean_axis(Axis(0)).unwrap();
+            let text = painter.text(
+                &format!("{:.1}°", angle),
+                mid_point.view(),
+                Some(self.id()),
+                None,
+            );
+            group = group.add(text);
+        }
+        Ok(group)
+    }
+}
+impl MeasureComponent for MidPlaneAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
+        let midplanes = self.0.corners.calculate_midplanes();
+        let mut angles = Vec::new();
+        for plane in midplanes.axis_iter(Axis(0)) {
+            let angle = -tilt_angle(self.id(), plane.view())?;
+            angles.push(angle);
+        }
+        Ok(angles)
+    }
+}
+impl ConfidenceComponent for MidPlaneAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
+
 /// Four corner points of each vertebra
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POINT])]
@@ -1840,6 +1929,7 @@ pub enum NeckLateralMeasure {
     C2C7SVA,
     EACSVA,
     EndPlateAngle,
+    MidPlaneAngle,
 }
 
 impl NeckLateralMeasure {
@@ -1874,6 +1964,7 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
+            NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
         }
     }
 }
@@ -1904,6 +1995,7 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
+            NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
         }
     }
 }
@@ -1949,6 +2041,7 @@ pub enum NeckLateralDraw {
     C2C7SVA,
     EACSVA,
     EndPlateAngle,
+    MidPlaneAngle,
 }
 
 impl NeckLateralDraw {
@@ -1981,6 +2074,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::C2C7SVA => Box::new(C2C7SVA(lateral_points)),
             NeckLateralDraw::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralDraw::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
+            NeckLateralDraw::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
         }
     }
 }
