@@ -1205,7 +1205,7 @@ impl OccipitocervicalInclination<'_> {
     fn prep(&self) -> Result<OccipitocervicalInclinationPrepResult, MeasureError> {
         self.0.mcgregor_line()?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
-        let c4 = self.0.corners.0.index_axis(Axis(0), 3);
+        let c4 = self.0.corners.0.index_axis(Axis(0), 2);
         let c4_posterior = c4.slice(s![1..;2, ..]);
         let mcgregor_points = self.0.mcgregor_line()?;
         let c4_line = points2line(c4_posterior);
