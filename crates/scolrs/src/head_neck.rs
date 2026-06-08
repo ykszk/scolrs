@@ -1793,7 +1793,13 @@ impl ConfidenceComponent for MidPlaneAngle<'_> {
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct AnteroposteriorVertebralTranslation<'a>(pub &'a LateralPoints);
-type PrepResult = (Array2<f64>, Vec<f64>, Vec<Array1<f64>>, Vec<Array1<f64>>);
+type PrepResult = (
+    Array2<f64>,
+    Array3<f64>,
+    Vec<f64>,
+    Vec<Array1<f64>>,
+    Vec<Array1<f64>>,
+);
 impl NeckSagittalComponent for AnteroposteriorVertebralTranslation<'_> {}
 impl AnteroposteriorVertebralTranslation<'_> {
     fn prep(&self) -> Result<PrepResult, MeasureError> {
@@ -1839,7 +1845,7 @@ impl AnteroposteriorVertebralTranslation<'_> {
             translations.push(signed_distance);
         }
 
-        Ok((centroids, translations, proj_ss, proj_is))
+        Ok((centroids, bisectrices, translations, proj_ss, proj_is))
     }
 }
 impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
@@ -1851,8 +1857,9 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let (centroids, translations, proj_ss, proj_is) = self.prep()?;
+        let (centroids, bisectrices, translations, proj_ss, proj_is) = self.prep()?;
         for i in 1..centroids.shape()[0] {
+            let bisectrix = bisectrices.index_axis(Axis(0), i - 1);
             // superior centroid
             let s_c = centroids.index_axis(Axis(0), i - 1);
             // inferior centroid
@@ -1871,6 +1878,7 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
             group = group.add(text);
             group = group.add(painter.line(stack![Axis(0), s_c.view(), proj_s.view()]));
             group = group.add(painter.line(stack![Axis(0), i_c.view(), proj_i.view()]));
+            group = group.add(painter.line(bisectrix.view()));
             group = group.add(painter.point(proj_s.view()).set("fill", color));
             group = group.add(painter.point(proj_i.view()).set("fill", color));
         }
@@ -1884,7 +1892,7 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
 impl MeasureComponent for AnteroposteriorVertebralTranslation<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let (_centroids, translations, _proj_ss, _proj_is) = self.prep()?;
+        let (_centroids, _bisectrices, translations, _proj_ss, _proj_is) = self.prep()?;
         Ok(translations.to_vec())
     }
 }
