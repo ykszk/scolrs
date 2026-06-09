@@ -787,7 +787,6 @@ impl NeckExt for LateralPoints {
     }
 }
 
-/// Occiput-C2 Angle
 /// Angle between McGregor's line and C2 lower endplate
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
@@ -1168,7 +1167,6 @@ impl ConfidenceComponent for NeckTilt<'_> {
     }
 }
 
-/// Spino-Cranial Angle
 /// Angle between C7 upper endplate and the line connecting sella and the middle of C7 upper endplate
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
@@ -1243,7 +1241,6 @@ impl ConfidenceComponent for SpinoCranialAngle<'_> {
     }
 }
 
-/// Occipitocervical inclination
 /// The angle formed by the line connecting McGregor’s line and the posterior border of the C4 vertebral body
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
@@ -1308,7 +1305,6 @@ impl ConfidenceComponent for OccipitocervicalInclination<'_> {
     }
 }
 
-/// Cranial Slope
 /// Angle between McGregor's line and the horizontal line
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
@@ -1396,7 +1392,6 @@ impl ConfidenceComponent for T1Slope<'_> {
     }
 }
 
-/// Torg-Pavlov Ratio
 /// canal-to-body ratio: https://radiopaedia.org/articles/canal-to-body-ratio-of-torg-and-pavlov
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_RATIO])]
@@ -1541,7 +1536,6 @@ fn sagittal_vertical_axis(
     group.add(text)
 }
 
-/// C2-C7 Sagittal Vertical Axis
 /// The horizontal distance from the center of the lower end plate of C2 to the posterior-superior corner of C7
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
@@ -1859,7 +1853,6 @@ impl ConfidenceComponent for IntravertebralAngle<'_> {
     }
 }
 
-/// Anteroposterior Vertebral Translation
 /// Anteroposterior Vertebral Translation calculated by the midplane method.
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
