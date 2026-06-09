@@ -702,19 +702,24 @@ impl Painter {
                     let t = d_aux.dot(&dir_plate) / dir_plate.mapv(|a| a * a).sum();
                     let projed_aux = &plate.slice(s![plate_origin, ..]) + t * &dir_plate;
                     let (p1, p2) = distanced_pair3(
-                        plate.slice(s![0, ..]),
-                        plate.slice(s![1, ..]),
+                        plate.slice(s![plate_origin, ..]),
+                        plate.slice(s![1 - plate_origin, ..]),
                         projed_aux.view(),
                     );
-                    let pa_a = &aux_cross - &projed_aux;
-                    let polyline_points = ndarray::stack![
-                        Axis(0),
-                        p1,
-                        p2,
-                        aux_param.perpendicular_scale * pa_a + &projed_aux,
-                        projed_aux
-                    ];
-                    group = group.add(self.polyline(polyline_points));
+                    if projed_aux == p1 || projed_aux == p2 {
+                        let pa_a = &aux_cross - &projed_aux;
+                        let polyline_points = ndarray::stack![
+                            Axis(0),
+                            p1,
+                            p2,
+                            aux_param.perpendicular_scale * pa_a + &projed_aux,
+                            // projed_aux
+                        ];
+                        group = group.add(self.polyline(polyline_points));
+                    } else {
+                        group = group.add(self.line(plate));
+                        group = group.add(self.line(stack![Axis(0), projed_aux, aux_cross]));
+                    }
                 }
                 let angle = if aux_param.flip_sign { -angle } else { angle };
                 let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
