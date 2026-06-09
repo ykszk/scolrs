@@ -1788,6 +1788,77 @@ impl ConfidenceComponent for MidPlaneAngle<'_> {
     }
 }
 
+/// Angle between the midplanes of adjacent vertebrae
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct IntravertebralAngle<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for IntravertebralAngle<'_> {}
+impl DrawComponent for IntravertebralAngle<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let midplanes = self.0.corners.calculate_midplanes();
+        let mean_length = midplanes
+            .axis_iter(Axis(0))
+            .map(|plane| {
+                plane
+                    .index_axis(Axis(0), 0)
+                    .l2_dist(&plane.index_axis(Axis(0), 1))
+                    .unwrap()
+            })
+            .sum::<f64>()
+            / (midplanes.shape()[0] as f64);
+        for i in 0..midplanes.shape()[0] - 1 {
+            let plane1 = midplanes.index_axis(Axis(0), i);
+            let plane2 = midplanes.index_axis(Axis(0), i + 1);
+            group = painter.cobb_from_plates(
+                group,
+                (plane1.to_owned(), plane2.to_owned()),
+                &CobbAux {
+                    plate_scale: 1.5,
+                    flip_sign: false,
+                    ..Default::default()
+                },
+                mean_length,
+                Some(self.id()),
+            )
+        }
+        Ok(group)
+    }
+}
+impl MeasureComponent for IntravertebralAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
+        let midplanes = self.0.corners.calculate_midplanes();
+        let mut angles = Vec::new();
+        for i in 0..midplanes.shape()[0] - 1 {
+            let plane1 = midplanes.index_axis(Axis(0), i);
+            let plane2 = midplanes.index_axis(Axis(0), i + 1);
+            let angle = angle_between(plane1.view(), plane2.view()).to_degrees();
+            angles.push(angle);
+        }
+        Ok(angles)
+    }
+}
+impl ConfidenceComponent for IntravertebralAngle<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
+
 /// Anteroposterior Vertebral Translation
 /// Anteroposterior Vertebral Translation calculated by the midplane method.
 #[derive(Named)]
@@ -2070,6 +2141,7 @@ pub enum NeckLateralMeasure {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
+    IntravertebralAngle,
     AnteroposteriorVertebralTranslation,
 }
 
@@ -2106,6 +2178,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralMeasure::IntravertebralAngle => {
+                Box::new(IntravertebralAngle(lateral_points))
+            }
             NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
             }
@@ -2140,6 +2215,9 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralMeasure::IntravertebralAngle => {
+                Box::new(IntravertebralAngle(lateral_points))
+            }
             NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
             }
@@ -2189,6 +2267,7 @@ pub enum NeckLateralDraw {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
+    IntravertebralAngle,
     AnteroposteriorVertebralTranslation,
 }
 
@@ -2223,6 +2302,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralDraw::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralDraw::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
+            NeckLateralDraw::IntravertebralAngle => Box::new(IntravertebralAngle(lateral_points)),
             NeckLateralDraw::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
             }
