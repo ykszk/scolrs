@@ -1785,9 +1785,9 @@ impl ConfidenceComponent for MidPlaneAngle<'_> {
 /// Angle between the midplanes of adjacent vertebrae
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct IntravertebralAngle<'a>(pub &'a LateralPoints);
-impl NeckSagittalComponent for IntravertebralAngle<'_> {}
-impl DrawComponent for IntravertebralAngle<'_> {
+pub struct InterVertebralAngle<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for InterVertebralAngle<'_> {}
+impl DrawComponent for InterVertebralAngle<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
@@ -1825,7 +1825,7 @@ impl DrawComponent for IntravertebralAngle<'_> {
         Ok(group)
     }
 }
-impl MeasureComponent for IntravertebralAngle<'_> {
+impl MeasureComponent for InterVertebralAngle<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let midplanes = self.0.corners.calculate_midplanes();
@@ -1839,7 +1839,7 @@ impl MeasureComponent for IntravertebralAngle<'_> {
         Ok(angles)
     }
 }
-impl ConfidenceComponent for IntravertebralAngle<'_> {
+impl ConfidenceComponent for InterVertebralAngle<'_> {
     type ValueType = Vec<f64>;
     fn confidence(
         &self,
@@ -2134,7 +2134,7 @@ pub enum NeckLateralMeasure {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
-    IntravertebralAngle,
+    InterVertebralAngle,
     AnteroposteriorVertebralTranslation,
 }
 
@@ -2171,8 +2171,8 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
-            NeckLateralMeasure::IntravertebralAngle => {
-                Box::new(IntravertebralAngle(lateral_points))
+            NeckLateralMeasure::InterVertebralAngle => {
+                Box::new(InterVertebralAngle(lateral_points))
             }
             NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
@@ -2208,8 +2208,8 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralMeasure::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralMeasure::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
-            NeckLateralMeasure::IntravertebralAngle => {
-                Box::new(IntravertebralAngle(lateral_points))
+            NeckLateralMeasure::InterVertebralAngle => {
+                Box::new(InterVertebralAngle(lateral_points))
             }
             NeckLateralMeasure::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
@@ -2260,7 +2260,7 @@ pub enum NeckLateralDraw {
     EACSVA,
     EndPlateAngle,
     MidPlaneAngle,
-    IntravertebralAngle,
+    InterVertebralAngle,
     AnteroposteriorVertebralTranslation,
 }
 
@@ -2295,7 +2295,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::EACSVA => Box::new(EACSVA(lateral_points)),
             NeckLateralDraw::EndPlateAngle => Box::new(EndPlateAngle(lateral_points)),
             NeckLateralDraw::MidPlaneAngle => Box::new(MidPlaneAngle(lateral_points)),
-            NeckLateralDraw::IntravertebralAngle => Box::new(IntravertebralAngle(lateral_points)),
+            NeckLateralDraw::InterVertebralAngle => Box::new(InterVertebralAngle(lateral_points)),
             NeckLateralDraw::AnteroposteriorVertebralTranslation => {
                 Box::new(AnteroposteriorVertebralTranslation(lateral_points))
             }
