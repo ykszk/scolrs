@@ -31,6 +31,9 @@ struct OutputGroup {
     /// Path to save the output heatmaps or image
     #[arg(long)]
     heatmap: Option<Option<PathBuf>>,
+    /// Multiplier for heatmap values when saving as image (e.g. 10000 to convert from [0,1] to [0,10000] range). Ignored if saving as .npy or .mha.
+    #[arg(long, default_value_t = 10000)]
+    heatmap_multiplier: u16,
     /// Save LabelMe format points
     #[arg(long)]
     labelme: Option<Option<PathBuf>>,
@@ -117,9 +120,9 @@ struct SingleCmdArgs {
 #[derive(clap::Args)]
 #[group(required = true, multiple = true)]
 struct BatchOutputGroup {
-    /// Path to save the output heatmaps or image
-    #[arg(long)]
-    heatmap: bool,
+    /// Path to save the output heatmaps or image. Optionally, specify a multiplier
+    #[arg(long, num_args=0..=1, default_missing_value = "10000")]
+    heatmap: Option<u16>,
     /// Save LabelMe format points
     #[arg(long)]
     labelme: bool,
@@ -378,15 +381,17 @@ fn finish_image(
             .and_then(OsStr::to_str)
             .unwrap_or("")
             .to_lowercase();
+        // apply multiplier and convert to u16
+        let multiplier = output.heatmap_multiplier;
+        let ndarray_output3 = model_io.output3().mapv(|x| (x * multiplier as f32) as u16);
         if file_ext == "npz" {
             let mut npz =
                 ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
-            let ndarray_output3 = model_io.output3().mapv(|x| (x * 1000.0) as u16);
             // save the output
             npz.add_array("heatmaps", &ndarray_output3)?;
             npz.finish()?;
         } else if file_ext == "mha" || file_ext == "mhd" {
-            let arr = model_io.output3();
+            let arr = ndarray_output3;
             // convert to metaimage's ndarray (v0.17). Can be removed the version conflict is resolved.
             let ndarray_output3 = metaimage::ndarray::Array3::from_shape_vec(
                 (arr.shape()[2], arr.shape()[1], arr.shape()[0]),
@@ -522,7 +527,8 @@ fn batch_output_paths(
     OutputGroup {
         heatmap: flags
             .heatmap
-            .then(|| Some(output_dir.join(format!("{}.mha", file_stem)))),
+            .map(|_multiplier| Some(output_dir.join(format!("{}.mha", file_stem)))),
+        heatmap_multiplier: flags.heatmap.unwrap_or(10000),
         labelme: flags
             .labelme
             .then(|| Some(output_dir.join(format!("{}.json", file_stem)))),
