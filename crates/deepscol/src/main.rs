@@ -331,16 +331,19 @@ fn finish_image(
         cropping_params,
     } = inf;
 
-    let point_thresh = ds_config.heatmap.thresh;
-
     let point_set_config = match common.direction {
         Direction::Coronal => ds::point_config::PointSetConfig::spine(),
         Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
         Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
     };
 
-    let points = ds::extract_points(&output3, point_thresh, &point_set_config.max_counts)
-        .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
+    let points = ds::extract_points(
+        &output3,
+        ds_config.heatmap.thresh,
+        ds_config.heatmap.blur_sigma,
+        &point_set_config.max_counts,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
     let mut model_io = if let Some(cropping_params) = cropping_params {
         ModelIO::Cropped(Box::new(CroppedIO::new(
             image,

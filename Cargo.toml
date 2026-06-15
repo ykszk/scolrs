@@ -24,7 +24,8 @@ clap = { version = "4.5.53", features = ["derive"] }
 csv = "1.4.0"
 env_logger = "0.11.8"
 log = "0.4.29"
-ndarray = "0.16"                                                                                            # ndarray-stats requires 0.16
+ndarray = "0.16"     
+ndarray-ndimage = "0.5.0"                                                                                       # ndarray-stats requires 0.16
 ndarray-stats = "0.6"
 pretty_assertions = "1.4.1"
 serde = "1.0.228"

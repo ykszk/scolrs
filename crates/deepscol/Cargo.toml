@@ -39,6 +39,7 @@ clap.workspace = true
 labelme-rs.workspace = true
 log.workspace = true
 ndarray.workspace = true
+ndarray-ndimage.workspace = true
 ndarray-stats.workspace = true
 csv.workspace = true
 

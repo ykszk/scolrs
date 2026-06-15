@@ -6,6 +6,7 @@ use image::{DynamicImage, GenericImageView};
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
 use ndarray::{s, Array3, Array4, ArrayView3, Axis, NewAxis};
+use ndarray_ndimage as ndi;
 use scolrs::{
     asm::{model::ActiveShapeModel, AsmConfig, AsmError},
     draw::{
@@ -142,11 +143,16 @@ impl Default for SizeConfig {
 pub struct HeatmapConfig {
     /// Threshold for heatmap binarization for point extraction
     pub thresh: f32,
+    /// Sigma for gaussian blur applied to heatmap before point extraction.
+    pub blur_sigma: Option<f32>,
 }
 
 impl Default for HeatmapConfig {
     fn default() -> Self {
-        Self { thresh: 0.1 }
+        Self {
+            thresh: 0.1,
+            blur_sigma: None,
+        }
     }
 }
 
@@ -180,6 +186,7 @@ pub struct DeepscolConfig {
 pub fn extract_points(
     arr: &ndarray::Array3<f32>,
     thresh: f32,
+    blur_sigma: Option<f32>,
     max_point_counts: &[usize],
 ) -> Result<Vec<Vec<Point>>, String> {
     let height = arr.shape()[1];
@@ -187,7 +194,13 @@ pub fn extract_points(
     let ch_axis = Axis(0);
     let mut all_points: Vec<Vec<Point>> = Vec::new();
     for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(max_point_counts.iter()) {
-        let bin_arr = img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 });
+        let bin_arr = if let Some(blur_sigma) = blur_sigma {
+            let blurred_ch =
+                ndi::gaussian_filter(&img_ch, blur_sigma, 0, ndi::BorderMode::Nearest, 3);
+            blurred_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 })
+        } else {
+            img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 })
+        };
         let bin_img = image::GrayImage::from_raw(
             width as _,
             height as _,
