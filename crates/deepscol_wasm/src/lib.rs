@@ -165,9 +165,8 @@ pub fn process_output(
 
     let point_set_config = deepscol::point_config::PointSetConfig::spine();
 
-    // apply sigmoid
-    let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-    let points = extract_points(&output3, 0.1, &point_set_config.max_counts)
+    let blur_sigma = Some(3.0);
+    let points = extract_points(&output3, 0.1, blur_sigma, &point_set_config.max_counts)
         .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
 
     let mut model_io = if let Some(cp) = cropping_params {

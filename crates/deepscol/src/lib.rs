@@ -456,9 +456,7 @@ pub fn extract_array_from_output(
         .into_dimensionality::<ndarray::Ix3>()
         .unwrap();
     log::debug!("Output tensor shape: {:?}", output3.shape());
-    // apply sigmoid
-
-    output3.mapv(|x| 1.0 / (1.0 + (-x).exp()))
+    output3
 }
 
 use labelme_rs::{
