@@ -21,8 +21,7 @@ scolrs = { path = "../scolrs" }
 devsc = { path = "../devsc" }
 # [target.'cfg(target_arch = "wasm32")'.dependencies]
 # getrandom = { features = ["js"] } # for ndarray-stats
-clahe = { path = "clahe" }
-# clahe = { git = "https://github.com/ykszk/clahe.git", branch="develop" }
+clahe = { git = "https://github.com/ykszk/clahe.git", tag = "v0.2.1" }
 serde.workspace = true
 serde_json.workspace = true
 svg.workspace = true
