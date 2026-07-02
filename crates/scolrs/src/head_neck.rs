@@ -1251,7 +1251,11 @@ impl OccipitocervicalInclination<'_> {
         self.0.mcgregor_line()?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let c4 = self.0.corners.0.index_axis(Axis(0), 2);
-        let c4_posterior = c4.slice(s![1..;2, ..]);
+        let c4_posterior = stack![
+            Axis(0),
+            c4.index_axis(Axis(0), 3),
+            c4.index_axis(Axis(0), 1)
+        ];
         let mcgregor_points = self.0.mcgregor_line()?;
         Ok((c4_posterior.to_owned(), mcgregor_points))
     }
