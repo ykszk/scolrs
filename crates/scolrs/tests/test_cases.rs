@@ -1,5 +1,6 @@
 use ndarray::Axis;
 use scolrs::draw::{AsMeasure, ColorPalettes};
+use scolrs::head_neck::{LateralPoints, NeckLateralDraw};
 use scolrs::lenke::{
     BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
     RegionalCurveType, SagittalModifier, StructuralReason, Study, KYOPHOSIS_CURVE_MT,
@@ -9,7 +10,7 @@ use scolrs::{
     draw::MeasureComponent, CoronalMeasure, CoronalPoints, CoronalPointsAndCurve, Curve,
     MeasureAndDraw, Spine, VertebralIndex,
 };
-use scolrs::{CoronalDraw, Scalable};
+use scolrs::{CoronalDraw, SagittalDraw, SagittalPoints, Scalable};
 
 use anyhow::{Context, Result};
 use labelme_rs::LabelMeData;
@@ -531,7 +532,7 @@ fn test_measure_cases() -> Result<()> {
 }
 
 #[test]
-fn test_measure_draw_equality() -> Result<()> {
+fn test_measure_coronal_draw_equality() -> Result<()> {
     fn inner(json_path: PathBuf) -> Result<()> {
         println!("Testing equalities in {:?}", json_path);
         let json_str = std::fs::read_to_string(&json_path)?;
@@ -588,12 +589,169 @@ fn test_measure_draw_equality() -> Result<()> {
         Ok(())
     }
     for case in ["case1", "case2", "case3", "case4"] {
-        for dir in ["frontal", "lateral"] {
+        let json_path = data_directory().join(format!("{}/{}.json", case, "frontal"));
+        inner(json_path)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_sagittal_measure_draw_equality() -> Result<()> {
+    fn inner(json_path: PathBuf) -> Result<()> {
+        println!("Testing equalities in {:?}", json_path);
+        let json_str = std::fs::read_to_string(&json_path)?;
+        let lm = LabelMeData::try_from(json_str.as_str())?;
+        let lateral = SagittalPoints::try_from(&lm)?;
+        let lateral = lateral.into_scaled()?;
+
+        let draws = SagittalDraw::all();
+        let measure_and_draws: Vec<_> = draws
+            .into_iter()
+            .filter_map(|draw| {
+                let measure = draw.as_measure();
+                measure.map(|m| (m, draw))
+            })
+            .collect();
+        println!("Found {} measure-draw pairs", measure_and_draws.len());
+        let palettes = ColorPalettes::default();
+        let mut label_colors = palettes.label_colors;
+        let mut line_colors = palettes.line_colors;
+        let draw_param = scolrs::draw::DrawParam::default();
+        let svg_size = (500, 500);
+        let mut painter = scolrs::draw::Painter::new(draw_param, svg_size);
+        for (measure, draw) in measure_and_draws.into_iter() {
+            println!("  Testing measure-draw {:?}", measure);
+            let m = Box::<dyn MeasureComponent<ValueType = f64>>::from((&measure, &lateral));
+            let measure_result = m.measure();
+            if let Err(e) = &measure_result {
+                match e {
+                    scolrs::draw::MeasureError::UnableToMeasure(_) => {
+                        panic!("Unable to measure: {:?}", measure)
+                    }
+                    _ => continue,
+                }
+            }
+            let measured_value = measure_result.unwrap();
+            let d = Box::<dyn scolrs::draw::DrawComponent>::from((&draw, &lateral));
+            let group = d.draw(&mut painter, &mut label_colors, &mut line_colors)?;
+
+            let data_attr = group
+                .get_attributes()
+                .get("data-value")
+                .context("data-value attribute not found in drawn group")?;
+            let drawn_value: f64 = data_attr
+                .parse()
+                .context("failed to parse data-value attribute")?;
+            assert!(
+                (measured_value - drawn_value).abs() < 1e-6,
+                "Measure {:?} value mismatch in {}: measured {}, drawn {}",
+                measure,
+                json_path.display(),
+                measured_value,
+                drawn_value
+            );
+        }
+        Ok(())
+    }
+    for case in ["case1", "case2", "case3", "case4"] {
+        let json_path = data_directory().join(format!("{}/{}.json", case, "lateral"));
+        inner(json_path)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_neck_measure_draw_equality() -> Result<()> {
+    fn inner(json_path: PathBuf) -> Result<()> {
+        println!("Testing equalities in {:?}", json_path);
+        let json_str = std::fs::read_to_string(&json_path)?;
+        let lm = LabelMeData::try_from(json_str.as_str())?;
+        let lateral = LateralPoints::try_from(&lm)?;
+        let lateral = lateral.into_scaled()?;
+
+        let draws = NeckLateralDraw::all();
+        let measure_and_draws: Vec<_> = draws
+            .into_iter()
+            .filter_map(|draw| {
+                let measure = draw.as_measure();
+                measure.map(|m| (m, draw))
+            })
+            .collect();
+        println!("Found {} measure-draw pairs", measure_and_draws.len());
+        let palettes = ColorPalettes::default();
+        let mut label_colors = palettes.label_colors;
+        let mut line_colors = palettes.line_colors;
+        let draw_param = scolrs::draw::DrawParam::default();
+        let svg_size = (500, 500);
+        let mut painter = scolrs::draw::Painter::new(draw_param, svg_size);
+        for (measure, draw) in measure_and_draws.into_iter() {
+            println!("  Testing measure-draw {:?}", measure);
+            let m = Box::<dyn MeasureComponent<ValueType = Vec<f64>>>::from((&measure, &lateral));
+            let measure_result = m.measure();
+            if let Err(e) = &measure_result {
+                match e {
+                    scolrs::draw::MeasureError::UnableToMeasure(_) => {
+                        panic!("Unable to measure: {:?}", measure)
+                    }
+                    _ => continue,
+                }
+            }
+            let measured_value = measure_result.unwrap();
+            let d = Box::<dyn scolrs::draw::DrawComponent>::from((&draw, &lateral));
+            let group = d.draw(&mut painter, &mut label_colors, &mut line_colors)?;
+
+            let data_attr = group
+                .get_attributes()
+                .get("data-value")
+                .context("data-value attribute not found in drawn group")?;
+            let drawn_values: Vec<f64> = data_attr
+                .split(' ')
+                .map(|s| {
+                    s.parse::<f64>()
+                        .context("failed to parse data-value attribute")
+                })
+                .collect::<Result<_, _>>()?;
+
+            // let draw_values =
+            //     if let Some(data_value_attr) = group.get_attributes().get("data-value") {
+            //         let drawn_value: f64 = data_value_attr
+            //             .parse()
+            //             .context("failed to parse data-value attribute")?;
+            //         vec![drawn_value]
+            //     } else if let Some(data_values_attr) = group.get_attributes().get("data-values") {
+            //         let drawn_values: Vec<f64> = data_values_attr
+            //             .split(' ')
+            //             .map(|s| {
+            //                 s.parse::<f64>()
+            //                     .context("failed to parse data-values attribute")
+            //             })
+            //             .collect::<Result<_, _>>()?;
+            //         drawn_values
+            //     } else {
+            //         panic!("Neither data-value nor data-values attribute found in drawn group");
+            //     };
+            assert!(
+                measured_value
+                    .iter()
+                    .zip(drawn_values.iter())
+                    .all(|(m, d)| (m - d).abs() < 1e-6),
+                "Measure {:?} value mismatch in {}: measured {:?}, drawn {:?}",
+                measure,
+                json_path.display(),
+                measured_value,
+                drawn_values
+            );
+        }
+        Ok(())
+    }
+    for case in ["neck_case1", "neck_case2"] {
+        for dir in ["lateral", "extension_lateral", "flexion_lateral"] {
             let json_path = data_directory().join(format!("{}/{}.json", case, dir));
+            if !json_path.exists() {
+                continue;
+            }
             inner(json_path)?;
         }
     }
     Ok(())
 }
-
-// TODO: test equality of neck measure and draw

@@ -645,7 +645,7 @@ impl Painter {
         aux_param: &CobbAux,
         base_length: f64,
         title: Option<&str>,
-    ) -> element::Group {
+    ) -> (element::Group, f64) {
         let sup_plate = sup_plate_inf_plate.0;
         let inf_plate = sup_plate_inf_plate.1;
         let sup_line = points2line(sup_plate.view());
@@ -691,6 +691,7 @@ impl Painter {
 
                 group = group.add(text);
                 group = group.set("data-value", angle);
+                (group, angle)
             } else {
                 // draw aux lines and its intersection
 
@@ -725,6 +726,7 @@ impl Painter {
                 let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
                 group = group.add(text);
                 group = group.set("data-value", angle);
+                (group, angle)
             }
         } else {
             // parallel lines
@@ -748,8 +750,8 @@ impl Painter {
 
                 // group = group.add(arrow);
             }
+            (group, 0.0)
         }
-        group
     }
 
     pub fn cobb(
@@ -770,6 +772,7 @@ impl Painter {
             base_length,
             title,
         )
+        .0
     }
 
     pub fn doc_w_background(

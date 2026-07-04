@@ -1974,23 +1974,17 @@ where
 /// Angle between two lines in degrees
 /// TODO: Check the difference from `angle_between`?
 pub fn angle_from_lines(line1: ArrayView2<f64>, line2: ArrayView2<f64>) -> Option<f64> {
-    let v_sup = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
-    let v_inf = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
-    let len_sup = v_sup.l2norm();
-    let len_inf = v_inf.l2norm();
-    if len_sup == 0.0 || len_inf == 0.0 {
+    let v = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
+    let w = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
+
+    if v.l2norm() == 0.0 || w.l2norm() == 0.0 {
         return None;
     }
-    let v_sup = &v_sup / len_sup;
-    let v_inf = &v_inf / len_inf;
-    let cos = v_sup.dot(&v_inf);
-    let cos = cos.clamp(-1.0, 1.0);
-    let deg = cos.acos().to_degrees();
-    if v_sup[1] < v_inf[1] {
-        Some(-deg)
-    } else {
-        Some(deg)
-    }
+
+    let cross = w[1] * v[0] - w[0] * v[1];
+    let dot = w.dot(&v);
+
+    Some(cross.atan2(dot).to_degrees())
 }
 
 impl Spine {
@@ -2050,7 +2044,7 @@ impl Spine {
     pub fn angle(&self, curve: &Curve) -> Option<f64> {
         let sup_line = self.sup_plate(curve.sup);
         let inf_line = self.inf_plate(curve.inf);
-        angle_from_lines(sup_line, inf_line).map(|a| -a)
+        angle_from_lines(sup_line, inf_line)
     }
 }
 

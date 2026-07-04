@@ -569,6 +569,19 @@ pub trait NeckSagittalComponent: DrawComponent {
 #[label("SACs")]
 pub struct Sacs<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for Sacs<'_> {}
+impl Sacs<'_> {
+    fn prep(&self) -> Result<(Array3<f64>, Array2<f64>), MeasureError> {
+        self.0.posterior_dens.validate_label_length("Dens", 1)?;
+        self.0.lamina.validate_label_length("Lamina", 8)?;
+        let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
+        trs.index_axis_mut(Axis(0), 0)
+            .assign(&self.0.posterior_dens.index_axis(Axis(0), 0));
+        let brs = self.0.corners.0.index_axis(Axis(1), 3);
+        let tr_brs = stack![Axis(0), trs, brs];
+        let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]).to_owned();
+        Ok((tr_brs, lamina_below_c2))
+    }
+}
 impl DrawComponent for Sacs<'_> {
     fn draw(
         &self,
@@ -576,8 +589,8 @@ impl DrawComponent for Sacs<'_> {
         _label_colors: &mut ColorPalette,
         line_colors: &mut ColorPalette,
     ) -> Result<element::Group, DrawError> {
-        self.0.posterior_dens.validate_label_length("Dens", 1)?;
-        self.0.lamina.validate_label_length("Lamina", 8)?;
+        let (tr_brs, lamina_below_c2) = self.prep()?;
+        let mut data_values = Vec::new();
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         // C1SAC
@@ -597,14 +610,9 @@ impl DrawComponent for Sacs<'_> {
             Some(&self.0.image_metadata.unit),
         );
         group = group.add(text);
+        data_values.push(length);
 
         // C2SAC to T1SAC
-        let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
-        trs.index_axis_mut(Axis(0), 0)
-            .assign(&self.0.posterior_dens.index_axis(Axis(0), 0));
-        let brs = self.0.corners.0.index_axis(Axis(1), 3);
-        let tr_brs = stack![Axis(0), trs, brs];
-        let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]);
         for (i, (tr_br, lamina)) in tr_brs
             .axis_iter(Axis(1))
             .zip(lamina_below_c2.axis_iter(Axis(0)))
@@ -640,7 +648,9 @@ impl DrawComponent for Sacs<'_> {
                 Some(&self.0.image_metadata.unit),
             );
             group = group.add(text);
+            data_values.push(length);
         }
+        group = group.set("data-value", data_values);
         Ok(group)
     }
 }
@@ -648,8 +658,7 @@ impl DrawComponent for Sacs<'_> {
 impl MeasureComponent for Sacs<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        self.0.posterior_dens.validate_label_length("Dens", 1)?;
-        self.0.lamina.validate_label_length("Lamina", 8)?;
+        let (tr_brs, lamina_below_c2) = self.prep()?;
         let mut lengths: Vec<f64> = Vec::new();
         // C1SAC
         let lamina = self.0.lamina.index_axis(Axis(0), 0);
@@ -661,12 +670,6 @@ impl MeasureComponent for Sacs<'_> {
         lengths.push((&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm());
 
         // C2SAC to T1SAC
-        let mut trs = self.0.corners.0.index_axis(Axis(1), 1).to_owned();
-        trs.index_axis_mut(Axis(0), 0)
-            .assign(&self.0.posterior_dens.index_axis(Axis(0), 0));
-        let brs = self.0.corners.0.index_axis(Axis(1), 3);
-        let tr_brs = stack![Axis(0), trs, brs];
-        let lamina_below_c2 = self.0.lamina.slice(s![1.., ..]);
         for (tr_br, lamina) in tr_brs
             .axis_iter(Axis(1))
             .zip(lamina_below_c2.axis_iter(Axis(0)))
@@ -741,6 +744,7 @@ impl DrawComponent for Adi<'_> {
             Some(&self.0.image_metadata.unit),
         );
         group = group.add(text);
+        group = group.set("data-value", length);
         Ok(group)
     }
 }
@@ -818,17 +822,19 @@ impl DrawComponent for OC2<'_> {
             .index_axis(Axis(0), 0)
             .l2_dist(&c2_lower_endplate.index_axis(Axis(0), 1))
             .unwrap();
-        group = painter.cobb_from_plates(
-            group,
-            (mcgregor_points, c2_lower_endplate.to_owned()),
-            &CobbAux {
-                plate_scale: 7.0,
-                flip_sign: false,
-                ..Default::default()
-            },
-            c2_length,
-            Some(self.id()),
-        );
+        group = painter
+            .cobb_from_plates(
+                group,
+                (mcgregor_points, c2_lower_endplate.to_owned()),
+                &CobbAux {
+                    plate_scale: 7.0,
+                    flip_sign: false,
+                    ..Default::default()
+                },
+                c2_length,
+                Some(self.id()),
+            )
+            .0;
         group = group.add(line);
         Ok(group)
     }
@@ -870,6 +876,7 @@ impl DrawComponent for WedgeAngle<'_> {
     ) -> Result<element::Group, DrawError> {
         let mut group = self.default_group();
         group = group.set("stroke", line_colors.get_or_new(self.id()));
+        let mut data_values = Vec::new();
         let wedge_lengths: Vec<_> = self
             .0
             .corners
@@ -887,7 +894,7 @@ impl DrawComponent for WedgeAngle<'_> {
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
             let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
             let wedge_lower = wedge_lower.slice(s![..2, ..]);
-            group = painter.cobb_from_plates(
+            let (group_, angle) = painter.cobb_from_plates(
                 group,
                 (wedge_upper.to_owned(), wedge_lower.to_owned()),
                 &CobbAux {
@@ -898,7 +905,10 @@ impl DrawComponent for WedgeAngle<'_> {
                 mean_wedge_length,
                 Some(self.id()),
             );
+            group = group_;
+            data_values.push(angle);
         }
+        group = group.set("data-value", data_values);
         Ok(group)
     }
 }
@@ -997,6 +1007,7 @@ impl DrawComponent for ModifiedRenawatIndex<'_> {
                 Some(self.id()),
                 Some(&self.0.image_metadata.unit),
             );
+            group = group.set("data-value", length);
             group = group.add(text);
         }
 
@@ -1270,20 +1281,22 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (c4_posterior, mcgregor_points) = self.prep()?;
-        group = painter.cobb_from_plates(
-            group,
-            (mcgregor_points, c4_posterior.to_owned()),
-            &CobbAux {
-                plate_scale: 7.0,
-                flip_sign: false,
-                ..Default::default()
-            },
-            c4_posterior
-                .index_axis(Axis(0), 0)
-                .l2_dist(&c4_posterior.index_axis(Axis(0), 1))
-                .unwrap(),
-            Some(self.id()),
-        );
+        group = painter
+            .cobb_from_plates(
+                group,
+                (mcgregor_points, c4_posterior.to_owned()),
+                &CobbAux {
+                    plate_scale: 7.0,
+                    flip_sign: false,
+                    ..Default::default()
+                },
+                c4_posterior
+                    .index_axis(Axis(0), 0)
+                    .l2_dist(&c4_posterior.index_axis(Axis(0), 1))
+                    .unwrap(),
+                Some(self.id()),
+            )
+            .0;
         Ok(group)
     }
 }
@@ -1414,6 +1427,7 @@ impl DrawComponent for TPR<'_> {
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
         let lamina_below_c2 = self.0.lamina.slice(s![2.., ..]);
         let vertebra_below_c2 = self.0.corners.0.slice(s![1.., .., ..]);
+        let mut ratios = Vec::new();
         for (i, (lamina, vertebra)) in lamina_below_c2
             .axis_iter(Axis(0))
             .zip(vertebra_below_c2.axis_iter(Axis(0)))
@@ -1455,8 +1469,10 @@ impl DrawComponent for TPR<'_> {
                 Some(&title),
                 None,
             );
+            ratios.push(ratio);
             group = group.add(text);
         }
+        group = group.set("data-value", ratios);
         Ok(group)
     }
 }
@@ -1537,6 +1553,7 @@ fn sagittal_vertical_axis(
         Some(label),
         Some(unit),
     );
+    group = group.set("data-value", distance);
     group.add(text)
 }
 
@@ -1686,6 +1703,7 @@ impl DrawComponent for EndPlateAngle<'_> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let endplates = self.prep()?;
+        let mut angles = Vec::new();
         for plate in endplates.axis_iter(Axis(0)) {
             let angle = -crate::draw::tilt_angle(self.id(), plate.view()).unwrap_or_default();
             let line = painter.line(plate);
@@ -1698,7 +1716,9 @@ impl DrawComponent for EndPlateAngle<'_> {
                 None,
             );
             group = group.add(text);
+            angles.push(angle);
         }
+        group = group.set("data-value", angles);
         Ok(group)
     }
 }
@@ -1743,6 +1763,7 @@ impl DrawComponent for MidPlaneAngle<'_> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         // let midplanes = self.prep()?;
+        let mut angles = Vec::new();
         let midplanes = self.0.corners.calculate_midplanes();
         for plane in midplanes.axis_iter(Axis(0)) {
             let angle = -crate::draw::tilt_angle(self.id(), plane.view()).unwrap_or_default();
@@ -1756,7 +1777,9 @@ impl DrawComponent for MidPlaneAngle<'_> {
                 None,
             );
             group = group.add(text);
+            angles.push(angle);
         }
+        group = group.set("data-value", angles);
         Ok(group)
     }
 }
@@ -1811,10 +1834,11 @@ impl DrawComponent for InterVertebralAngle<'_> {
             })
             .sum::<f64>()
             / (midplanes.shape()[0] as f64);
+        let mut angles = Vec::new();
         for i in 0..midplanes.shape()[0] - 1 {
             let plane1 = midplanes.index_axis(Axis(0), i);
             let plane2 = midplanes.index_axis(Axis(0), i + 1);
-            group = painter.cobb_from_plates(
+            let (group_, angle) = painter.cobb_from_plates(
                 group,
                 (plane1.to_owned(), plane2.to_owned()),
                 &CobbAux {
@@ -1824,8 +1848,11 @@ impl DrawComponent for InterVertebralAngle<'_> {
                 },
                 mean_length,
                 Some(self.id()),
-            )
+            );
+            group = group_;
+            angles.push(angle);
         }
+        group = group.set("data-value", angles);
         Ok(group)
     }
 }
@@ -1926,6 +1953,7 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
         let (centroids, bisectrices, translations, proj_ss, proj_is) = self.prep()?;
+        let mut data_values = Vec::new();
         for i in 1..centroids.shape()[0] {
             let bisectrix = bisectrices.index_axis(Axis(0), i - 1);
             // superior centroid
@@ -1944,6 +1972,7 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
                 Some(&self.0.image_metadata.unit),
             );
             group = group.add(text);
+            data_values.push(signed_distance);
             group = group.add(painter.line(stack![Axis(0), s_c.view(), proj_s.view()]));
             group = group.add(painter.line(stack![Axis(0), i_c.view(), proj_i.view()]));
             group = group.add(painter.line(bisectrix.view()));
@@ -1954,6 +1983,7 @@ impl DrawComponent for AnteroposteriorVertebralTranslation<'_> {
             let point = painter.point(c).set("fill", color);
             group = group.add(point);
         }
+        group = group.set("data-value", data_values);
         Ok(group)
     }
 }
@@ -2226,7 +2256,30 @@ impl AsMeasure for NeckLateralDraw {
     type MeasureType = NeckLateralMeasure;
 
     fn as_measure(&self) -> Option<Self::MeasureType> {
-        None // TODO: implement along with confidence!
+        use NeckLateralDraw::*;
+        match self {
+            Adi => Some(NeckLateralMeasure::Adi),
+            OC2 => Some(NeckLateralMeasure::OC2),
+            Sacs => Some(NeckLateralMeasure::Sacs),
+            WedgeAngle => Some(NeckLateralMeasure::WedgeAngle),
+            ModifiedRenawatIndex => Some(NeckLateralMeasure::ModifiedRenawatIndex),
+            ThoracicInletAngle => Some(NeckLateralMeasure::ThoracicInletAngle),
+            NeckTilt => Some(NeckLateralMeasure::NeckTilt),
+            SpinoCranialAngle => Some(NeckLateralMeasure::SpinoCranialAngle),
+            OccipitocervicalInclination => Some(NeckLateralMeasure::OccipitocervicalInclination),
+            CranialSlope => Some(NeckLateralMeasure::CranialSlope),
+            T1Tilt => Some(NeckLateralMeasure::T1Slope),
+            TPR => Some(NeckLateralMeasure::TPR),
+            C2C7SVA => Some(NeckLateralMeasure::C2C7SVA),
+            EACSVA => Some(NeckLateralMeasure::EACSVA),
+            EndPlateAngle => Some(NeckLateralMeasure::EndPlateAngle),
+            MidPlaneAngle => Some(NeckLateralMeasure::MidPlaneAngle),
+            InterVertebralAngle => Some(NeckLateralMeasure::InterVertebralAngle),
+            AnteroposteriorVertebralTranslation => {
+                Some(NeckLateralMeasure::AnteroposteriorVertebralTranslation)
+            }
+            CervicalPoints | VertebralLabels => None,
+        }
     }
 }
 

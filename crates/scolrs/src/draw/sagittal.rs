@@ -81,7 +81,7 @@ macro_rules! impl_kyophosis {
                         inf: Self::INF,
                     })
                     .unwrap();
-                Ok(angle)
+                Ok(-angle)
             }
         }
         impl ConfidenceComponent for $name<'_> {
@@ -197,7 +197,7 @@ impl MeasureComponent for LumbarLordosis<'_> {
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
-        let angle = spine.angle(&Curve { sup, inf }).unwrap();
+        let angle = -spine.angle(&Curve { sup, inf }).unwrap();
         Ok(angle)
     }
 }
@@ -344,7 +344,7 @@ impl DrawComponent for LumbosacralAngle<'_> {
             flip_sign: true,
             ..CobbAux::default()
         };
-        let g = painter.cobb_from_plates(
+        let (g, _angle) = painter.cobb_from_plates(
             group,
             (sup, inf),
             &aux_param,
@@ -359,7 +359,7 @@ impl MeasureComponent for LumbosacralAngle<'_> {
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (sup, inf) = Self::prep(&self.0.spine);
         let angle = angle_between(sup.view(), inf.view()).to_degrees();
-        Ok(angle)
+        Ok(-angle)
     }
 }
 impl ConfidenceComponent for LumbosacralAngle<'_> {
