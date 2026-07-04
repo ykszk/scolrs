@@ -1,6 +1,6 @@
 use ndarray::Axis;
 use scolrs::draw::{AsMeasure, ColorPalettes};
-use scolrs::head_neck::{LateralPoints, NeckLateralDraw};
+use scolrs::head_neck::{LateralPoints, NeckLateralDraw, NeckLateralMeasure};
 use scolrs::lenke::{
     BendReasonAngles, CurveType, IsStructural, LumbarModifier, MajorCurve, MinorReason,
     RegionalCurveType, SagittalModifier, StructuralReason, Study, KYOPHOSIS_CURVE_MT,
@@ -476,7 +476,7 @@ impl Sign {
 }
 
 #[test]
-fn test_measure_cases() -> Result<()> {
+fn test_coronal_measure_cases() -> Result<()> {
     fn inner(json_path: PathBuf, measure_and_pos: &[(CoronalMeasure, Sign)]) -> Result<()> {
         println!("Testing measures in {:?}", json_path);
         let json_str = std::fs::read_to_string(&json_path)?;
@@ -528,6 +528,49 @@ fn test_measure_cases() -> Result<()> {
         (LSTV, Pos),
     ];
     inner(json_filename, &measure_and_pos)?;
+    Ok(())
+}
+
+#[test]
+fn test_neck_measure_cases() -> Result<()> {
+    fn inner(
+        json_path: PathBuf,
+        measure_and_signes: &[(NeckLateralMeasure, &[Sign])],
+    ) -> Result<()> {
+        println!("Testing measures in {:?}", json_path);
+        let json_str = std::fs::read_to_string(&json_path)?;
+        let lm = LabelMeData::try_from(json_str.as_str())?;
+        let lateral = LateralPoints::try_from(&lm)?;
+        let lateral = lateral.into_scaled()?;
+
+        for (measure, signes) in measure_and_signes.iter() {
+            let m = Box::<dyn MeasureComponent<ValueType = Vec<f64>>>::from((measure, &lateral));
+            let values = m.measure()?;
+            for (i, (value, sign)) in values.iter().zip(signes.iter()).enumerate() {
+                assert_eq!(
+                    Sign::new(*value),
+                    *sign,
+                    "Measure {:?} sign mismatch with value {} at index {}",
+                    measure,
+                    value,
+                    i
+                );
+            }
+        }
+        Ok(())
+    }
+
+    use NeckLateralMeasure::*;
+    use Sign::*;
+
+    // neck_case1
+    let json_filename = data_directory().join("neck_case1/lateral.json");
+    let measure_and_pos = [(OccipitocervicalInclination, &[Pos][..])];
+    inner(json_filename, &measure_and_pos)?;
+
+    // neck_case2
+    // let json_filename = data_directory().join("neck_case2/lateral.json");
+    // inner(json_filename, &measure_and_pos)?;
     Ok(())
 }
 

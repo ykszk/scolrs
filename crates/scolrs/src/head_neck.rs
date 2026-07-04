@@ -1283,7 +1283,7 @@ impl DrawComponent for OccipitocervicalInclination<'_> {
         group = painter
             .cobb_from_plates(
                 group,
-                (mcgregor_points, c4_posterior.to_owned()),
+                (c4_posterior.to_owned(), mcgregor_points),
                 &CobbAux {
                     plate_scale: 7.0,
                     flip_sign: false,
@@ -1303,7 +1303,7 @@ impl MeasureComponent for OccipitocervicalInclination<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (c4_posterior, mcgregor_points) = self.prep()?;
-        let angle = angle_between(mcgregor_points.view(), c4_posterior.view()).to_degrees();
+        let angle = angle_between(c4_posterior.view(), mcgregor_points.view()).to_degrees();
         Ok(vec![angle])
     }
 }
