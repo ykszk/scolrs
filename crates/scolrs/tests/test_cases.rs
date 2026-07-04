@@ -565,7 +565,12 @@ fn test_neck_measure_cases() -> Result<()> {
 
     // neck_case1
     let json_filename = data_directory().join("neck_case1/lateral.json");
-    let measure_and_pos = [(OccipitocervicalInclination, &[Pos][..])];
+    let measure_and_pos = [
+        (OccipitocervicalInclination, &[Pos][..]),
+        (OC2, &[Pos][..]),
+        (WedgeAngle, &[Zero, Pos, Pos, Pos, Pos, Pos][..]),
+        (InterVertebralAngle, &[Neg, Pos, Pos, Zero, Pos, Pos][..]),
+    ];
     inner(json_filename, &measure_and_pos)?;
 
     // neck_case2

@@ -828,7 +828,7 @@ impl DrawComponent for OC2<'_> {
                 (mcgregor_points, c2_lower_endplate.to_owned()),
                 &CobbAux {
                     plate_scale: 7.0,
-                    flip_sign: false,
+                    flip_sign: true,
                     ..Default::default()
                 },
                 c2_length,
@@ -843,7 +843,7 @@ impl MeasureComponent for OC2<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
-        let angle = angle_between(mcgregor_points.view(), c2_lower_endplate.view());
+        let angle = -angle_between(mcgregor_points.view(), c2_lower_endplate.view());
         Ok(vec![angle.to_degrees()])
     }
 }
@@ -898,7 +898,7 @@ impl DrawComponent for WedgeAngle<'_> {
                 (wedge_upper.to_owned(), wedge_lower.to_owned()),
                 &CobbAux {
                     plate_scale: 1.5,
-                    flip_sign: false,
+                    flip_sign: true,
                     ..Default::default()
                 },
                 mean_wedge_length,
@@ -920,7 +920,7 @@ impl MeasureComponent for WedgeAngle<'_> {
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
             let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
             let wedge_lower = wedge_lower.slice(s![..2, ..]);
-            let angle = angle_between(wedge_upper, wedge_lower);
+            let angle = -angle_between(wedge_upper, wedge_lower);
             angles.push(angle.to_degrees());
         }
         Ok(angles)
@@ -1842,7 +1842,7 @@ impl DrawComponent for InterVertebralAngle<'_> {
                 (plane1.to_owned(), plane2.to_owned()),
                 &CobbAux {
                     plate_scale: 1.5,
-                    flip_sign: false,
+                    flip_sign: true,
                     ..Default::default()
                 },
                 mean_length,
@@ -1863,7 +1863,7 @@ impl MeasureComponent for InterVertebralAngle<'_> {
         for i in 0..midplanes.shape()[0] - 1 {
             let plane1 = midplanes.index_axis(Axis(0), i);
             let plane2 = midplanes.index_axis(Axis(0), i + 1);
-            let angle = angle_between(plane1.view(), plane2.view()).to_degrees();
+            let angle = -angle_between(plane1.view(), plane2.view()).to_degrees();
             angles.push(angle);
         }
         Ok(angles)
