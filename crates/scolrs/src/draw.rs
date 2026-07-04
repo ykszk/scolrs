@@ -661,7 +661,7 @@ impl Painter {
             let unit_dir = &dir_plate / dir_plate.l2norm();
             let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![plate_origin, ..])
                 + aux_param.plate_scale * base_length * &unit_dir;
-            let aux_cross = rotate_around(aux_on_sup.view(), arr_int.view(), angle_rad / 2.0);
+            let aux_cross = rotate_around(aux_on_sup.view(), arr_int.view(), -angle_rad / 2.0);
 
             let d_btw_aux2p = aux_on_sup
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
