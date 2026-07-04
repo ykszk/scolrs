@@ -159,13 +159,13 @@ trait Wild<T> {
 
 impl Wild<&Option<(Curve, f64)>> for Option<Spine> {
     fn angle_wild(&self, curve: &Option<(Curve, f64)>) -> f64 {
-        self.as_ref().unwrap().angle(&curve.ref_unwrap().0).unwrap()
+        self.as_ref().unwrap().angle(&curve.ref_unwrap().0)
     }
 }
 
 impl Wild<&Curve> for Option<Spine> {
     fn angle_wild(&self, curve: &Curve) -> f64 {
-        self.ref_unwrap().angle(curve).unwrap()
+        self.ref_unwrap().angle(curve)
     }
 }
 

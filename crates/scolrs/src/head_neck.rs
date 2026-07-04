@@ -1,7 +1,7 @@
 use std::{convert::Infallible, ops::MulAssign};
 
 use crate::{
-    angle_from_lines, array2_to_vec_points, array3_to_nested_vec_points, create_shapes,
+    array2_to_vec_points, array3_to_nested_vec_points, create_shapes,
     draw::{
         angle_between, distanced_pair3, draw_incidence_angle, draw_tilt_angle,
         femoral_incidence_angle, points2line, tilt_angle, AsMeasure, CobbAux, ColorPalette,
@@ -843,9 +843,8 @@ impl MeasureComponent for OC2<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let (mcgregor_points, c2_lower_endplate) = self.prep()?;
-        let angle =
-            angle_from_lines(mcgregor_points.view(), c2_lower_endplate.view()).unwrap_or_default();
-        Ok(vec![angle])
+        let angle = angle_between(mcgregor_points.view(), c2_lower_endplate.view());
+        Ok(vec![angle.to_degrees()])
     }
 }
 impl ConfidenceComponent for OC2<'_> {
@@ -921,8 +920,8 @@ impl MeasureComponent for WedgeAngle<'_> {
             let wedge_upper = wedge_upper.slice(s![2.., ..]);
             let wedge_lower = self.0.corners.0.index_axis(Axis(0), i + 1);
             let wedge_lower = wedge_lower.slice(s![..2, ..]);
-            let angle = angle_from_lines(wedge_upper, wedge_lower).unwrap_or_default();
-            angles.push(angle);
+            let angle = angle_between(wedge_upper, wedge_lower);
+            angles.push(angle.to_degrees());
         }
         Ok(angles)
     }

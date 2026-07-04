@@ -1196,10 +1196,7 @@ impl CoronalPoints {
     }
 
     fn _find_largest_curve(&self, curves: Vec<Curve>) -> Option<(Curve, f64)> {
-        let angles: Vec<_> = curves
-            .iter()
-            .filter_map(|c| self.spine.angle(c).map(|a| (c, a)))
-            .collect();
+        let angles: Vec<_> = curves.iter().map(|c| (c, self.spine.angle(c))).collect();
         if angles.is_empty() {
             return None;
         }
@@ -1740,15 +1737,15 @@ impl CurveDescOptionalAngles {
     pub fn resolve_angles(self, spine: &Spine) -> CurveDesc {
         let curves = CurveSet {
             pt: self.curves.pt.map(|(c, a)| {
-                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                let angle = a.unwrap_or_else(|| spine.angle(&c));
                 (c.clone(), angle)
             }),
             mt: self.curves.mt.map(|(c, a)| {
-                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                let angle = a.unwrap_or_else(|| spine.angle(&c));
                 (c, angle)
             }),
             tll: self.curves.tll.map(|(c, a)| {
-                let angle = a.unwrap_or_else(|| spine.angle(&c).unwrap());
+                let angle = a.unwrap_or_else(|| spine.angle(&c));
                 (c, angle)
             }),
         };
@@ -1971,22 +1968,6 @@ where
     }
 }
 
-/// Angle between two lines in degrees
-/// TODO: Check the difference from `angle_between`?
-pub fn angle_from_lines(line1: ArrayView2<f64>, line2: ArrayView2<f64>) -> Option<f64> {
-    let v = &line1.index_axis(Axis(0), 1) - &line1.index_axis(Axis(0), 0);
-    let w = &line2.index_axis(Axis(0), 1) - &line2.index_axis(Axis(0), 0);
-
-    if v.l2norm() == 0.0 || w.l2norm() == 0.0 {
-        return None;
-    }
-
-    let cross = w[1] * v[0] - w[0] * v[1];
-    let dot = w.dot(&v);
-
-    Some(cross.atan2(dot).to_degrees())
-}
-
 impl Spine {
     /// Corner points of thoracic and lumbar vertebrae
     pub fn tl_corners(&self) -> Corners<ndarray::ViewRepr<&f64>> {
@@ -2041,10 +2022,10 @@ impl Spine {
     }
 
     /// Calculate Cobb angle in degrees
-    pub fn angle(&self, curve: &Curve) -> Option<f64> {
+    pub fn angle(&self, curve: &Curve) -> f64 {
         let sup_line = self.sup_plate(curve.sup);
         let inf_line = self.inf_plate(curve.inf);
-        angle_from_lines(sup_line, inf_line)
+        draw::angle_between(sup_line, inf_line).to_degrees()
     }
 }
 

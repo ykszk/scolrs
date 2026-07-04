@@ -1,9 +1,9 @@
 use crate::draw::generic::{GenericDraw, GenericPoints};
 use crate::implant::{self, ScrewSpine};
 use crate::{
-    angle_from_lines, head_neck, CoronalDraw, CoronalMeasure, CoronalPointsAndCurve,
-    HasCornerPoints, HasImageMetadata, ImplantDraw, L2Norm, SagittalDraw, SagittalMeasure,
-    SagittalPoints, Scalable, ScaledType, ValidateLength, CORNER_LABELS,
+    head_neck, CoronalDraw, CoronalMeasure, CoronalPointsAndCurve, HasCornerPoints,
+    HasImageMetadata, ImplantDraw, L2Norm, SagittalDraw, SagittalMeasure, SagittalPoints, Scalable,
+    ScaledType, ValidateLength, CORNER_LABELS,
 };
 use crate::{Curve, Spine, VERTEBRAL_LABELS};
 use base64::Engine;
@@ -335,7 +335,6 @@ where
 }
 
 /// Signed angle from line1 to line2 in radians
-/// TODO: Check the difference from [`angle_from_lines`]?
 pub fn angle_between<S, T>(line1: ArrayBase<S, Ix2>, line2: ArrayBase<T, Ix2>) -> f64
 where
     S: ndarray::Data<Elem = f64>,
@@ -653,7 +652,7 @@ impl Painter {
 
         let linter = sup_line.intersection(&inf_line);
         if let Some(intersection) = linter {
-            let angle = angle_from_lines(sup_plate.view(), inf_plate.view()).unwrap(); // lines can't be parallel if there is an intersection point
+            let angle_rad = angle_between(sup_plate.view(), inf_plate.view());
 
             let arr_int = ndarray::arr1(&[intersection.x, intersection.y]);
             let plate_origin = Self::plate_end(sup_plate.view(), arr_int.view());
@@ -662,8 +661,7 @@ impl Painter {
             let unit_dir = &dir_plate / dir_plate.l2norm();
             let aux_on_sup: ndarray::Array1<_> = &sup_plate.slice(s![plate_origin, ..])
                 + aux_param.plate_scale * base_length * &unit_dir;
-            let aux_cross =
-                rotate_around(aux_on_sup.view(), arr_int.view(), angle.to_radians() / 2.0);
+            let aux_cross = rotate_around(aux_on_sup.view(), arr_int.view(), angle_rad / 2.0);
 
             let d_btw_aux2p = aux_on_sup
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
@@ -681,17 +679,22 @@ impl Painter {
                     ]));
                     group = group.add(line);
                 }
-                let angle = if aux_param.flip_sign { -angle } else { angle };
+                let angle_rad = if aux_param.flip_sign {
+                    -angle_rad
+                } else {
+                    angle_rad
+                };
+                let angle_deg = angle_rad.to_degrees();
                 let text = self.text(
-                    format!("{:.1}°", angle).as_str(),
+                    format!("{:.1}°", angle_deg).as_str(),
                     ndarray::arr1(&[intersection.x, intersection.y]),
                     title,
                     None,
                 );
 
                 group = group.add(text);
-                group = group.set("data-value", angle);
-                (group, angle)
+                group = group.set("data-value", angle_deg);
+                (group, angle_deg)
             } else {
                 // draw aux lines and its intersection
 
@@ -722,11 +725,21 @@ impl Painter {
                         group = group.add(self.line(stack![Axis(0), projed_aux, aux_cross]));
                     }
                 }
-                let angle = if aux_param.flip_sign { -angle } else { angle };
-                let text = self.text(format!("{:.1}°", angle).as_str(), aux_cross, title, None);
+                let angle_rad = if aux_param.flip_sign {
+                    -angle_rad
+                } else {
+                    angle_rad
+                };
+                let angle_deg = angle_rad.to_degrees();
+                let text = self.text(
+                    format!("{:.1}°", angle_deg).as_str(),
+                    aux_cross,
+                    title,
+                    None,
+                );
                 group = group.add(text);
-                group = group.set("data-value", angle);
-                (group, angle)
+                group = group.set("data-value", angle_deg);
+                (group, angle_deg)
             }
         } else {
             // parallel lines

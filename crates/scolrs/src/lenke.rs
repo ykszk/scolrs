@@ -89,15 +89,15 @@ impl Study {
         let right_bend = self
             .right_bend
             .as_ref()
-            .map(|scol| scol.angle(coronal_curve).unwrap());
+            .map(|scol| scol.angle(coronal_curve));
         let left_bend = self
             .left_bend
             .as_ref()
-            .map(|scol| scol.angle(coronal_curve).unwrap());
+            .map(|scol| scol.angle(coronal_curve));
         let sagittal = self
             .sagittal
             .as_ref()
-            .map(|scol| (sagittal_curve.clone(), scol.angle(sagittal_curve).unwrap()));
+            .map(|scol| (sagittal_curve.clone(), scol.angle(sagittal_curve)));
         MinorStructuralParam {
             coronal,
             right_bend,

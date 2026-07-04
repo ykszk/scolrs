@@ -73,14 +73,10 @@ macro_rules! impl_kyophosis {
         impl<'a> MeasureComponent for $name<'a> {
             type ValueType = f64;
             fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-                let angle = self
-                    .0
-                    .spine
-                    .angle(&Curve {
-                        sup: Self::SUP,
-                        inf: Self::INF,
-                    })
-                    .unwrap();
+                let angle = self.0.spine.angle(&Curve {
+                    sup: Self::SUP,
+                    inf: Self::INF,
+                });
                 Ok(-angle)
             }
         }
@@ -197,7 +193,7 @@ impl MeasureComponent for LumbarLordosis<'_> {
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let spine = &self.0.spine;
         let (sup, inf) = Self::prep(spine);
-        let angle = -spine.angle(&Curve { sup, inf }).unwrap();
+        let angle = -spine.angle(&Curve { sup, inf });
         Ok(angle)
     }
 }
