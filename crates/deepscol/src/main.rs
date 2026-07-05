@@ -342,7 +342,7 @@ fn finish_image(
 
     let points = ds::extract_points(
         &output3,
-        ds_config.heatmap.thresh,
+        &ds_config.heatmap.thresh,
         ds_config.heatmap.blur_sigma,
         &point_set_config.max_counts,
     )

@@ -5,7 +5,7 @@ pub use image;
 use image::{DynamicImage, GenericImageView};
 use imageproc::region_labelling::{connected_components, Connectivity};
 use log::debug;
-use ndarray::{s, Array3, Array4, ArrayView3, Axis, NewAxis};
+use ndarray::{s, Array3, Array4, ArrayView3, Axis, CowArray, NewAxis};
 use ndarray_ndimage as ndi;
 use scolrs::{
     asm::{model::ActiveShapeModel, AsmConfig, AsmError},
@@ -142,7 +142,7 @@ impl Default for SizeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeatmapConfig {
     /// Threshold for heatmap binarization for point extraction
-    pub thresh: f32,
+    pub thresh: ThresholdConfig,
     /// Sigma for gaussian blur applied to heatmap before point extraction.
     pub blur_sigma: Option<f32>,
 }
@@ -150,10 +150,32 @@ pub struct HeatmapConfig {
 impl Default for HeatmapConfig {
     fn default() -> Self {
         Self {
-            thresh: 0.1,
+            thresh: ThresholdConfig::default(),
             blur_sigma: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThresholdConfig {
+    pub value: f32,
+    pub method: ThresholdMethod,
+}
+
+impl Default for ThresholdConfig {
+    fn default() -> Self {
+        Self {
+            value: 0.1,
+            method: ThresholdMethod::Relative,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ThresholdMethod {
+    Absolute,
+    /// Threshold value is relative to the maximum value in the heatmap
+    Relative,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,7 +207,7 @@ pub struct DeepscolConfig {
 /// Extract landmark point out of the input heatmaps
 pub fn extract_points(
     arr: &ndarray::Array3<f32>,
-    thresh: f32,
+    thresh: &ThresholdConfig,
     blur_sigma: Option<f32>,
     max_point_counts: &[usize],
 ) -> Result<Vec<Vec<Point>>, String> {
@@ -194,24 +216,49 @@ pub fn extract_points(
     let ch_axis = Axis(0);
     let mut all_points: Vec<Vec<Point>> = Vec::new();
     for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(max_point_counts.iter()) {
-        let bin_arr = if let Some(blur_sigma) = blur_sigma {
-            let blurred_ch =
-                ndi::gaussian_filter(&img_ch, blur_sigma, 0, ndi::BorderMode::Nearest, 3);
-            blurred_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 })
-        } else {
-            img_ch.mapv(|v| if v > thresh { 1u8 } else { 0u8 })
+        let thresh_value = match thresh.method {
+            ThresholdMethod::Absolute => thresh.value,
+            ThresholdMethod::Relative => {
+                let max_val = img_ch.iter().cloned().fold(f32::MIN, f32::max);
+                if max_val > 0.0 {
+                    let relative_thresh = thresh.value * max_val;
+                    log::debug!(
+                        "Channel max value: {}, relative threshold: {}",
+                        max_val,
+                        relative_thresh
+                    );
+                    relative_thresh
+                } else {
+                    log::warn!("Channel max value is non-positive: {}", max_val);
+                    thresh.value
+                }
+            }
         };
+        let bin_arr = img_ch.mapv(|v| if v > thresh_value { 1u8 } else { 0u8 });
         let bin_img = image::GrayImage::from_raw(
             width as _,
             height as _,
             bin_arr.into_raw_vec_and_offset().0,
         )
         .unwrap();
+
+        let img_ch: CowArray<'_, f32, _> = if let Some(sigma) = blur_sigma {
+            CowArray::from(ndi::gaussian_filter(
+                &img_ch,
+                sigma,
+                0,
+                ndi::BorderMode::Nearest,
+                3,
+            ))
+        } else {
+            CowArray::from(img_ch)
+        };
+
         let cced = connected_components(&bin_img, Connectivity::Four, image::Luma([0u8]));
         let n_cc = *cced.iter().max().unwrap();
         log::trace!("# of CC in {} is {}", img_ch, n_cc);
 
-        let mut local_maximas: HashMap<u32, (f32, usize, usize)> = HashMap::new();
+        let mut local_maxima: HashMap<u32, (f32, usize, usize)> = HashMap::new();
         // traverse each pixel in cced with the coordinates
         for (x, y, &cc_val) in cced.enumerate_pixels() {
             let cc_val = cc_val.0[0];
@@ -221,21 +268,21 @@ pub fn extract_points(
             let (y, x) = (y as usize, x as usize);
 
             let val = img_ch[[y, x]];
-            let local_maxima = local_maximas.get(&cc_val);
-            if let Some((max_val, _max_y, _max_x)) = local_maxima {
+            let local_maximum = local_maxima.get(&cc_val);
+            if let Some((max_val, _max_y, _max_x)) = local_maximum {
                 if val > *max_val {
                     // Update local maxima if current pixel is greater
-                    local_maximas.insert(cc_val, (val, y, x));
+                    local_maxima.insert(cc_val, (val, y, x));
                 } else {
                     // If current pixel is not greater, skip it
                     continue;
                 }
             } else {
                 // If no local maxima exists for this cc_val, set current pixel as local maxima
-                local_maximas.insert(cc_val, (val, y, x));
+                local_maxima.insert(cc_val, (val, y, x));
             }
         }
-        let mut points_for_ch: Vec<Point> = local_maximas
+        let mut points_for_ch: Vec<Point> = local_maxima
             .into_iter()
             .map(|(_, (_val, y, x))| {
                 // Convert to (x, y) coordinates
