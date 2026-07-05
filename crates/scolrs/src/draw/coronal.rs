@@ -413,7 +413,7 @@ impl DrawComponent for ClavicleAngle<'_> {
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
         let clavicle = &coronal_points.clavicle.0;
-        g = draw_tilt_angle(g, painter, clavicle, Some(label));
+        g = draw_tilt_angle(g, painter, clavicle, false, Some(label));
         Ok(g)
     }
 }
@@ -495,7 +495,7 @@ impl DrawComponent for PelvicObliquity<'_> {
         let color = line_colors.get_or_new(label);
         let mut g = self.default_group().set("fill", color).set("stroke", color);
         let pelvis = &coronal_points.pelvis.0;
-        g = draw_tilt_angle(g, painter, pelvis, Some(label));
+        g = draw_tilt_angle(g, painter, pelvis, false, Some(label));
         Ok(g)
     }
 }

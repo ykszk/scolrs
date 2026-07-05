@@ -568,6 +568,7 @@ fn test_neck_measure_cases() -> Result<()> {
     let measure_and_pos = [
         (OccipitocervicalInclination, &[Pos][..]),
         (OC2, &[Pos][..]),
+        (T1Slope, &[Pos][..]),
         (WedgeAngle, &[Zero, Pos, Pos, Pos, Pos, Pos][..]),
         (InterVertebralAngle, &[Neg, Pos, Pos, Zero, Pos, Pos][..]),
     ];

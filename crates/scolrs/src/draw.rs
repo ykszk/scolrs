@@ -1636,6 +1636,7 @@ pub fn draw_tilt_angle(
     group: element::Group,
     painter: &mut Painter,
     points: &ndarray::Array2<f64>,
+    flip_sign: bool,
     title: Option<&str>,
 ) -> element::Group {
     let mut g = group;
@@ -1649,6 +1650,11 @@ pub fn draw_tilt_angle(
         // if vertical line, move right a bit
         hor_line[[1, 0]] += 0.5 * l2r.l2norm();
     }
+    let (points, hor_line) = if flip_sign {
+        (hor_line, points.to_owned())
+    } else {
+        (points.to_owned(), hor_line)
+    };
     let arc_radius = l2r.l2norm() * 0.8;
     g = painter
         .angle_between(

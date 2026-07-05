@@ -1336,7 +1336,7 @@ impl DrawComponent for CranialSlope<'_> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color).set("fill", color);
         let mcgregor_points = self.0.mcgregor_line()?;
-        group = draw_tilt_angle(group, painter, &mcgregor_points, Some(self.id()));
+        group = draw_tilt_angle(group, painter, &mcgregor_points, false, Some(self.id()));
         Ok(group)
     }
 }
@@ -1383,7 +1383,7 @@ impl DrawComponent for T1Slope<'_> {
         let color = line_colors.get_or_new(self.id());
         let group = self.default_group().set("stroke", color).set("fill", color);
         let t1_top_plate = self.prep();
-        let group = draw_tilt_angle(group, painter, &t1_top_plate, Some(self.id()));
+        let group = draw_tilt_angle(group, painter, &t1_top_plate, true, Some(self.id()));
         Ok(group)
     }
 }
@@ -1391,7 +1391,7 @@ impl MeasureComponent for T1Slope<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
         let t1_top_plate = self.prep();
-        tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![angle])
+        tilt_angle(self.id(), t1_top_plate.view()).map(|angle| vec![-angle])
     }
 }
 impl ConfidenceComponent for T1Slope<'_> {
