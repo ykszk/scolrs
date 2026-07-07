@@ -670,15 +670,25 @@ impl Painter {
                 .l2_dist(&sup_plate.slice(s![plate_origin, ..]))
                 .unwrap();
             if d_btw_aux2p > d_btw_int2p {
-                // draw intersection point
-                for plate in [sup_plate.view(), inf_plate.view()] {
-                    let i = Self::plate_end(plate, arr_int.view());
-                    let line = self.line(ndarray::arr2(&[
-                        [plate[[i, 0]], plate[[i, 1]]],
-                        [intersection.x, intersection.y],
-                    ]));
-                    group = group.add(line);
-                }
+                let mut polyline = Vec::new();
+                polyline.push(
+                    sup_plate
+                        .slice(s![Self::plate_end(sup_plate.view(), arr_int.view()), ..])
+                        .to_owned(),
+                );
+                polyline.push(ndarray::arr1(&[intersection.x, intersection.y]));
+                polyline.push(
+                    inf_plate
+                        .slice(s![Self::plate_end(inf_plate.view(), arr_int.view()), ..])
+                        .to_owned(),
+                );
+                let polyline: Array2<f64> = ndarray::stack(
+                    Axis(0),
+                    &polyline.iter().map(|a| a.view()).collect::<Vec<_>>(),
+                )
+                .unwrap();
+                group = group.add(self.polyline(polyline));
+                // }
                 let angle_rad = if aux_param.flip_sign {
                     -angle_rad
                 } else {
