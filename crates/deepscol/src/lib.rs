@@ -157,17 +157,35 @@ impl Default for HeatmapConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThresholdConfig {
-    pub value: f32,
-    pub method: ThresholdMethod,
+pub struct ThresholdMinMax {
+    pub min: Option<f32>,
+    pub max: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridThreshold {
+    pub absolute: ThresholdMinMax,
+    pub relative: ThresholdMinMax,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ThresholdConfig {
+    Absolute(ThresholdMinMax),
+    Relative(ThresholdMinMax),
+    Hybrid(HybridThreshold),
 }
 
 impl Default for ThresholdConfig {
     fn default() -> Self {
-        Self {
-            value: 0.1,
-            method: ThresholdMethod::Relative,
-        }
+        let absolute = ThresholdMinMax {
+            min: Some(0.01),
+            max: None,
+        };
+        let relative = ThresholdMinMax {
+            min: Some(0.1),
+            max: None,
+        };
+        Self::Hybrid(HybridThreshold { absolute, relative })
     }
 }
 
@@ -176,6 +194,7 @@ pub enum ThresholdMethod {
     Absolute,
     /// Threshold value is relative to the maximum value in the heatmap
     Relative,
+    Hybrid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,26 +234,59 @@ pub fn extract_points(
     let width = arr.shape()[2];
     let ch_axis = Axis(0);
     let mut all_points: Vec<Vec<Point>> = Vec::new();
-    for (img_ch, max_point_count) in arr.axis_iter(ch_axis).zip(max_point_counts.iter()) {
-        let thresh_value = match thresh.method {
-            ThresholdMethod::Absolute => thresh.value,
-            ThresholdMethod::Relative => {
+    for (i_ch, (img_ch, max_point_count)) in arr
+        .axis_iter(ch_axis)
+        .zip(max_point_counts.iter())
+        .enumerate()
+    {
+        let (min_thresh, max_thresh) = match thresh {
+            ThresholdConfig::Absolute(thresh_minmax) => {
+                let min_thresh = thresh_minmax.min.unwrap_or(0.0);
+                let max_thresh = thresh_minmax.max.unwrap_or(f32::MAX);
+                (min_thresh, max_thresh)
+            }
+            ThresholdConfig::Relative(thresh_minmax) => {
                 let max_val = img_ch.iter().cloned().fold(f32::MIN, f32::max);
-                if max_val > 0.0 {
-                    let relative_thresh = thresh.value * max_val;
-                    log::debug!(
-                        "Channel max value: {}, relative threshold: {}",
-                        max_val,
-                        relative_thresh
-                    );
-                    relative_thresh
-                } else {
-                    log::warn!("Channel max value is non-positive: {}", max_val);
-                    thresh.value
-                }
+                let min_thresh = thresh_minmax.min.map(|v| v * max_val).unwrap_or(0.0);
+                let max_thresh = thresh_minmax.max.map(|v| v * max_val).unwrap_or(f32::MAX);
+                log::debug!(
+                    "Channel {} max value: {}, relative computed min: {}, max: {}",
+                    i_ch,
+                    max_val,
+                    min_thresh,
+                    max_thresh
+                );
+                (min_thresh, max_thresh)
+            }
+            ThresholdConfig::Hybrid(hybrid) => {
+                let max_val = img_ch.iter().cloned().fold(f32::MIN, f32::max);
+                let min_thresh_abs = hybrid.absolute.min.unwrap_or(0.0);
+                let max_thresh_abs = hybrid.absolute.max.unwrap_or(f32::MAX);
+                let min_thresh_rel = hybrid.relative.min.map(|v| v * max_val).unwrap_or(0.0);
+                let max_thresh_rel = hybrid.relative.max.map(|v| v * max_val).unwrap_or(f32::MAX);
+                let min_thresh = min_thresh_abs.max(min_thresh_rel);
+                let max_thresh = max_thresh_abs.min(max_thresh_rel);
+                log::debug!(
+                    "Channel {} max value: {}, hybrid threshold absolute min: {:?}, max: {:?}, relative min: {:?}, max: {:?}, computed min: {}, max: {}",
+                    i_ch,
+                    max_val,
+                    hybrid.absolute.min,
+                    hybrid.absolute.max,
+                    min_thresh_rel,
+                    max_thresh_rel,
+                    min_thresh,
+                    max_thresh
+                );
+                (min_thresh, max_thresh)
             }
         };
-        let bin_arr = img_ch.mapv(|v| if v > thresh_value { 1u8 } else { 0u8 });
+        let bin_arr = img_ch.mapv(|v| {
+            if v > min_thresh && v < max_thresh {
+                1u8
+            } else {
+                0u8
+            }
+        });
         let bin_img = image::GrayImage::from_raw(
             width as _,
             height as _,
@@ -256,7 +308,7 @@ pub fn extract_points(
 
         let cced = connected_components(&bin_img, Connectivity::Four, image::Luma([0u8]));
         let n_cc = *cced.iter().max().unwrap();
-        log::trace!("# of CC in {} is {}", img_ch, n_cc);
+        log::trace!("# of CC in channel {} is {}", i_ch, n_cc);
 
         let mut local_maxima: HashMap<u32, (f32, usize, usize)> = HashMap::new();
         // traverse each pixel in cced with the coordinates
@@ -292,7 +344,8 @@ pub fn extract_points(
 
         if points_for_ch.len() > *max_point_count {
             log::debug!(
-                "Channel has more points than max_point_count: {} > {}",
+                "Channel {} has more points than max_point_count: {} > {}",
+                i_ch,
                 points_for_ch.len(),
                 max_point_count
             );
