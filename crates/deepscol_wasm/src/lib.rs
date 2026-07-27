@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use deepscol::{
     calculate_crop_parameters, extract_points, load_image, to_model_input, CropConfig, CroppedIO,
-    ModelIO, OriginalIO, ResultHtmlLmArgs,
+    ModelIO, OriginalIO, ResultHtmlLmArgs, ThresholdConfig,
 };
 
 pub use deepscol::{CroppingParams, ScanDirection};
@@ -168,7 +168,7 @@ pub fn process_output(
     let blur_sigma = Some(3.0);
     let points = extract_points(
         &output3,
-        ThresholdConfig::default(),
+        &ThresholdConfig::default(),
         blur_sigma,
         &point_set_config.max_counts,
     )

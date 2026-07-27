@@ -139,21 +139,12 @@ impl Default for SizeConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HeatmapConfig {
     /// Threshold for heatmap binarization for point extraction
     pub thresh: ThresholdConfig,
     /// Sigma for gaussian blur applied to heatmap before point extraction.
     pub blur_sigma: Option<f32>,
-}
-
-impl Default for HeatmapConfig {
-    fn default() -> Self {
-        Self {
-            thresh: ThresholdConfig::default(),
-            blur_sigma: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
