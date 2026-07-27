@@ -40,7 +40,7 @@ upper_slope,red
 lower_slope,blue
 WedgeAngle,red
 Sacs,green
-ADI,lime
+Adi,lime
 OC2,orange
 ModifiedRenawatIndex,mediumpurple
 ThoracicInletAngle,blueviolet
@@ -49,3 +49,9 @@ SpinoCranialAngle,lightcoral
 OccipitocervicalInclination,lightseagreen
 CranialSlope,lightskyblue
 TPR,midnightblue
+C2C7SVA,orange
+EACSVA,steelblue
+EndPlateAngle,teal
+MidPlaneAngle,dodgerblue
+InterVertebralAngle,orchid
+AnteroposteriorVertebralTranslation,mediumvioletred

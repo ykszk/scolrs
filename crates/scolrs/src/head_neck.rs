@@ -1883,7 +1883,7 @@ impl ConfidenceComponent for InterVertebralAngle<'_> {
     }
 }
 
-/// Anteroposterior Vertebral Translation calculated by the midplane method.
+/// Anteroposterior Vertebral Translation (Posteroanterior displacement) calculated by the midplane method.
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct AnteroposteriorVertebralTranslation<'a>(pub &'a LateralPoints);
