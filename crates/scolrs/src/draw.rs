@@ -1304,7 +1304,7 @@ impl DrawComponent for VertebralLabels<'_> {
         let mut g_vert_labels = self.default_group();
         let centroids = self.0.tl_centroids();
         for (coords, label) in
-            std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS.into_iter())
+            std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS)
         {
             let t = painter.text(label, coords, None, None);
             g_vert_labels = g_vert_labels.add(t);
@@ -2092,7 +2092,7 @@ pub fn wrap_in_html(
     let mut elements: Vec<_> = Vec::new();
     for selector in selector {
         let selector = scraper::Selector::parse(selector).unwrap_or_else(|_| {
-            panic!("Failed to parse selector: {}", &selector);
+            panic!("Failed to parse selector: {}", selector);
         });
         elements.extend(document.select(&selector));
     }

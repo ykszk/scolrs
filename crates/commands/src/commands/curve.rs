@@ -115,7 +115,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
             Box::new(BufReader::new(std::io::stdin()))
         } else {
             Box::new(BufReader::new(
-                File::open(&args.input).with_context(|| format!("Open file {:?}", &args.input))?,
+                File::open(&args.input).with_context(|| format!("Open file {:?}", args.input))?,
             ))
         };
         for line in reader.lines() {
@@ -168,7 +168,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
     } else {
         // single json IO
         let s = std::fs::read_to_string(&args.input)
-            .with_context(|| format!("Read string from {:?}", &args.input))?;
+            .with_context(|| format!("Read string from {:?}", args.input))?;
         let (data, coronal_points): (LabelMeData, Option<CoronalPoints>) = if args.labelme {
             (s.try_into()?, None)
         } else {

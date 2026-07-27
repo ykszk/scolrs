@@ -26,7 +26,7 @@ fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Dese
     let mut output_points = points;
     *output_points.get_confidence_mut() = Some(confidence);
     let output_file = std::fs::File::create(&args.output)
-        .with_context(|| format!("Creating {:?}", &args.output))?;
+        .with_context(|| format!("Creating {:?}", args.output))?;
     let writer = std::io::BufWriter::new(output_file);
     serde_json::to_writer_pretty(writer, &output_points)?;
     Ok(())
@@ -63,7 +63,7 @@ where
 {
     let points_line: LineType = serde_json::from_str(line)?;
     let line_filename = points_line.filename().to_string();
-    log::info!("Processing line with filename {}", &line_filename);
+    log::info!("Processing line with filename {}", line_filename);
     let points = points_line.content_filename().0;
     if points.get_confidence().is_some() {
         log::warn!("Overwriting existing confidence values");
@@ -93,7 +93,7 @@ fn process_ndjson(args: ConfidenceArgs) -> Result<()> {
         Box::new(BufReader::new(std::io::stdin()))
     } else {
         Box::new(BufReader::new(
-            File::open(&args.input).with_context(|| format!("Open file {:?}", &args.input))?,
+            File::open(&args.input).with_context(|| format!("Open file {:?}", args.input))?,
         ))
     };
     let mut writer: Box<dyn std::io::Write> = if args.output.as_os_str() == "-" {
@@ -101,7 +101,7 @@ fn process_ndjson(args: ConfidenceArgs) -> Result<()> {
     } else {
         Box::new(std::io::BufWriter::new(
             File::create(&args.output)
-                .with_context(|| format!("Create file {:?}", &args.output))?,
+                .with_context(|| format!("Create file {:?}", args.output))?,
         ))
     };
     for line in reader.lines() {
@@ -130,7 +130,7 @@ pub fn cmd(args: ConfidenceArgs) -> Result<()> {
         Some(ext) if ext == "npy" => {
             let array: ndarray::Array3<f32> =
                 ndarray_npz::ndarray_npy::read_npy(&args.confidence_map).with_context(|| {
-                    format!("Reading numpy array from {:?}", &args.confidence_map)
+                    format!("Reading numpy array from {:?}", args.confidence_map)
                 })?;
             array
         }
