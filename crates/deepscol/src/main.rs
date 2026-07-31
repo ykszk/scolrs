@@ -233,7 +233,7 @@ fn preprocess_image(image_path: PathBuf, model_input_height: u32) -> Result<Prep
         "Image with shape w x h {:?} loaded successfully",
         (image.width(), image.height())
     );
-    let input = ds::to_model_input(&image, model_input_height)?;
+    let input = ds::to_model_input(&image, model_input_height, None)?;
     log::debug!(
         "Image converted to input tensor with shape: {:?}",
         input.shape()
@@ -282,21 +282,7 @@ fn infer_image(
     );
 
     if let Some(cropping_params) = cropping_params {
-        log::info!("cropping image to bounding box: {:?}", cropping_params);
-        let CroppingParams {
-            min_x,
-            min_y,
-            max_x,
-            max_y,
-        } = cropping_params;
-        // crop the image
-        let cropped_image = image.crop_imm(
-            min_x as u32,
-            min_y as u32,
-            (max_x - min_x) as u32,
-            (max_y - min_y) as u32,
-        );
-        let arr4 = ds::to_model_input(&cropped_image, model_input_height)?;
+        let arr4 = ds::to_model_input(&image, model_input_height, Some(cropping_params))?;
         let input3 = ort::value::Tensor::from_array(arr4)?;
         let inputs = ort::inputs!["modelInput" => input3];
         // run the model again

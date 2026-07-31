@@ -427,6 +427,11 @@ pub fn resize_height(image: &DynamicImage, target_height: u32) -> DynamicImage {
     image.thumbnail(resized_width + 1, target_height)
 }
 
+/// Width multiple that `pad_width` pads the model input tensor up to. Shared with
+/// `calculate_crop_parameters`, which grows the crop box so the resized width already
+/// lands on a multiple of this, keeping the added padding minimal.
+pub const PAD_MULTIPLE_OF: u32 = 256;
+
 pub fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
     let padded_width = image.shape()[1].div_ceil(multiple_of as usize) * multiple_of as usize;
     let mut padded_image: Array3<f32> =
@@ -440,8 +445,19 @@ pub fn pad_width(image: &Array3<f32>, multiple_of: u32) -> Array3<f32> {
 pub fn to_model_input(
     image: &image::DynamicImage,
     model_input_height: u32,
+    cropping_params: Option<CroppingParams>,
 ) -> Result<ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 4]>>, anyhow::Error> {
-    let image = resize_height(image, model_input_height);
+    let image = if let Some(cp) = cropping_params {
+        image.to_owned().crop(
+            cp.min_x as u32,
+            cp.min_y as u32,
+            (cp.max_x - cp.min_x) as u32,
+            (cp.max_y - cp.min_y) as u32,
+        )
+    } else {
+        image.to_owned()
+    };
+    let image = resize_height(&image, model_input_height);
     let image = Array3::from_shape_vec(
         (image.height() as usize, image.width() as usize, 1),
         image.to_luma8().into_raw(),
@@ -449,7 +465,7 @@ pub fn to_model_input(
     let image: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 3]>> =
         image.mapv(|x| x as f32 / 255.0);
     log::debug!("Image converted to tensor shape: {:?}", image.shape());
-    let image = pad_width(&image, 256);
+    let image = pad_width(&image, PAD_MULTIPLE_OF);
     let image: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 3]>> =
         image.permuted_axes([2, 0, 1]);
     let arr4: Array4<f32> = image.slice(s![NewAxis, .., .., ..]).to_owned();
@@ -607,10 +623,52 @@ impl Default for CropConfig {
         Self {
             thresh: 0.05,
             crop_min_coverage: 0.9,
-            margin_x_rate: 0.1,
+            margin_x_rate: 0.2, // larger than margin_y_rate because some lateral image have straight spine and the bounding box is very narrow
             margin_y_rate: 0.1,
         }
     }
+}
+
+/// Grow `[min_x, max_x)` (never shrink it) so that after the crop is rescaled to
+/// `model_input_height` (see `resize_height`), the resulting width is already a multiple
+/// of `multiple_of`. This makes the padding `pad_width` adds afterwards as small as
+/// possible (zero, when the growth fits within `original_image_width`).
+fn widen_crop_to_minimize_padding(
+    min_x: usize,
+    max_x: usize,
+    crop_height: usize,
+    model_input_height: u32,
+    original_image_width: usize,
+    multiple_of: u32,
+) -> (usize, usize) {
+    if crop_height == 0 || model_input_height == 0 {
+        return (min_x, max_x);
+    }
+    let crop_width = max_x - min_x;
+    let scale = model_input_height as f64 / crop_height as f64;
+    // Matches resize_height's own (truncating) computation of the resized width.
+    let resized_width = (crop_width as f64 * scale) as usize;
+    let multiple_of = multiple_of as usize;
+    let target_resized_width = resized_width.div_ceil(multiple_of) * multiple_of;
+    // Round up (with a 1px safety margin) so the resized width doesn't fall just short of
+    // `target_resized_width` due to floating point / truncation.
+    let required_crop_width = (target_resized_width as f64 / scale).ceil() as usize + 1;
+    let extra = required_crop_width.saturating_sub(crop_width);
+    if extra == 0 {
+        return (min_x, max_x);
+    }
+
+    // Grow symmetrically, then push any leftover onto whichever side still has room.
+    let mut new_min_x = min_x.saturating_sub(extra / 2);
+    let mut new_max_x = (max_x + extra.div_ceil(2)).min(original_image_width);
+    let deficit = required_crop_width.saturating_sub(new_max_x - new_min_x);
+    if deficit > 0 {
+        let add_left = deficit.min(new_min_x);
+        new_min_x -= add_left;
+        let still_short = deficit - add_left;
+        new_max_x = (new_max_x + still_short).min(original_image_width);
+    }
+    (new_min_x, new_max_x)
 }
 
 pub fn calculate_crop_parameters(
@@ -638,6 +696,35 @@ pub fn calculate_crop_parameters(
             let min_y = (min_y - margin_y).max(0.0) as usize;
             let max_x = (max_x + margin_x).min(original_image_width as f64) as usize;
             let max_y = (max_y + margin_y).min(original_image_height as f64) as usize;
+            log::debug!(
+                "Cropping parameters calculated: min_x: {}, min_y: {}, max_x: {}, max_y: {}, width: {}, height: {}",
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+                max_x - min_x,
+                max_y - min_y
+            );
+            // Widen the crop horizontally (never shrink it) so that once it's resized to
+            // `model_input_height`, its width already lands on a multiple of
+            // `PAD_MULTIPLE_OF`, minimizing the padding `pad_width` has to add afterwards.
+            let (min_x, max_x) = widen_crop_to_minimize_padding(
+                min_x,
+                max_x,
+                max_y - min_y,
+                model_input_height,
+                original_image_width as usize,
+                PAD_MULTIPLE_OF,
+            );
+            log::debug!(
+                "Cropping parameters widened to minimize padding: min_x: {}, min_y: {}, max_x: {}, max_y: {}, width: {}, height: {}",
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+                max_x - min_x,
+                max_y - min_y
+            );
             return Some(CroppingParams {
                 min_x,
                 min_y,

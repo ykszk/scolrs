@@ -75,27 +75,13 @@ pub fn create_input_array(
     cropping_params: Option<CroppingParams>,
 ) -> Result<Arr3, JsValue> {
     let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let mut image = if settings.flip_image {
+    let image = if settings.flip_image {
         log::debug!("Flipping image horizontally");
         image.fliph()
     } else {
         image
     };
-    if let Some(cp) = cropping_params {
-        let cropped_image = image.crop(
-            cp.min_x as u32,
-            cp.min_y as u32,
-            (cp.max_x - cp.min_x) as u32,
-            (cp.max_y - cp.min_y) as u32,
-        );
-        log::debug!(
-            "Cropped image size: {}x{}",
-            cropped_image.width(),
-            cropped_image.height()
-        );
-        image = cropped_image;
-    }
-    let arr4 = to_model_input(&image, model_input_height)
+    let arr4 = to_model_input(&image, model_input_height, cropping_params)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Arr3 {
         arr: js_sys::Float32Array::from(arr4.as_slice().unwrap()),
