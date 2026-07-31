@@ -121,9 +121,6 @@ pub fn calculate_crop_parameters_wasm(
     )
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    // apply sigmoid
-    let output3 = output3.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-
     let params = calculate_crop_parameters(
         &output3,
         &CropConfig::default(),
