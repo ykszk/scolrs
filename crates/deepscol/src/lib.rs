@@ -965,6 +965,34 @@ impl ModelIO {
             }
         }
     }
+
+    /// Set landmark data in original-image coordinates and keep cropped-space data in sync.
+    pub fn set_lm_data(&mut self, lm_data: LabelMeData) {
+        match self {
+            ModelIO::Original(original) => {
+                original.lm_data = lm_data;
+            }
+            ModelIO::Cropped(cropped) => {
+                let CroppingParams {
+                    min_x,
+                    min_y,
+                    max_x: _,
+                    max_y,
+                } = cropped.cropping_params;
+                let lm_scale = (max_y - min_y) as f64 / cropped.input_height as f64;
+
+                let mut cropped_lm_data = lm_data.clone();
+                cropped_lm_data.shift(-(min_x as f64), -(min_y as f64));
+                cropped_lm_data.scale(1.0 / lm_scale);
+                cropped_lm_data.imageWidth = cropped.output3.shape()[2];
+                cropped_lm_data.imageHeight = cropped.output3.shape()[1];
+
+                cropped.lm_data = lm_data;
+                cropped.cropped_lm_data = cropped_lm_data;
+            }
+        }
+    }
+
     pub fn overlay_params(
         &self,
         ol_img_width_height: (u32, u32),

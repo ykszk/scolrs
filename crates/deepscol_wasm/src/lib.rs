@@ -7,6 +7,7 @@ use deepscol::{
     calculate_crop_parameters, extract_points, load_image, to_model_input, CropConfig, CroppedIO,
     ModelIO, OriginalIO, ResultHtmlLmArgs, ThresholdConfig,
 };
+use labelme_rs::LabelMeData;
 
 pub use deepscol::{CroppingParams, ScanDirection};
 
@@ -131,25 +132,14 @@ pub fn calculate_crop_parameters_wasm(
     Ok(params)
 }
 
-/// Note: this function takes the ownership of the cropping_params
-#[wasm_bindgen]
-pub fn process_output(
+fn build_model_io(
     image_filename: &str,
-    encoded: &[u8],
+    image: deepscol::image::DynamicImage,
     raw_output: &[f32],
-    tensor_dims: js_sys::Uint32Array,
-    settings: &Settings,
+    tensor_dims: &js_sys::Uint32Array,
     cropping_params: Option<CroppingParams>,
-) -> Result<String, JsValue> {
-    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-    let image = if settings.flip_image {
-        log::debug!("Flipping image horizontally");
-        image.fliph()
-    } else {
-        image
-    };
-
+    settings: &Settings,
+) -> Result<ModelIO, JsValue> {
     let output3 = Array3::from_shape_vec(
         (
             tensor_dims.get_index(1) as usize,
@@ -161,12 +151,10 @@ pub fn process_output(
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let point_set_config = deepscol::point_config::PointSetConfig::spine();
-
-    let blur_sigma = Some(3.0);
     let points = extract_points(
         &output3,
         &ThresholdConfig::default(),
-        blur_sigma,
+        Some(3.0),
         &point_set_config.max_counts,
     )
     .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
@@ -190,9 +178,6 @@ pub fn process_output(
             &point_set_config,
         )))
     };
-
-    log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
-    log::debug!("Cropping parameters: {:?}", cropping_params);
 
     if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
         log::info!("Point counts are invalid: {}", e);
@@ -220,6 +205,112 @@ pub fn process_output(
             }
         }
     }
+
+    Ok(model_io)
+}
+
+/// Note: this function takes the ownership of the cropping_params
+#[wasm_bindgen]
+pub fn process_output(
+    image_filename: &str,
+    encoded: &[u8],
+    raw_output: &[f32],
+    tensor_dims: js_sys::Uint32Array,
+    settings: &Settings,
+    cropping_params: Option<CroppingParams>,
+) -> Result<String, JsValue> {
+    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let image = if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image.fliph()
+    } else {
+        image
+    };
+
+    let model_io = build_model_io(
+        image_filename,
+        image,
+        raw_output,
+        &tensor_dims,
+        cropping_params,
+        settings,
+    )?;
+
+    log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
+    log::debug!("Cropping parameters: {:?}", cropping_params);
+
+    let result_args = ResultHtmlLmArgs {
+        model_io,
+        metadata,
+        scan_direction: settings.scan_direction,
+        size_config: deepscol::SizeConfig::default(),
+        title: format!("{} - deepscol result", image_filename),
+    };
+    let html = deepscol::create_result_html_from_lm(result_args)
+        .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
+    Ok(html)
+}
+
+#[wasm_bindgen]
+pub fn get_detected_labelme_json(
+    image_filename: &str,
+    encoded: &[u8],
+    raw_output: &[f32],
+    tensor_dims: js_sys::Uint32Array,
+    settings: &Settings,
+    cropping_params: Option<CroppingParams>,
+) -> Result<String, JsValue> {
+    let (image, _metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let image = if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image.fliph()
+    } else {
+        image
+    };
+
+    let model_io = build_model_io(
+        image_filename,
+        image,
+        raw_output,
+        &tensor_dims,
+        cropping_params,
+        settings,
+    )?;
+    serde_json::to_string_pretty(model_io.lm_data())
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize landmark data: {}", e)))
+}
+
+#[wasm_bindgen]
+pub fn process_output_with_labelme(
+    image_filename: &str,
+    encoded: &[u8],
+    raw_output: &[f32],
+    tensor_dims: js_sys::Uint32Array,
+    settings: &Settings,
+    cropping_params: Option<CroppingParams>,
+    edited_labelme_json: &str,
+) -> Result<String, JsValue> {
+    let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let image = if settings.flip_image {
+        log::debug!("Flipping image horizontally");
+        image.fliph()
+    } else {
+        image
+    };
+
+    let mut model_io = build_model_io(
+        image_filename,
+        image,
+        raw_output,
+        &tensor_dims,
+        cropping_params,
+        settings,
+    )?;
+
+    let edited_lm_data: LabelMeData = serde_json::from_str(edited_labelme_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse edited landmark data: {}", e)))?;
+    model_io.set_lm_data(edited_lm_data);
 
     let result_args = ResultHtmlLmArgs {
         model_io,
