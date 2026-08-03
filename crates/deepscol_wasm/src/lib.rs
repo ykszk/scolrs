@@ -252,6 +252,18 @@ pub fn process_output(
     Ok(html)
 }
 
+fn remove_anchors(lm_data: &mut LabelMeData, scan_direction: ScanDirection) {
+    let anchor_labels = match scan_direction {
+        ScanDirection::Coronal | ScanDirection::Sagittal => vec!["C7-TL", "C7-TR", "S-TL", "S-TR"],
+        ScanDirection::NeckLateral => vec!["Lamina1",  "C3_BL", "C3_BR"],
+    };
+    for shape in &mut lm_data.shapes {
+        if anchor_labels.contains(&shape.label.as_str()) {
+            shape.points.clear();
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub fn get_detected_labelme_json(
     image_filename: &str,
@@ -277,7 +289,9 @@ pub fn get_detected_labelme_json(
         cropping_params,
         settings,
     )?;
-    serde_json::to_string_pretty(model_io.lm_data())
+    let mut lm_data = model_io.lm_data().clone();
+    remove_anchors(&mut lm_data, settings.scan_direction);
+    serde_json::to_string_pretty(&lm_data)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize landmark data: {}", e)))
 }
 
