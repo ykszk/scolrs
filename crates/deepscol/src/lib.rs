@@ -875,19 +875,12 @@ pub fn create_generic_svg(
 }
 
 #[wasm_bindgen]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct CroppingParams {
     pub min_x: usize,
     pub min_y: usize,
     pub max_x: usize,
     pub max_y: usize,
-}
-
-#[wasm_bindgen]
-impl CroppingParams {
-    pub fn copy(&self) -> CroppingParams {
-        *self
-    }
 }
 
 pub struct ResultHtmlArguments {

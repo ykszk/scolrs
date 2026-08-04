@@ -24,6 +24,58 @@ pub struct DecodedImage {
     pub height: u32,
 }
 
+
+/// A `#[wasm_bindgen]`-friendly stand-in for `Option<CroppingParams>`.
+///
+/// wasm-bindgen doesn't support `Option<&T>` for custom struct types, so functions taking
+/// `Option<CroppingParams>` by value consume (and invalidate) the JS-side object. This type is
+/// taken by reference instead (`&OptionalCroppingParams`), which only borrows on the JS side and
+/// never invalidates the passed object.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OptionalCroppingParams {
+    pub has_value: bool,
+    pub params: CroppingParams,
+}
+
+#[wasm_bindgen]
+impl OptionalCroppingParams {
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    pub fn some(params: CroppingParams) -> Self {
+        Self {
+            has_value: true,
+            params,
+        }
+    }
+}
+
+impl From<CroppingParams> for OptionalCroppingParams {
+    fn from(cp: CroppingParams) -> Self {
+        Self {
+            has_value: true,
+            params: cp,
+        }
+    }
+}
+
+impl From<Option<CroppingParams>> for OptionalCroppingParams {
+    fn from(cp: Option<CroppingParams>) -> Self {
+        match cp {
+            Some(cp) => cp.into(),
+            None => Self::default(),
+        }
+    }
+}
+
+impl From<&OptionalCroppingParams> for Option<CroppingParams> {
+    fn from(o: &OptionalCroppingParams) -> Self {
+        o.has_value.then_some(o.params)
+    }
+}
+
 #[wasm_bindgen]
 pub fn decode_image(encoded: &[u8]) -> Result<DecodedImage, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -66,13 +118,12 @@ pub struct Arr3 {
     pub d3: usize,
 }
 
-/// Note: this function takes the ownership of the cropping_params
 #[wasm_bindgen]
 pub fn create_input_array(
     bytes: &[u8],
     model_input_height: u32,
     settings: &Settings,
-    cropping_params: Option<CroppingParams>,
+    cropping_params: &OptionalCroppingParams,
 ) -> Result<Arr3, JsValue> {
     let (image, _metadata) = load_image(bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let image = if settings.flip_image {
@@ -81,7 +132,7 @@ pub fn create_input_array(
     } else {
         image
     };
-    let arr4 = to_model_input(&image, model_input_height, cropping_params)
+    let arr4 = to_model_input(&image, model_input_height, cropping_params.into())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Arr3 {
         arr: js_sys::Float32Array::from(arr4.as_slice().unwrap()),
@@ -97,7 +148,7 @@ pub fn calculate_crop_parameters_wasm(
     tensor_dims: js_sys::Uint32Array,
     original_image_width: u32,
     original_image_height: u32,
-) -> Result<Option<CroppingParams>, JsValue> {
+) -> Result<OptionalCroppingParams, JsValue> {
     let output3 = Array3::from_shape_vec(
         (
             tensor_dims.get_index(1) as usize,
@@ -115,7 +166,7 @@ pub fn calculate_crop_parameters_wasm(
         original_image_width,
         tensor_dims.get_index(2),
     );
-    Ok(params)
+    Ok(params.into())
 }
 
 fn build_model_io(
@@ -201,7 +252,6 @@ pub struct HtmlJson{
    pub lm_json: String,
 }
 
-/// Note: this function takes the ownership of the cropping_params
 #[wasm_bindgen]
 pub fn process_output(
     image_filename: &str,
@@ -209,7 +259,7 @@ pub fn process_output(
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
     settings: &Settings,
-    cropping_params: Option<CroppingParams>,
+    cropping_params: &OptionalCroppingParams,
 ) -> Result<HtmlJson, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
@@ -225,7 +275,7 @@ pub fn process_output(
         image,
         raw_output,
         &tensor_dims,
-        cropping_params,
+        cropping_params.into(),
         settings,
     )?;
 
@@ -253,7 +303,7 @@ pub fn process_output_with_labelme(
     raw_output: &[f32],
     tensor_dims: js_sys::Uint32Array,
     settings: &Settings,
-    cropping_params: Option<CroppingParams>,
+    cropping_params: &OptionalCroppingParams,
     edited_labelme_json: &str,
 ) -> Result<String, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -269,7 +319,7 @@ pub fn process_output_with_labelme(
         image,
         raw_output,
         &tensor_dims,
-        cropping_params,
+        cropping_params.into(),
         settings,
     )?;
 
