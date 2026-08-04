@@ -195,6 +195,12 @@ fn build_model_io(
     Ok(model_io)
 }
 
+#[wasm_bindgen(getter_with_clone)]
+pub struct HtmlJson{
+   pub html: String,
+   pub lm_json: String,
+}
+
 /// Note: this function takes the ownership of the cropping_params
 #[wasm_bindgen]
 pub fn process_output(
@@ -204,7 +210,7 @@ pub fn process_output(
     tensor_dims: js_sys::Uint32Array,
     settings: &Settings,
     cropping_params: Option<CroppingParams>,
-) -> Result<String, JsValue> {
+) -> Result<HtmlJson, JsValue> {
     let (image, metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let image = if settings.flip_image {
@@ -226,6 +232,8 @@ pub fn process_output(
     log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
 
+    let lm_json = serde_json::to_string_pretty(&model_io.lm_data())
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize landmark data: {}", e)))?;
     let result_args = ResultHtmlLmArgs {
         model_io,
         metadata,
@@ -235,50 +243,7 @@ pub fn process_output(
     };
     let html = deepscol::create_result_html_from_lm(result_args)
         .map_err(|e| JsValue::from_str(&format!("Failed to create HTML: {}", e)))?;
-    Ok(html)
-}
-
-fn remove_anchors(lm_data: &mut LabelMeData, scan_direction: ScanDirection) {
-    let anchor_labels = match scan_direction {
-        ScanDirection::Coronal | ScanDirection::Sagittal => vec!["C7-TL", "C7-TR", "S-TL", "S-TR"],
-        ScanDirection::NeckLateral => vec!["Lamina1",  "C3_BL", "C3_BR"],
-    };
-    for shape in &mut lm_data.shapes {
-        if anchor_labels.contains(&shape.label.as_str()) {
-            shape.points.clear();
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub fn get_detected_labelme_json(
-    image_filename: &str,
-    encoded: &[u8],
-    raw_output: &[f32],
-    tensor_dims: js_sys::Uint32Array,
-    settings: &Settings,
-    cropping_params: Option<CroppingParams>,
-) -> Result<String, JsValue> {
-    let (image, _metadata) = load_image(encoded).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let image = if settings.flip_image {
-        log::debug!("Flipping image horizontally");
-        image.fliph()
-    } else {
-        image
-    };
-
-    let model_io = build_model_io(
-        image_filename,
-        image,
-        raw_output,
-        &tensor_dims,
-        cropping_params,
-        settings,
-    )?;
-    let mut lm_data = model_io.lm_data().clone();
-    remove_anchors(&mut lm_data, settings.scan_direction);
-    serde_json::to_string_pretty(&lm_data)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize landmark data: {}", e)))
+    Ok(HtmlJson { html, lm_json })
 }
 
 #[wasm_bindgen]
