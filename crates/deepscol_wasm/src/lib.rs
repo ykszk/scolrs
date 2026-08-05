@@ -252,6 +252,18 @@ pub struct HtmlJson{
    pub lm_json: String,
 }
 
+fn remove_anchors(lm_data: &mut LabelMeData, scan_direction: ScanDirection) {
+    let anchor_labels = match scan_direction {
+        ScanDirection::Coronal | ScanDirection::Sagittal => vec!["C7-TL", "C7-TR", "S-TL", "S-TR"],
+        ScanDirection::NeckLateral => vec!["Lamina1",  "C3_BL", "C3_BR"],
+    };
+    for shape in &mut lm_data.shapes {
+        if anchor_labels.contains(&shape.label.as_str()) {
+            shape.points.clear();
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub fn process_output(
     image_filename: &str,
@@ -282,7 +294,9 @@ pub fn process_output(
     log::debug!("Output tensor shape: {:?}", model_io.output3().shape());
     log::debug!("Cropping parameters: {:?}", cropping_params);
 
-    let lm_json = serde_json::to_string_pretty(&model_io.lm_data())
+    let mut lm_data = model_io.lm_data().clone();
+    remove_anchors(&mut lm_data, settings.scan_direction);
+    let lm_json = serde_json::to_string_pretty(&lm_data)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize landmark data: {}", e)))?;
     let result_args = ResultHtmlLmArgs {
         model_io,
