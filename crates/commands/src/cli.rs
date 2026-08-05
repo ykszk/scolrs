@@ -189,7 +189,7 @@ pub struct SvgArgs {
     /// Output svg filename. Use `.html` suffix to output html. Specify '-' for stdout
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
-    /// Heatmap npz file for overlay
+    /// Heatmap mhd/mha file for overlay
     #[arg(long, value_hint = ValueHint::FilePath)]
     pub heatmap: Option<PathBuf>,
     #[clap(flatten)]
@@ -462,16 +462,12 @@ pub struct ConfidenceArgs {
     /// Input json file or ndjson file. Specify '-' for stdin with ndjson format
     #[arg(value_hint = ValueHint::AnyPath)]
     pub input: PathBuf,
-    /// Confidence map npz file or directory of npz files
+    /// Confidence map mhd/mha file or directory of mhd/mha files
     #[arg(value_hint = ValueHint::AnyPath)]
     pub confidence_map: PathBuf,
     /// Output file or ndjson file. Specify '-' for stdout with ndjson format
     #[arg(value_hint = ValueHint::AnyPath)]
     pub output: PathBuf,
-
-    /// Key in the npz file for the confidence map
-    #[clap(long, default_value = "heatmaps")]
-    pub key: String,
 }
 
 #[derive(Args, Debug)]
@@ -528,13 +524,10 @@ pub struct AsmFitArgs {
     /// Input ASM model in json
     #[clap(value_hint = ValueHint::FilePath)]
     pub asm_model: PathBuf,
-    /// Input heatmap npz file
+    /// Input heatmap mhd/mha file
     #[clap(value_hint = ValueHint::FilePath)]
     pub heatmaps: PathBuf,
-    /// Key in the npz file for the heatmap
-    #[clap(long, default_value = "heatmaps.npy")]
-    pub key: String,
-    /// Channel order in the heatmap npz file
+    /// Channel order in the heatmap mhd/mha file
     #[clap(long, default_value = "last")]
     pub channel_order: ChannelOrder,
     /// Labelme point data containing reference points

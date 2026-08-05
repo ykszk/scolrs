@@ -2,3 +2,7 @@
 tmp*
 .DS_Store
 tests/data/dicom/
+*.mha
+*.html
+*.npz
+*.onnx

@@ -54,10 +54,7 @@ image = { version = "0.25.9", default-features = false, features = [
     "tiff",
 ] }
 imageproc = "0.25.0"
-ndarray-npz = { version = "0.4.2", default-features = false, features = [
-    "compressed",
-] }
-metaimage = { git = "https://github.com/ykszk/metaimage-rs.git", tag = "v0.1.1"}
+metaimage = { git = "https://github.com/ykszk/metaimage-rs.git", tag = "v0.1.2"}
 ort = { version = "=2.0.0-rc.10", default-features = false, features = [
     "ndarray",
 ] }

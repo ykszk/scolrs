@@ -4,9 +4,12 @@ use anyhow::Context;
 use metaimage::WriteMhd;
 use ndarray::{Array2, Axis};
 
-use crate::cli::{
-    AsmArgs, AsmConfigArgs, AsmFitArgs, AsmIcpArgs, AsmProjectArgs, AsmReconstructArgs,
-    AsmSubCommands,
+use crate::{
+    cli::{
+        AsmArgs, AsmConfigArgs, AsmFitArgs, AsmIcpArgs, AsmProjectArgs, AsmReconstructArgs,
+        AsmSubCommands,
+    },
+    utils::read_heatmaps,
 };
 use labelme_rs::LabelMeData;
 
@@ -39,69 +42,11 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("");
-    let heatmaps = if heatmap_extension == "npz" {
-        let mut npz = ndarray_npz::NpzReader::new(
-            std::fs::File::open(&args.heatmaps)
-                .with_context(|| format!("Opening {:?}", args.heatmaps))?,
-        )?;
-        let heatmaps: std::result::Result<ndarray::Array3<f64>, _> = npz.by_name(&args.key);
-        let heatmaps = if let Err(e) = &heatmaps {
-            match e {
-                ndarray_npz::ReadNpzError::Npy(
-                    ndarray_npz::ndarray_npy::ReadNpyError::WrongDescriptor(_),
-                ) => {
-                    log::debug!(
-                        "Failed to read heatmaps from {:?} with key '{}': {:?}",
-                        args.heatmaps,
-                        args.key,
-                        e
-                    );
-                    // try u16
-                    let heatmaps_u16: ndarray::Array3<u16> =
-                        npz.by_name(&args.key).with_context(|| {
-                            format!("Reading array with key '{}' from npz", args.key)
-                        })?;
-                    heatmaps_u16.mapv(|v| v as f64)
-                }
-                _ => {
-                    anyhow::bail!(
-                        "Failed to read heatmaps from {:?} with key '{}': {:?}",
-                        args.heatmaps,
-                        args.key,
-                        e
-                    )
-                }
-            }
-        } else {
-            heatmaps.unwrap()
-        };
-        heatmaps
-    } else if heatmap_extension == "mha" || heatmap_extension == "mhd" {
-        let mhd = metaimage::MetaImage::read(&args.heatmaps)?;
-        let heatmaps = match mhd.data.element_type() {
-            metaimage::ElementType::Float => mhd.data.into_f32_array().unwrap().mapv(|v| v as f64),
-            metaimage::ElementType::Double => mhd.data.into_f64_array().unwrap(),
-            _ => {
-                anyhow::bail!(
-                    "Unsupported data type in heatmap file {:?}: {:?}. Only float and double are supported.",
-                    args.heatmaps,
-                    mhd.data.element_type()
-                )
-            }
-        };
-        // ndarray 17 to 16
-        let heatmaps = ndarray::Array3::from_shape_vec(
-            (
-                heatmaps.shape()[0],
-                heatmaps.shape()[1],
-                heatmaps.shape()[2],
-            ),
-            heatmaps.into_raw_vec_and_offset().0,
-        )?;
-        heatmaps
+    let heatmaps = if heatmap_extension == "mha" || heatmap_extension == "mhd" {
+        read_heatmaps(&args.heatmaps)?
     } else {
         anyhow::bail!(
-            "Unsupported heatmap file format: {:?}. Only .npz and .mha/.mhd are supported.",
+            "Unsupported heatmap file format: {:?}. Only .mha/.mhd are supported.",
             heatmap_extension
         );
     };
@@ -145,6 +90,7 @@ pub fn cmd_fit(args: AsmFitArgs) -> anyhow::Result<()> {
             }
         }
     };
+    let heatmaps = heatmaps.mapv(|v| v as f64);
     let heatmaps = point_set.select_channels(heatmaps.view(), &asm.labels);
     if let Some(path) = args.selected_heatmaps {
         // save selected heatmaps for debugging

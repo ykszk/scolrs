@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use anyhow::Context;
 
 pub trait Ndjson {
     fn is_ndjson(&self) -> bool;
@@ -10,6 +12,26 @@ impl Ndjson for PathBuf {
         self.extension()
             .is_some_and(|e| e == "ndjson" || e == "jsonl")
     }
+}
+
+pub fn read_heatmaps(heatmap_path: &Path) -> Result<ndarray::Array3<f32>, anyhow::Error> {
+    let metaimage = metaimage::MetaImage::read(heatmap_path)
+        .with_context(|| format!("Reading heatmap from {:?}", heatmap_path))?;
+    let heatmaps_dyn = metaimage.data.into_f32_array().with_context(|| {
+        format!(
+            "Converting heatmap data to f32 array for image {:?}",
+            heatmap_path
+        )
+    })?;
+    let heatmaps = heatmaps_dyn
+        .into_dimensionality::<ndarray::Ix3>()
+        .with_context(|| {
+            format!(
+                "Converting heatmap data to 3D array for image {:?}",
+                heatmap_path
+            )
+        })?;
+    Ok(heatmaps)
 }
 
 #[cfg(test)]

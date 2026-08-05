@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::cli::{SvgArgs, SvgArgsCommon, SvgNdjsonArgs, SvgSubCommands};
+use crate::utils::read_heatmaps;
 use anyhow::{bail, Context, Result};
 use labelme_rs::{LabelMeData, LabelMeDataWImage, ResizeParam};
 use log::debug;
@@ -151,21 +152,9 @@ where
         });
 
     let overlays = if let Some(heatmap_path) = heatmap_path {
-        // let overlay_npz = scolrs::draw::load_heatmap_npz(overlay_path)?;
-        let mut npz = ndarray_npz::NpzReader::new(
-            std::fs::File::open(heatmap_path)
-                .with_context(|| format!("Opening {:?}", heatmap_path))?,
-        )?;
-        let heatmaps: ndarray::Array3<f64> = npz
-            .by_name("heatmaps.npy")
-            .with_context(|| format!("Reading array with key '{}' from npz", "heatmaps"))?;
-        log::debug!(
-            "Loaded heatmaps with shape {:?} from {:?}",
-            heatmaps.dim(),
-            heatmap_path
-        );
+        let heatmaps = read_heatmaps(heatmap_path)?;
         // channel last to channel first
-        let heatmaps_f32 = heatmaps.permuted_axes((2, 0, 1)).mapv(|x| x as f32);
+        let heatmaps_f32 = heatmaps.permuted_axes((2, 0, 1));
         let input_image_wh = (
             point_with_image.data_image.image.width(),
             point_with_image.data_image.image.height(),

@@ -46,7 +46,7 @@ scraper.workspace = true
 tera = { workspace = true, features = ["urlencode"] }
 config.workspace = true
 serde_yaml = "0.9.34"
-flate2 = { version = "1.1.8", default-features = false, features = ["zlib-rs"] }
+flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"] }
 
 [dev-dependencies]
 anyhow.workspace = true

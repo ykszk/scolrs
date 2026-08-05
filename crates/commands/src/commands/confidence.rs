@@ -1,3 +1,4 @@
+use crate::utils::read_heatmaps;
 use crate::{cli::ConfidenceArgs, utils::Ndjson};
 use anyhow::{bail, Context, Result};
 use scolrs::{
@@ -32,27 +33,6 @@ fn process<PointsType: PointConfidence + serde::Serialize + for<'de> serde::Dese
     Ok(())
 }
 
-fn read_npz(path: &Path, key: &str) -> Result<ndarray::Array3<f32>> {
-    let mut npz = ndarray_npz::NpzReader::new(
-        std::fs::File::open(path).with_context(|| format!("Opening {:?}", path))?,
-    )?;
-    let array: ndarray::Array3<f32> = npz.by_name(key).with_context(|| match npz.names() {
-        Ok(names) => {
-            if names.is_empty() {
-                "The provided npz file contains no arrays.".to_string()
-            } else {
-                format!(
-                    "The provided npz file does not contain the key {}. Available keys are {}",
-                    key,
-                    names.join(", ")
-                )
-            }
-        }
-        Err(e) => format!("Failed to read keys from npz file: {}", e),
-    })?;
-    Ok(array)
-}
-
 fn process_line<LineType: ContentFilename + serde::Serialize + for<'de> serde::Deserialize<'de>>(
     line: &str,
     args: &ConfidenceArgs,
@@ -71,8 +51,8 @@ where
     let image_path = PathBuf::from(&points.image_metadata().path);
     let heatmap_path = args
         .confidence_map
-        .join(image_path.with_extension("npz").file_name().unwrap());
-    let heatmaps = read_npz(&heatmap_path, &args.key)?;
+        .join(image_path.with_extension("mha").file_name().unwrap());
+    let heatmaps = read_heatmaps(&heatmap_path)?;
     let confidence = points.extract_point_confidence(heatmaps.view());
     let mut output_points = points;
     *output_points.get_confidence_mut() = Some(confidence);
@@ -100,8 +80,7 @@ fn process_ndjson(args: ConfidenceArgs) -> Result<()> {
         Box::new(std::io::stdout())
     } else {
         Box::new(std::io::BufWriter::new(
-            File::create(&args.output)
-                .with_context(|| format!("Create file {:?}", args.output))?,
+            File::create(&args.output).with_context(|| format!("Create file {:?}", args.output))?,
         ))
     };
     for line in reader.lines() {
@@ -126,17 +105,10 @@ pub fn cmd(args: ConfidenceArgs) -> Result<()> {
 
     let input_path = Path::new(&args.input);
     let heatmaps = match args.confidence_map.extension() {
-        Some(ext) if ext == "npz" => read_npz(&args.confidence_map, &args.key)?,
-        Some(ext) if ext == "npy" => {
-            let array: ndarray::Array3<f32> =
-                ndarray_npz::ndarray_npy::read_npy(&args.confidence_map).with_context(|| {
-                    format!("Reading numpy array from {:?}", args.confidence_map)
-                })?;
-            array
-        }
+        Some(ext) if ext == "mha" || ext == "mhd" => read_heatmaps(&args.confidence_map)?,
         _ => {
             anyhow::bail!(
-                "Confidence map file must have .npz or .npy extension, got {:?}",
+                "Confidence map file must have .mha or .mhd extension, got {:?}",
                 args.confidence_map
             );
         }

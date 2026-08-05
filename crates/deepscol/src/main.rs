@@ -370,19 +370,7 @@ fn finish_image(
         // apply multiplier and convert to u16
         let multiplier = output.heatmap_multiplier;
         let ndarray_output3 = model_io.output3().mapv(|x| (x * multiplier as f32) as u16);
-        if file_ext == "npz" {
-            let mut npz =
-                ndarray_npz::NpzWriter::new_compressed(std::fs::File::create(output_path)?);
-            // save the output
-            npz.add_array("heatmaps", &ndarray_output3)?;
-            npz.finish()?;
-        } else if file_ext == "mha" || file_ext == "mhd" {
-            let arr = ndarray_output3;
-            // convert to metaimage's ndarray (v0.17). Can be removed the version conflict is resolved.
-            let ndarray_output3 = metaimage::ndarray::Array3::from_shape_vec(
-                (arr.shape()[2], arr.shape()[1], arr.shape()[0]),
-                arr.clone().into_raw_vec_and_offset().0,
-            )?;
+        if file_ext == "mha" || file_ext == "mhd" {
             metaimage::MetaImage::write_mhd(ndarray_output3.view(), &output_path)?
         } else {
             anyhow::bail!("Unsupported heatmap output format: {:?}", file_ext);
