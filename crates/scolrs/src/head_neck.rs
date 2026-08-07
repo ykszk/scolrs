@@ -7,8 +7,8 @@ use crate::{
         femoral_incidence_angle, points2line, tilt_angle, AsMeasure, CobbAux, ColorPalette,
         ConfidenceComponent, DrawArguments, DrawComponent, DrawCorners, DrawError,
         MeasureComponent, MeasureError, Named, Painter, ReductionMethod, CLASS_ANGLE,
-        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_RATIO,
-        CLASS_TEXT,
+        CLASS_ANNOTATION, CLASS_DISTANCE, CLASS_LINE, CLASS_MEASURE, CLASS_POINT, CLASS_POLYGON,
+        CLASS_RATIO, CLASS_TEXT,
     },
     extract_confidence, extract_points, nested_vec_to_array3, vec_points_to_array2, Centroids,
     ContentFilename, Corners, HasCornerPoints, HasImageMetadata, ImageMetadata, L2Norm, Point2d,
@@ -2135,6 +2135,65 @@ impl DrawComponent for VertebralLabels<'_> {
     }
 }
 
+/// Vertebrae drawn as polygons
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
+pub struct Vertebrae<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for Vertebrae<'_> {}
+impl DrawComponent for Vertebrae<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let mut group = self.default_group();
+        let labels = ["C2", "C3", "C4", "C5", "C6", "C7", "T1"];
+        for (i, vertebra) in self.0.corners.0.axis_iter(Axis(0)).enumerate() {
+            if i == 0 {
+                // Draw C2 bottom endplate as a line instead of a polygon
+                let line = painter.line(vertebra.slice(s![2.., ..]));
+                let color = line_colors.get_or_new(labels[i]);
+                group = group.add(line.set("stroke", color));
+            } else {
+                // tl, tr, bl, br -> tl, tr, br, bl
+                let vertebra = stack![
+                    Axis(0),
+                    vertebra.index_axis(Axis(0), 0),
+                    vertebra.index_axis(Axis(0), 1),
+                    vertebra.index_axis(Axis(0), 3),
+                    vertebra.index_axis(Axis(0), 2)
+                ];
+                let polygon = painter.polygon(vertebra);
+                let color = line_colors.get_or_new(labels[i]);
+                group = group.add(polygon.set("stroke", color).set("fill", color));
+            }
+        }
+        Ok(group)
+    }
+}
+
+/// Polyline connecting lamina points
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_LINE])]
+pub struct LaminalLine<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for LaminalLine<'_> {}
+impl DrawComponent for LaminalLine<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let lamina_line = self.0.lamina.clone();
+        let line = painter.polyline(lamina_line.view());
+        group = group.add(line);
+        Ok(group)
+    }
+}
+
 #[derive(
     strum::EnumString,
     strum::Display,
@@ -2277,7 +2336,7 @@ impl AsMeasure for NeckLateralDraw {
             AnteroposteriorVertebralTranslation => {
                 Some(NeckLateralMeasure::AnteroposteriorVertebralTranslation)
             }
-            CervicalPoints | VertebralLabels => None,
+            CervicalPoints | VertebralLabels | Vertebrae | LaminalLine => None,
         }
     }
 }
@@ -2300,6 +2359,8 @@ impl AsMeasure for NeckLateralDraw {
 pub enum NeckLateralDraw {
     CervicalPoints,
     VertebralLabels,
+    Vertebrae,
+    LaminalLine,
     Adi,
     OC2,
     Sacs,
@@ -2333,6 +2394,8 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
         match draw {
             NeckLateralDraw::CervicalPoints => Box::new(CervicalPoints(lateral_points)),
             NeckLateralDraw::VertebralLabels => Box::new(VertebralLabels(lateral_points)),
+            NeckLateralDraw::Vertebrae => Box::new(Vertebrae(lateral_points)),
+            NeckLateralDraw::LaminalLine => Box::new(LaminalLine(lateral_points)),
             NeckLateralDraw::Adi => Box::new(Adi(lateral_points)),
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),

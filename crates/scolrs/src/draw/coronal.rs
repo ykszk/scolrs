@@ -108,6 +108,52 @@ struct CobbTLL<'a>(&'a CoronalPoints, Option<(Curve, f64)>);
 impl CoronalComponent for CobbTLL<'_> {}
 impl_cobb_angle!(CobbTLL);
 
+/// Vertebrae drawn as polygons
+#[derive(Named)]
+#[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
+struct Vertebrae<'a>(&'a CoronalPoints);
+impl CoronalComponent for Vertebrae<'_> {}
+impl DrawComponent for Vertebrae<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let coronal_points = self.0;
+        let verts = &coronal_points.spine.c7tls.0;
+        let mut g = self.default_group();
+        let labels = [
+            "C7", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "L1",
+            "L2", "L3", "L4", "L5", "L6",
+        ];
+        for (i, corners) in verts.axis_iter(Axis(0)).enumerate() {
+            if i >= labels.len() - 1 {
+                // draw top endplate of S1 as line
+                let s1_top = corners.slice(s![0..2, ..]);
+                let line = painter
+                    .polyline(s1_top.to_owned())
+                    .set("stroke", line_colors.get_or_new("S1"));
+                g = g.add(line);
+                continue;
+            } else {
+                // tl, tr, bl, br -> tl, tr, br, bl
+                let corners = {
+                    let mut c = corners.to_owned();
+                    c.swap((2, 0), (3, 0)); // bl.x <-> br.x
+                    c.swap((2, 1), (3, 1)); // bl.y <-> br.y
+                    c
+                };
+                let polygon = painter
+                    .polygon(corners.to_owned())
+                    .set("stroke", line_colors.get_or_new(labels[i]));
+                g = g.add(polygon);
+            }
+        }
+        Ok(g)
+    }
+}
+
 /// Curve apex for each curve
 #[derive(Named)]
 #[draw_type([CLASS_ANNOTATION, CLASS_POLYGON])]
@@ -669,6 +715,7 @@ impl<'a, 'b> From<(&'b CoronalDraw, &'a ScaledType<CoronalPointsAndCurve>)>
             CoronalDraw::CobbMT => Box::new(CobbMT(coronal_points, curve_set.mt.clone())),
             CoronalDraw::CobbTLL => Box::new(CobbTLL(coronal_points, curve_set.tll.clone())),
 
+            CoronalDraw::Vertebrae => Box::new(Vertebrae(coronal_points)),
             CoronalDraw::CurveApex => Box::new(CurveApex(coronal_points, apex_set)),
             CoronalDraw::AVT => Box::new(Avt(coronal_points, &coronal_set.curves)),
             CoronalDraw::T1TiltAngle => Box::new(T1TiltAngle(coronal_points)),
@@ -775,6 +822,7 @@ impl AsMeasure for CoronalDraw {
             | CoronalDraw::VertebralPoints
             | CoronalDraw::Centroids
             | CoronalDraw::SpinalLine
+            | CoronalDraw::Vertebrae
             | CoronalDraw::CurveApex => None,
         }
     }

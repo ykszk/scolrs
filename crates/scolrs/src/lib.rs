@@ -2332,6 +2332,7 @@ pub enum CoronalDraw {
     VertebralPoints,
     Centroids,
     SpinalLine,
+    Vertebrae,
     CurveApex,
     CobbPT,
     CobbMT,

@@ -77,7 +77,7 @@ impl ColorPalette {
 /// Tableau 10 color palette without grayish colors
 pub const TAB10_NEW_TAB10: [&str; 18] = [
     "#1f77b4", "#ff7f0f", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#bcbd22",
-    "#16becf", "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14e", "#edc949", "#af7aa1",
+    "#17becf", "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14e", "#edc949", "#af7aa1",
     "#ff9da7", "#9c755f",
 ];
 
@@ -1303,9 +1303,7 @@ impl DrawComponent for VertebralLabels<'_> {
     ) -> Result<element::Group, DrawError> {
         let mut g_vert_labels = self.default_group();
         let centroids = self.0.tl_centroids();
-        for (coords, label) in
-            std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS)
-        {
+        for (coords, label) in std::iter::zip(centroids.axis_iter(Axis(0)), VERTEBRAL_LABELS) {
             let t = painter.text(label, coords, None, None);
             g_vert_labels = g_vert_labels.add(t);
         }
