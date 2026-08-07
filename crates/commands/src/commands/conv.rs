@@ -1,7 +1,7 @@
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead};
 
 use crate::cli::{ConvArgs, ConvFormat};
+use crate::utils::CreateReaderWriter;
 use anyhow::{bail, Result};
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use log::debug;
@@ -200,16 +200,8 @@ fn process_json(
 }
 
 pub fn cmd(args: ConvArgs) -> Result<()> {
-    let reader: Box<dyn BufRead> = if let Some(input) = args.input {
-        Box::new(BufReader::new(File::open(input)?))
-    } else {
-        Box::new(BufReader::new(io::stdin()))
-    };
-    let writer: Box<dyn io::Write> = if let Some(output) = args.output {
-        Box::new(File::create(output)?)
-    } else {
-        Box::new(io::stdout())
-    };
+    let reader = args.input.create_reader()?;
+    let writer = args.output.create_writer()?;
 
     if args.ndjson {
         process_ndjson(

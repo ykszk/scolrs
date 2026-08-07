@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufWriter, Write},
     path::Path,
 };
 
@@ -8,7 +8,7 @@ use crate::cli::{
     CurveSetAlgorithm, MeasureArgs, MeasureSubCommands, MeasureSubCoronalArgs, MeasureSubNeckArgs,
     MeasureSubSagittallArgs,
 };
-use crate::utils::Ndjson;
+use crate::utils::{CreateReaderWriter, Ndjson};
 use anyhow::{Context, Result};
 use indexmap::IndexSet;
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
@@ -23,17 +23,9 @@ use scolrs::{
 use serde::de::DeserializeOwned;
 
 fn process_ndjson(args: MeasureArgs) -> Result<()> {
-    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
-        Box::new(BufReader::new(std::io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(&args.input)?))
-    };
+    let reader = args.input.create_reader()?;
+    let mut writer: Box<dyn Write> = args.output.create_writer()?;
     let mut csv_buf = Vec::new();
-    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
-        Box::new(BufWriter::new(File::create(output)?))
-    } else {
-        Box::new(std::io::stdout())
-    };
     for line in reader.lines() {
         let measured_line = match args.subcommand.clone() {
             MeasureSubCommands::Coronal(subcommand) => {

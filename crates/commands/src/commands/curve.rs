@@ -1,8 +1,7 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 
 use crate::cli::{self, CurveArgs};
-use crate::utils::Ndjson;
+use crate::utils::{CreateReaderWriter, Ndjson};
 use anyhow::{Context, Result};
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use scolrs::{
@@ -111,13 +110,7 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
     };
     if args.input.as_os_str() == "-" || args.input.is_ndjson() {
         // ndjson IO
-        let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
-            Box::new(BufReader::new(std::io::stdin()))
-        } else {
-            Box::new(BufReader::new(
-                File::open(&args.input).with_context(|| format!("Open file {:?}", args.input))?,
-            ))
-        };
+        let reader = args.input.create_reader()?;
         for line in reader.lines() {
             let line = line?;
             // let data: LabelMeDataLine = line.as_str().try_into()?;

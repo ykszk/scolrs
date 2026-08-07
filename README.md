@@ -20,3 +20,9 @@ scolrs complete fish > ~/.config/fish/completions/scolrs.fish
 
 ## Test
 Set `TEST_OUTPUT_DIR` env var to the directory where you want to store the test output.
+
+## Install
+Use `--locked` flag to prevent version mismatches. e.g.:
+```bash
+cargo install --path crates/commands/ --features gdcm --locked
+```

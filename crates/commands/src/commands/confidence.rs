@@ -1,4 +1,4 @@
-use crate::utils::read_heatmaps;
+use crate::utils::{read_heatmaps, CreateReaderWriter};
 use crate::{cli::ConfidenceArgs, utils::Ndjson};
 use anyhow::{bail, Context, Result};
 use scolrs::{
@@ -6,8 +6,7 @@ use scolrs::{
     SagittalPoints, SagittalPointsLine,
 };
 use std::{
-    fs::File,
-    io::{BufRead, BufReader},
+    io::BufRead,
     path::{Path, PathBuf},
 };
 
@@ -69,20 +68,9 @@ fn process_ndjson(args: ConfidenceArgs) -> Result<()> {
             args.confidence_map
         );
     }
-    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
-        Box::new(BufReader::new(std::io::stdin()))
-    } else {
-        Box::new(BufReader::new(
-            File::open(&args.input).with_context(|| format!("Open file {:?}", args.input))?,
-        ))
-    };
-    let mut writer: Box<dyn std::io::Write> = if args.output.as_os_str() == "-" {
-        Box::new(std::io::stdout())
-    } else {
-        Box::new(std::io::BufWriter::new(
-            File::create(&args.output).with_context(|| format!("Create file {:?}", args.output))?,
-        ))
-    };
+
+    let reader = args.input.create_reader()?;
+    let mut writer = args.output.create_writer()?;
     for line in reader.lines() {
         let line = line?;
         match args.input_type {

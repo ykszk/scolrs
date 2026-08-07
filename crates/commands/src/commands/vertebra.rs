@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader, BufWriter, Read, Write},
+    io::{self, BufRead, BufWriter, Read, Write},
 };
 
 use anyhow::{bail, Context, Result};
@@ -10,7 +10,10 @@ use scolrs::{
     reg::polygon_pairs::{self, PolygonPair},
 };
 
-use crate::cli::{VertebraArgs, VertebraNormalizeArgs, VertebraRegisterArgs, VertebraSubCommands};
+use crate::{
+    cli::{VertebraArgs, VertebraNormalizeArgs, VertebraRegisterArgs, VertebraSubCommands},
+    utils::CreateReaderWriter,
+};
 
 #[derive(Debug, Clone, Copy)]
 struct PairSpec {
@@ -199,13 +202,7 @@ fn normalize_group(lines: &[LateralPointsLine]) -> Result<Vec<LateralPointsLine>
 }
 
 fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
-    let reader: Box<dyn BufRead> = if args.input.as_os_str() == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(
-            File::open(&args.input).with_context(|| format!("open {:?}", args.input))?,
-        ))
-    };
+    let reader = args.input.create_reader()?;
 
     // Each line is one pose. Blank lines delimit independent pose sets (sub-ndjson).
     let mut groups: Vec<Vec<LateralPointsLine>> = Vec::new();
@@ -233,13 +230,7 @@ fn cmd_normalize(args: VertebraNormalizeArgs) -> Result<()> {
         groups.iter().map(|g| g.len()).sum::<usize>()
     );
 
-    let mut writer: Box<dyn Write> = if let Some(output) = args.output.as_ref() {
-        Box::new(BufWriter::new(
-            File::create(output).with_context(|| format!("create output {output:?}"))?,
-        ))
-    } else {
-        Box::new(io::stdout())
-    };
+    let mut writer = args.output.create_writer()?;
 
     // Normalize each set independently, preserving the blank-line delimiters on output.
     for (group_index, group) in groups.iter().enumerate() {

@@ -1,7 +1,7 @@
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 
-use crate::cli::ImplantArgs;
 use crate::utils::Ndjson;
+use crate::{cli::ImplantArgs, utils::CreateReaderWriter};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use labelme_rs::LabelMeDataLine;
@@ -74,11 +74,7 @@ fn label_counts(counts: Vec<usize>) -> IndexMap<String, usize> {
 
 pub fn cmd(args: ImplantArgs) -> Result<()> {
     if args.input.as_os_str() == "-" || args.input.is_ndjson() {
-        let reader: Box<dyn BufRead> = if args.input.as_os_str() != "-" {
-            Box::new(BufReader::new(std::fs::File::open(args.input)?))
-        } else {
-            Box::new(BufReader::new(std::io::stdin()))
-        };
+        let reader = args.input.create_reader()?;
         for line in reader.lines() {
             let line = line?;
             let data_line = serde_json::from_str::<LabelMeOptionalDetectron2Line>(&line)?;
