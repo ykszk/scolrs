@@ -209,6 +209,17 @@ impl LateralPoints {
             lamina,
         }
     }
+
+    fn c2_lower_endplate(&self) -> Array2<f64> {
+        let c2 = self.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]);
+        c2_lower_endplate.to_owned()
+    }
+
+    fn c2_lower_middle(&self) -> Array1<f64> {
+        let c2_lower_endplate = self.c2_lower_endplate();
+        c2_lower_endplate.mean_axis(Axis(0)).unwrap()
+    }
 }
 
 impl Serialize for LateralPoints {
@@ -815,8 +826,7 @@ impl NeckSagittalComponent for OC2<'_> {}
 impl OC2<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         let mcgregor_points = self.0.mcgregor_line()?;
-        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2_lower_endplate = c2.slice(s![2.., ..]).to_owned();
+        let c2_lower_endplate = self.0.c2_lower_endplate();
         Ok((mcgregor_points, c2_lower_endplate))
     }
 }
@@ -961,9 +971,78 @@ fn project_point_onto_line(point: &ArrayView1<f64>, line: &lyon_geom::Line<f64>)
     Array::from(vec![projected_point.x, projected_point.y])
 }
 
+/// Distance between the midpoint of the C2 lower endplate and McGregor's line
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
+#[label("Redlund-Johnell Method")]
+pub struct RedlundJohnellMethod<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for RedlundJohnellMethod<'_> {}
+impl RedlundJohnellMethod<'_> {
+    fn prep(&self) -> Result<(Array1<f64>, Array1<f64>), MeasureError> {
+        let mcgregor_points = self.0.mcgregor_line()?;
+        let c2_lower_middle = self.0.c2_lower_middle();
+        let projected_point = project_point_onto_line(
+            &c2_lower_middle.view(),
+            &points2line(mcgregor_points.view()),
+        );
+        Ok((projected_point, c2_lower_middle))
+    }
+}
+impl DrawComponent for RedlundJohnellMethod<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let mcgregor_points = self.0.mcgregor_line()?;
+        let line = painter.line(mcgregor_points.view());
+        group = group.add(line);
+        let (projected_point, c2_lower_middle) = self.prep()?;
+        let points = stack![Axis(0), projected_point, c2_lower_middle];
+        let line = painter.line(points.view());
+        group = group.add(line);
+        let length = (&points.index_axis(Axis(0), 0) - &points.index_axis(Axis(0), 1)).l2norm();
+        let text = painter.text(
+            &format!("{:.1}", length),
+            points.index_axis(Axis(0), 0),
+            Some(self.id()),
+            Some(&self.0.image_metadata.unit),
+        );
+        group = group.set("data-value", length);
+        group = group.add(text);
+        Ok(group)
+    }
+}
+
+impl MeasureComponent for RedlundJohnellMethod<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
+        let (projected_point, c2_lower_middle) = self.prep()?;
+        let diff = &projected_point - &c2_lower_middle;
+        Ok(vec![diff.l2norm()])
+    }
+}
+
+impl ConfidenceComponent for RedlundJohnellMethod<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
+
 /// Distance between the midpoint of the C2 lower endplate and the line connecting the anterior C1 arch and posterior C1 arch
 #[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct RanawatMethod<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for RanawatMethod<'_> {}
 impl RanawatMethod<'_> {
@@ -979,9 +1058,7 @@ impl RanawatMethod<'_> {
             self.0.anterior_c1_arch.index_axis(Axis(0), 0).view(),
             self.0.lamina.index_axis(Axis(0), 0).view()
         ]);
-        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2_lower_endplate = c2.slice(s![2.., ..]);
-        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let c2_lower_middle = self.0.c2_lower_middle();
         let projected_point = project_point_onto_line(&c2_lower_middle.view(), &c1_line);
         Ok(Some(stack![Axis(0), projected_point, c2_lower_middle]))
     }
@@ -1007,9 +1084,8 @@ impl DrawComponent for RanawatMethod<'_> {
             let line = painter.line(stack![Axis(0), p1, p2].view());
             group = group.add(line);
             // draw C2 lower endplate line
-            let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-            let c2_lower_endplate = c2.slice(s![2.., ..]);
-            let line = painter.line(c2_lower_endplate.to_owned());
+            let c2_lower_endplate = self.0.c2_lower_endplate();
+            let line = painter.line(c2_lower_endplate);
             group = group.add(line);
             let length = (&proj_c2_lower_middle.index_axis(Axis(0), 0)
                 - &proj_c2_lower_middle.index_axis(Axis(0), 1))
@@ -1055,7 +1131,7 @@ impl ConfidenceComponent for RanawatMethod<'_> {
 
 /// Distance between the midpoint of the C2 lower endplate and the midpoint of anterior and posterior dens
 #[derive(Named)]
-#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+#[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct ModifiedRanawatIndex<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for ModifiedRanawatIndex<'_> {}
 impl ModifiedRanawatIndex<'_> {
@@ -1067,9 +1143,7 @@ impl ModifiedRanawatIndex<'_> {
         self.0
             .posterior_dens
             .validate_label_length("PosteriorDens", 1)?;
-        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2_lower_endplate = c2.slice(s![2.., ..]);
-        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let c2_lower_middle = self.0.c2_lower_middle();
         let dens = concatenate(
             Axis(0),
             &[self.0.anterior_dens.view(), self.0.posterior_dens.view()],
@@ -1101,8 +1175,7 @@ impl DrawComponent for ModifiedRanawatIndex<'_> {
             );
             group = group.add(line);
             // draw C2 lower endplate line
-            let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-            let c2_lower_endplate = c2.slice(s![2.., ..]);
+            let c2_lower_endplate = self.0.c2_lower_endplate();
             let line = painter.line(c2_lower_endplate.to_owned());
             group = group.add(line);
             // draw line between dens middle and c2 lower middle
@@ -1675,12 +1748,10 @@ pub struct C2C7SVA<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for C2C7SVA<'_> {}
 impl C2C7SVA<'_> {
     fn prep(&self) -> Result<(Array1<f64>, Array1<f64>), MeasureError> {
-        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
-        let c2_lower_endplate = c2.slice(s![2.., ..]);
-        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let c2_lower_middle = self.0.c2_lower_middle();
         let c7 = self.0.corners.0.index_axis(Axis(0), 5);
         let c7_tr = c7.index_axis(Axis(0), 1);
-        Ok((c2_lower_middle.to_owned(), c7_tr.to_owned()))
+        Ok((c2_lower_middle, c7_tr.to_owned()))
     }
 }
 impl DrawComponent for C2C7SVA<'_> {
@@ -2325,6 +2396,7 @@ pub enum NeckLateralMeasure {
     OC2,
     Sacs,
     WedgeAngle,
+    RedlundJohnellMethod,
     RanawatMethod,
     ModifiedRanawatIndex,
     ThoracicInletAngle,
@@ -2359,6 +2431,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralMeasure::RedlundJohnellMethod => {
+                Box::new(RedlundJohnellMethod(lateral_points))
+            }
             NeckLateralMeasure::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
             NeckLateralMeasure::ModifiedRanawatIndex => {
                 Box::new(ModifiedRanawatIndex(lateral_points))
@@ -2397,6 +2472,9 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralMeasure::RedlundJohnellMethod => {
+                Box::new(RedlundJohnellMethod(lateral_points))
+            }
             NeckLateralMeasure::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
             NeckLateralMeasure::ModifiedRanawatIndex => {
                 Box::new(ModifiedRanawatIndex(lateral_points))
@@ -2434,6 +2512,7 @@ impl AsMeasure for NeckLateralDraw {
             OC2 => Some(NeckLateralMeasure::OC2),
             Sacs => Some(NeckLateralMeasure::Sacs),
             WedgeAngle => Some(NeckLateralMeasure::WedgeAngle),
+            RedlundJohnellMethod => Some(NeckLateralMeasure::RedlundJohnellMethod),
             RanawatMethod => Some(NeckLateralMeasure::RanawatMethod),
             ModifiedRanawatIndex => Some(NeckLateralMeasure::ModifiedRanawatIndex),
             ThoracicInletAngle => Some(NeckLateralMeasure::ThoracicInletAngle),
@@ -2480,6 +2559,7 @@ pub enum NeckLateralDraw {
     OC2,
     Sacs,
     WedgeAngle,
+    RedlundJohnellMethod,
     RanawatMethod,
     ModifiedRanawatIndex,
     ThoracicInletAngle,
@@ -2517,6 +2597,7 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralDraw::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
+            NeckLateralDraw::RedlundJohnellMethod => Box::new(RedlundJohnellMethod(lateral_points)),
             NeckLateralDraw::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
             NeckLateralDraw::ModifiedRanawatIndex => Box::new(ModifiedRanawatIndex(lateral_points)),
             NeckLateralDraw::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
