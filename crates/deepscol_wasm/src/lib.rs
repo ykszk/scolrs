@@ -1,11 +1,12 @@
 extern crate wasm_bindgen;
 extern crate wee_alloc;
 use ndarray::Array3;
+use scolrs::asm::{model::ActiveShapeModel, AsmConfig};
 use wasm_bindgen::prelude::*;
 
 use deepscol::{
-    calculate_crop_parameters, extract_points, load_image, to_model_input, CropConfig, CroppedIO,
-    ModelIO, OriginalIO, ResultHtmlLmArgs, ThresholdConfig,
+    calculate_crop_parameters, load_image, to_model_input, CropConfig, HeatmapConfig, ModelIO,
+    ResultHtmlLmArgs, ThresholdConfig,
 };
 use labelme_rs::LabelMeData;
 
@@ -168,6 +169,18 @@ pub fn calculate_crop_parameters_wasm(
     Ok(params.into())
 }
 
+fn get_embedded_asms(
+    scan_direction: ScanDirection,
+) -> Result<Vec<(ActiveShapeModel, AsmConfig)>, serde_json::Error> {
+    let asms = deepscol::embedded_asm(scan_direction)?;
+    let asm_config = scolrs::asm::AsmConfig::default();
+    let asms: Vec<_> = asms
+        .into_iter()
+        .map(|asm| (asm, asm_config.clone()))
+        .collect();
+    Ok(asms)
+}
+
 fn build_model_io(
     image_filename: &str,
     image: deepscol::image::DynamicImage,
@@ -176,78 +189,32 @@ fn build_model_io(
     cropping_params: Option<CroppingParams>,
     settings: &Settings,
 ) -> Result<ModelIO, JsValue> {
-    let output3 = Array3::from_shape_vec(
-        (
-            tensor_dims.get_index(1) as usize,
-            tensor_dims.get_index(2) as usize,
-            tensor_dims.get_index(3) as usize,
-        ),
-        raw_output.to_vec(),
-    )
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let tensor_shape = (
+        tensor_dims.get_index(1) as usize,
+        tensor_dims.get_index(2) as usize,
+        tensor_dims.get_index(3) as usize,
+    );
+    let output3 =
+        Array3::from_shape_vec(tensor_shape, raw_output.to_vec()).map_err(|e| e.to_string())?;
 
-    let point_set_config = match settings.scan_direction {
-        ScanDirection::Coronal => deepscol::point_config::PointSetConfig::spine(),
-        ScanDirection::Sagittal => deepscol::point_config::PointSetConfig::spine(),
-        ScanDirection::NeckLateral => deepscol::point_config::PointSetConfig::neck_lateral(),
+    let get_asms = || {
+        get_embedded_asms(settings.scan_direction)
+            .map_err(|e| format!("Failed to load embedded ASM models: {}", e))
     };
-
-    let points = extract_points(
-        &output3,
-        &ThresholdConfig::default(),
-        Some(3.0),
-        &point_set_config.max_counts,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Failed to extract points: {}", e)))?;
-
-    let mut model_io = if let Some(cp) = cropping_params {
-        ModelIO::Cropped(Box::new(CroppedIO::new(
-            image,
-            image_filename.to_string(),
-            output3,
-            points,
-            cp,
-            &point_set_config,
-        )))
-    } else {
-        log::info!("No cropping applied");
-        ModelIO::Original(Box::new(OriginalIO::new(
-            image,
-            image_filename.to_string(),
-            output3,
-            points,
-            &point_set_config,
-        )))
+    let heatmap_config = HeatmapConfig {
+        thresh: ThresholdConfig::default(),
+        blur_sigma: Some(3.0),
     };
-
-    if let Err(e) = settings.scan_direction.check_counts(model_io.lm_data()) {
-        log::info!("Point counts are invalid: {}", e);
-        let asms = deepscol::embedded_asm(settings.scan_direction).map_err(|e| {
-            JsValue::from_str(&format!("Failed to load embedded ASM models: {}", e))
-        })?;
-        let asm_config = scolrs::asm::AsmConfig::default();
-        let asms: Vec<_> = asms
-            .into_iter()
-            .map(|asm| (asm, asm_config.clone()))
-            .collect();
-        let output_f64 = model_io.output3().mapv(|x| x as f64);
-        let result_best_asm_lm_data =
-            deepscol::apply_asms(&model_io, output_f64.view(), &point_set_config, asms);
-        match result_best_asm_lm_data {
-            Err(e) => {
-                log::warn!("Failed to apply ASM models: {}", e);
-            }
-            Ok(best_asm_lm_data) => {
-                if let Some(best_lm_data) = best_asm_lm_data {
-                    model_io.set_heatmap_lm_data(best_lm_data);
-                } else {
-                    log::warn!("No ASM model provided, skipping ASM fitting.");
-                }
-            }
-        }
-    }
-
-    Ok(model_io)
+    deepscol::build_model_io(
+        image_filename,
+        image,
+        output3,
+        cropping_params,
+        &heatmap_config,
+        &get_asms,
+        settings.scan_direction,
+    )
+    .map_err(|e| JsValue::from_str(&e))
 }
 
 #[wasm_bindgen(getter_with_clone)]

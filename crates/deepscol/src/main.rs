@@ -4,8 +4,8 @@ use std::vec;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use deepscol::CroppingParams;
 use deepscol::{self as ds, SessionConfig};
-use deepscol::{CroppedIO, CroppingParams, ModelIO, OriginalIO};
 use metaimage::WriteMhd;
 use ndarray::{Array3, Array4};
 use ort::execution_providers::ExecutionProvider;
@@ -303,6 +303,37 @@ fn infer_image(
     })
 }
 
+fn load_asms(
+    paths: &Vec<(PathBuf, Option<PathBuf>)>,
+) -> Result<Vec<(ActiveShapeModel, AsmConfig)>> {
+    let mut asms = Vec::new();
+    for (asm_path, asm_config) in paths {
+        let reader = std::io::BufReader::new(
+            std::fs::File::open(asm_path)
+                .with_context(|| format!("Opening ASM model file {:?}", asm_path))?,
+        );
+        let asm: ActiveShapeModel = serde_json::from_reader(reader)
+            .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
+
+        let asm_config: AsmConfig = if let Some(asm_config_path) = asm_config.as_ref() {
+            let config_builder = config::Config::builder()
+                .add_source(config::File::from(asm_config_path.as_path()))
+                .add_asm_env_source()
+                .build()?;
+            config_builder.try_deserialize()?
+        } else {
+            log::debug!("No ASM config associated to the model provided, using default configuration and environment variables.");
+            let config_builder = config::Config::builder()
+                .add_source(config::Config::try_from(&AsmConfig::default())?);
+            let config_builder = config_builder.add_asm_env_source().build()?;
+            config_builder.try_deserialize()?
+        };
+        log::debug!("ASM fitting configuration: {:?}", asm_config);
+        asms.push((asm, asm_config));
+    }
+    Ok(asms)
+}
+
 /// Stage 3: turn the raw model output into points (with optional ASM fitting)
 /// and write the requested outputs (heatmap / LabelMe / HTML). Session-free, so
 /// this runs in parallel across images.
@@ -320,37 +351,21 @@ fn finish_image(
         cropping_params,
     } = inf;
 
-    let point_set_config = match common.direction {
-        Direction::Coronal => ds::point_config::PointSetConfig::spine(),
-        Direction::Sagittal => ds::point_config::PointSetConfig::spine(),
-        Direction::NeckLateral => ds::point_config::PointSetConfig::neck_lateral(),
+    let scan_direction = match common.direction {
+        Direction::Coronal => ds::ScanDirection::Coronal,
+        Direction::Sagittal => ds::ScanDirection::Sagittal,
+        Direction::NeckLateral => ds::ScanDirection::NeckLateral,
     };
-
-    let points = ds::extract_points(
-        &output3,
-        &ds_config.heatmap.thresh,
-        ds_config.heatmap.blur_sigma,
-        &point_set_config.max_counts,
+    let model_io = deepscol::build_model_io(
+        &metadata.path,
+        image,
+        output3,
+        cropping_params,
+        &ds_config.heatmap,
+        &|| load_asms(&common.asm).map_err(|e| format!("Failed to load ASM models: {}", e)),
+        scan_direction,
     )
-    .map_err(|e| anyhow::anyhow!("Failed to extract points from output: {}", e))?;
-    let mut model_io = if let Some(cropping_params) = cropping_params {
-        ModelIO::Cropped(Box::new(CroppedIO::new(
-            image,
-            metadata.path.clone(),
-            output3,
-            points,
-            cropping_params,
-            &point_set_config,
-        )))
-    } else {
-        ModelIO::Original(Box::new(OriginalIO::new(
-            image,
-            metadata.path.clone(),
-            output3,
-            points,
-            &point_set_config,
-        )))
-    };
+    .map_err(|e| anyhow::anyhow!("Failed to build model IO: {}", e))?;
 
     if let Some(output_path) = output.heatmap {
         let output_path = output_path.unwrap_or_else(|| {
@@ -374,55 +389,6 @@ fn finish_image(
             metaimage::MetaImage::write_mhd(ndarray_output3.view(), &output_path)?
         } else {
             anyhow::bail!("Unsupported heatmap output format: {:?}", file_ext);
-        }
-    }
-    let scan_direction = match common.direction {
-        Direction::Coronal => ds::ScanDirection::Coronal,
-        Direction::Sagittal => ds::ScanDirection::Sagittal,
-        Direction::NeckLateral => ds::ScanDirection::NeckLateral,
-    };
-    // check spine point counts and it's spine (i.e. its_spine_not_neck == true)
-    if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
-        log::info!("Point counts are invalid: {}", e);
-        let output3_f64 = model_io.output3().mapv(|x| x as f64);
-        let mut asms = Vec::new();
-        for (asm_path, asm_config) in &common.asm {
-            let reader = std::io::BufReader::new(
-                std::fs::File::open(asm_path)
-                    .with_context(|| format!("Opening ASM model file {:?}", asm_path))?,
-            );
-            let asm: ActiveShapeModel = serde_json::from_reader(reader)
-                .with_context(|| format!("Loading ASM model from {:?}", asm_path))?;
-
-            let asm_config: AsmConfig = if let Some(asm_config_path) = asm_config.as_ref() {
-                let config_builder = config::Config::builder()
-                    .add_source(config::File::from(asm_config_path.as_path()))
-                    .add_asm_env_source()
-                    .build()?;
-                config_builder.try_deserialize()?
-            } else {
-                log::debug!("No ASM config associated to the model provided, using default configuration and environment variables.");
-                let config_builder = config::Config::builder()
-                    .add_source(config::Config::try_from(&AsmConfig::default())?);
-                let config_builder = config_builder.add_asm_env_source().build()?;
-                config_builder.try_deserialize()?
-            };
-            log::debug!("ASM fitting configuration: {:?}", asm_config);
-            asms.push((asm, asm_config));
-        }
-        let result_best_asm_lm_data =
-            ds::apply_asms(&model_io, output3_f64.view(), &point_set_config, asms);
-        match result_best_asm_lm_data {
-            Err(e) => {
-                log::warn!("Failed to apply ASM models: {}", e);
-            }
-            Ok(best_asm_lm_data) => {
-                if let Some(best_lm_data) = best_asm_lm_data {
-                    model_io.set_heatmap_lm_data(best_lm_data);
-                } else {
-                    log::warn!("No ASM model provided, skipping ASM fitting.");
-                }
-            }
         }
     }
 

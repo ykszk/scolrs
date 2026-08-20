@@ -420,6 +420,73 @@ pub fn load_image(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn build_model_io(
+    image_filename: &str,
+    image: image::DynamicImage,
+    output3: ndarray::Array3<f32>,
+    cropping_params: Option<CroppingParams>,
+    heatmap_config: &HeatmapConfig,
+    get_asms: &dyn Fn() -> Result<Vec<(ActiveShapeModel, AsmConfig)>, String>,
+    scan_direction: ScanDirection,
+) -> Result<ModelIO, String> {
+    let point_set_config = match scan_direction {
+        ScanDirection::Coronal => point_config::PointSetConfig::spine(),
+        ScanDirection::Sagittal => point_config::PointSetConfig::spine(),
+        ScanDirection::NeckLateral => point_config::PointSetConfig::neck_lateral(),
+    };
+
+    let points = extract_points(
+        &output3,
+        &heatmap_config.thresh,
+        heatmap_config.blur_sigma,
+        &point_set_config.max_counts,
+    )
+    .map_err(|e| format!("Failed to extract points: {}", e))?;
+
+    let mut model_io = if let Some(cp) = cropping_params {
+        ModelIO::Cropped(Box::new(CroppedIO::new(
+            image,
+            image_filename.to_string(),
+            output3,
+            points,
+            cp,
+            &point_set_config,
+        )))
+    } else {
+        log::info!("No cropping applied");
+        ModelIO::Original(Box::new(OriginalIO::new(
+            image,
+            image_filename.to_string(),
+            output3,
+            points,
+            &point_set_config,
+        )))
+    };
+
+    if let Err(e) = scan_direction.check_counts(model_io.lm_data()) {
+        log::info!("Point counts are invalid: {}", e);
+        let asms = get_asms()?;
+        let output_f64 = model_io.output3().mapv(|x| x as f64);
+        let result_best_asm_lm_data =
+            apply_asms(&model_io, output_f64.view(), &point_set_config, asms);
+        match result_best_asm_lm_data {
+            Err(e) => {
+                log::warn!("Failed to apply ASM models: {}", e);
+            }
+            Ok(best_asm_lm_data) => {
+                if let Some(best_lm_data) = best_asm_lm_data {
+                    model_io.set_heatmap_lm_data(best_lm_data);
+                } else {
+                    log::warn!("No ASM model provided, skipping ASM fitting.");
+                }
+            }
+        }
+    }
+
+    Ok(model_io)
+}
+
 pub fn load_image_from_path(
     path: &std::path::Path,
 ) -> Result<(image::DynamicImage, ImageMetadata), image::ImageError> {
