@@ -15,7 +15,6 @@ use crate::{
     PointConfidence, Scalable, ScaledType, ScolError, ValidateLength, CORNER_LABELS,
 };
 use clap::{self, ValueEnum};
-use lyon_geom::point;
 
 use labelme_rs::{LabelMeData, LabelMeDataLine};
 use ndarray::{
@@ -771,13 +770,29 @@ impl ConfidenceComponent for Adi<'_> {
     }
 }
 
-trait NeckExt {
-    /// McGregor's line
-    /// Line between the posterior hard palate and the occipital point
-    fn mcgregor_line(&self) -> Result<Array2<f64>, MeasureError>;
+/// Line between the posterior hard palate and the occipital point
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_LINE])]
+#[label("McGregor's Line")]
+pub struct McGregorLine<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for McGregorLine<'_> {}
+impl DrawComponent for McGregorLine<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let mcgregor_points = self.0.mcgregor_line()?;
+        let line = painter.line(mcgregor_points.view());
+        group = group.add(line);
+        Ok(group)
+    }
 }
 
-impl NeckExt for LateralPoints {
+impl LateralPoints {
     fn mcgregor_line(&self) -> Result<Array2<f64>, MeasureError> {
         self.posterior_hard_palate
             .validate_label_length("PosteriorHardPlate", 1)?;
@@ -940,44 +955,38 @@ impl ConfidenceComponent for WedgeAngle<'_> {
     }
 }
 
-/// Modified Renawat Index
+fn project_point_onto_line(point: &ArrayView1<f64>, line: &lyon_geom::Line<f64>) -> Array1<f64> {
+    let point = lyon_geom::Point::new(point[0], point[1]);
+    let projected_point = line.equation().project_point(&point);
+    Array::from(vec![projected_point.x, projected_point.y])
+}
+
+/// Distance between the midpoint of the C2 lower endplate and the line connecting the anterior C1 arch and posterior C1 arch
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
-pub struct ModifiedRenawatIndex<'a>(pub &'a LateralPoints);
-impl NeckSagittalComponent for ModifiedRenawatIndex<'_> {}
-impl ModifiedRenawatIndex<'_> {
+pub struct RanawatMethod<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for RanawatMethod<'_> {}
+impl RanawatMethod<'_> {
     /// Array2 of [intersection, c2_lower_middle]
     fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
         self.0
             .anterior_c1_arch
             .validate_label_length("AnteriorC1Arch", 1)?;
-        // posterior_c2_arch?
-        self.0.posterior_dens.validate_label_length("Dens", 1)?;
+        // posterior_c1_arch == first lamina
+        self.0.lamina.validate_label_length_more_than("Lamina", 1)?;
         let c1_line = points2line(stack![
             Axis(0),
             self.0.anterior_c1_arch.index_axis(Axis(0), 0).view(),
-            self.0.posterior_dens.index_axis(Axis(0), 0).view()
+            self.0.lamina.index_axis(Axis(0), 0).view()
         ]);
         let c2 = self.0.corners.0.index_axis(Axis(0), 0);
         let c2_lower_endplate = c2.slice(s![2.., ..]);
         let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
-        // perpendicular direction to the line
-        let c2_normal = points2line(c2_lower_endplate).equation().normal();
-        let c2_perpendicular_line = lyon_geom::Line {
-            point: point(c2_lower_middle[0], c2_lower_middle[1]),
-            vector: c2_normal,
-        };
-        // intersection point
-        let intersection = c1_line.intersection(&c2_perpendicular_line);
-        if let Some(intersection) = intersection {
-            let intersection = Array::from(vec![intersection.x, intersection.y]);
-            Ok(Some(stack![Axis(0), intersection, c2_lower_middle]))
-        } else {
-            Ok(None)
-        }
+        let projected_point = project_point_onto_line(&c2_lower_middle.view(), &c1_line);
+        Ok(Some(stack![Axis(0), projected_point, c2_lower_middle]))
     }
 }
-impl DrawComponent for ModifiedRenawatIndex<'_> {
+impl DrawComponent for RanawatMethod<'_> {
     fn draw(
         &self,
         painter: &mut Painter,
@@ -986,23 +995,28 @@ impl DrawComponent for ModifiedRenawatIndex<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let intersection_c2_lower_middle = self.prep()?;
-        if let Some(intersection_c2_lower_middle) = intersection_c2_lower_middle {
-            let line = painter.line(intersection_c2_lower_middle.view());
+        let proj_c2_lower_middle = self.prep()?;
+        if let Some(proj_c2_lower_middle) = proj_c2_lower_middle {
+            let line = painter.line(proj_c2_lower_middle.view());
             group = group.add(line);
             let (p1, p2) = distanced_pair3(
-                intersection_c2_lower_middle.index_axis(Axis(0), 0),
+                proj_c2_lower_middle.index_axis(Axis(0), 0),
                 self.0.anterior_c1_arch.index_axis(Axis(0), 0),
-                self.0.posterior_dens.index_axis(Axis(0), 0),
+                self.0.lamina.index_axis(Axis(0), 0),
             );
             let line = painter.line(stack![Axis(0), p1, p2].view());
             group = group.add(line);
-            let length = (&intersection_c2_lower_middle.index_axis(Axis(0), 0)
-                - &intersection_c2_lower_middle.index_axis(Axis(0), 1))
+            // draw C2 lower endplate line
+            let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+            let c2_lower_endplate = c2.slice(s![2.., ..]);
+            let line = painter.line(c2_lower_endplate.to_owned());
+            group = group.add(line);
+            let length = (&proj_c2_lower_middle.index_axis(Axis(0), 0)
+                - &proj_c2_lower_middle.index_axis(Axis(0), 1))
                 .l2norm();
             let text = painter.text(
                 &format!("{:.1}", length),
-                intersection_c2_lower_middle.index_axis(Axis(0), 0),
+                proj_c2_lower_middle.index_axis(Axis(0), 0),
                 Some(self.id()),
                 Some(&self.0.image_metadata.unit),
             );
@@ -1013,19 +1027,116 @@ impl DrawComponent for ModifiedRenawatIndex<'_> {
         Ok(group)
     }
 }
-impl MeasureComponent for ModifiedRenawatIndex<'_> {
+impl MeasureComponent for RanawatMethod<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let intersection = self.prep()?;
-        if let Some(intersection) = intersection {
-            let diff = &intersection.index_axis(Axis(0), 0) - &intersection.index_axis(Axis(0), 1);
+        let proj_c2 = self.prep()?;
+        if let Some(proj_c2) = proj_c2 {
+            let diff = &proj_c2.index_axis(Axis(0), 0) - &proj_c2.index_axis(Axis(0), 1);
             Ok(vec![diff.l2norm()])
         } else {
             Ok(vec![0.0])
         }
     }
 }
-impl ConfidenceComponent for ModifiedRenawatIndex<'_> {
+impl ConfidenceComponent for RanawatMethod<'_> {
+    type ValueType = Vec<f64>;
+    fn confidence(
+        &self,
+        _reduction: ReductionMethod,
+    ) -> Option<Result<Self::ValueType, MeasureError>> {
+        // TODO: implement confidence extraction
+        self.0
+            .confidences
+            .as_ref()
+            .map(|_confidences| Ok(Vec::new()))
+    }
+}
+
+/// Distance between the midpoint of the C2 lower endplate and the midpoint of anterior and posterior dens
+#[derive(Named)]
+#[draw_type([CLASS_MEASURE, CLASS_ANGLE])]
+pub struct ModifiedRanawatIndex<'a>(pub &'a LateralPoints);
+impl NeckSagittalComponent for ModifiedRanawatIndex<'_> {}
+impl ModifiedRanawatIndex<'_> {
+    /// Array2 of [dens_middle, c2_lower_middle]
+    fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
+        self.0
+            .anterior_dens
+            .validate_label_length("AnteriorDens", 1)?;
+        self.0
+            .posterior_dens
+            .validate_label_length("PosteriorDens", 1)?;
+        let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+        let c2_lower_endplate = c2.slice(s![2.., ..]);
+        let c2_lower_middle = c2_lower_endplate.mean_axis(Axis(0)).unwrap();
+        let dens = concatenate(
+            Axis(0),
+            &[self.0.anterior_dens.view(), self.0.posterior_dens.view()],
+        )
+        .unwrap();
+        let dens_middle = dens.mean_axis(Axis(0)).unwrap();
+        Ok(Some(stack![Axis(0), dens_middle, c2_lower_middle]))
+    }
+}
+impl DrawComponent for ModifiedRanawatIndex<'_> {
+    fn draw(
+        &self,
+        painter: &mut Painter,
+        _label_colors: &mut ColorPalette,
+        line_colors: &mut ColorPalette,
+    ) -> Result<element::Group, DrawError> {
+        let color = line_colors.get_or_new(self.id());
+        let mut group = self.default_group().set("stroke", color);
+        let dens_c2 = self.prep()?;
+        if let Some(dens_c2) = dens_c2 {
+            // line between anterior C1 arch and lamina
+            let line = painter.line(
+                stack![
+                    Axis(0),
+                    self.0.anterior_c1_arch.index_axis(Axis(0), 0),
+                    self.0.lamina.index_axis(Axis(0), 0)
+                ]
+                .view(),
+            );
+            group = group.add(line);
+            // draw C2 lower endplate line
+            let c2 = self.0.corners.0.index_axis(Axis(0), 0);
+            let c2_lower_endplate = c2.slice(s![2.., ..]);
+            let line = painter.line(c2_lower_endplate.to_owned());
+            group = group.add(line);
+            // draw line between dens middle and c2 lower middle
+            let line = painter.line(dens_c2.view());
+            group = group.add(line);
+            let text_pos = dens_c2.mean_axis(Axis(0)).unwrap();
+            let length =
+                (&dens_c2.index_axis(Axis(0), 0) - &dens_c2.index_axis(Axis(0), 1)).l2norm();
+            let text = painter.text(
+                &format!("{:.1}", length),
+                text_pos,
+                Some(self.id()),
+                Some(&self.0.image_metadata.unit),
+            );
+            group = group.set("data-value", length);
+            group = group.add(text);
+        }
+
+        Ok(group)
+    }
+}
+impl MeasureComponent for ModifiedRanawatIndex<'_> {
+    type ValueType = Vec<f64>;
+    fn measure(&self) -> Result<Self::ValueType, MeasureError> {
+        let dens_c2 = self.prep()?;
+        if let Some(dens_c2) = dens_c2 {
+            let diff = &dens_c2.index_axis(Axis(0), 0) - &dens_c2.index_axis(Axis(0), 1);
+            Ok(vec![diff.l2norm()])
+        } else {
+            Ok(vec![0.0])
+        }
+    }
+}
+impl ConfidenceComponent for ModifiedRanawatIndex<'_> {
     type ValueType = Vec<f64>;
     fn confidence(
         &self,
@@ -2214,7 +2325,8 @@ pub enum NeckLateralMeasure {
     OC2,
     Sacs,
     WedgeAngle,
-    ModifiedRenawatIndex,
+    RanawatMethod,
+    ModifiedRanawatIndex,
     ThoracicInletAngle,
     NeckTilt,
     SpinoCranialAngle,
@@ -2247,8 +2359,9 @@ impl<'a> From<(&NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
-            NeckLateralMeasure::ModifiedRenawatIndex => {
-                Box::new(ModifiedRenawatIndex(lateral_points))
+            NeckLateralMeasure::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
+            NeckLateralMeasure::ModifiedRanawatIndex => {
+                Box::new(ModifiedRanawatIndex(lateral_points))
             }
             NeckLateralMeasure::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralMeasure::NeckTilt => Box::new(NeckTilt(lateral_points)),
@@ -2284,8 +2397,9 @@ impl<'a, 'b> From<(&'b NeckLateralMeasure, &'a ScaledType<LateralPoints>)>
             NeckLateralMeasure::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralMeasure::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralMeasure::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
-            NeckLateralMeasure::ModifiedRenawatIndex => {
-                Box::new(ModifiedRenawatIndex(lateral_points))
+            NeckLateralMeasure::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
+            NeckLateralMeasure::ModifiedRanawatIndex => {
+                Box::new(ModifiedRanawatIndex(lateral_points))
             }
             NeckLateralMeasure::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralMeasure::NeckTilt => Box::new(NeckTilt(lateral_points)),
@@ -2320,7 +2434,8 @@ impl AsMeasure for NeckLateralDraw {
             OC2 => Some(NeckLateralMeasure::OC2),
             Sacs => Some(NeckLateralMeasure::Sacs),
             WedgeAngle => Some(NeckLateralMeasure::WedgeAngle),
-            ModifiedRenawatIndex => Some(NeckLateralMeasure::ModifiedRenawatIndex),
+            RanawatMethod => Some(NeckLateralMeasure::RanawatMethod),
+            ModifiedRanawatIndex => Some(NeckLateralMeasure::ModifiedRanawatIndex),
             ThoracicInletAngle => Some(NeckLateralMeasure::ThoracicInletAngle),
             NeckTilt => Some(NeckLateralMeasure::NeckTilt),
             SpinoCranialAngle => Some(NeckLateralMeasure::SpinoCranialAngle),
@@ -2336,7 +2451,7 @@ impl AsMeasure for NeckLateralDraw {
             AnteroposteriorVertebralTranslation => {
                 Some(NeckLateralMeasure::AnteroposteriorVertebralTranslation)
             }
-            CervicalPoints | VertebralLabels | Vertebrae | LaminalLine => None,
+            CervicalPoints | VertebralLabels | Vertebrae | LaminalLine | McGregorLine => None,
         }
     }
 }
@@ -2365,10 +2480,12 @@ pub enum NeckLateralDraw {
     OC2,
     Sacs,
     WedgeAngle,
-    ModifiedRenawatIndex,
+    RanawatMethod,
+    ModifiedRanawatIndex,
     ThoracicInletAngle,
     NeckTilt,
     SpinoCranialAngle,
+    McGregorLine,
     OccipitocervicalInclination,
     CranialSlope,
     T1Tilt,
@@ -2400,10 +2517,12 @@ impl<'a> From<(&NeckLateralDraw, &'a ScaledType<LateralPoints>)> for Box<dyn Dra
             NeckLateralDraw::OC2 => Box::new(OC2(lateral_points)),
             NeckLateralDraw::Sacs => Box::new(Sacs(lateral_points)),
             NeckLateralDraw::WedgeAngle => Box::new(WedgeAngle(lateral_points)),
-            NeckLateralDraw::ModifiedRenawatIndex => Box::new(ModifiedRenawatIndex(lateral_points)),
+            NeckLateralDraw::RanawatMethod => Box::new(RanawatMethod(lateral_points)),
+            NeckLateralDraw::ModifiedRanawatIndex => Box::new(ModifiedRanawatIndex(lateral_points)),
             NeckLateralDraw::ThoracicInletAngle => Box::new(ThoracicInletAngle(lateral_points)),
             NeckLateralDraw::NeckTilt => Box::new(NeckTilt(lateral_points)),
             NeckLateralDraw::SpinoCranialAngle => Box::new(SpinoCranialAngle(lateral_points)),
+            NeckLateralDraw::McGregorLine => Box::new(McGregorLine(lateral_points)),
             NeckLateralDraw::OccipitocervicalInclination => {
                 Box::new(OccipitocervicalInclination(lateral_points))
             }

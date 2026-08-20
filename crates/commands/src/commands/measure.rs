@@ -368,7 +368,7 @@ mod tests {
         let mut measurements_non_scaled =
             measure_neck(non_scaled, subcommand, reduce)?.measurements;
 
-        for distance_measure in ["Adi", "Sacs", "ModifiedRenawatIndex"] {
+        for distance_measure in ["Adi", "Sacs", "ModifiedRanawatIndex"] {
             let distance_measurements =
                 measurements.swap_remove(distance_measure).unwrap().unwrap();
             let distance_measurements_non_scaled = measurements_non_scaled
