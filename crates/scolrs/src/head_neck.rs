@@ -972,6 +972,9 @@ fn project_point_onto_line(point: &ArrayView1<f64>, line: &lyon_geom::Line<f64>)
 }
 
 /// Distance between the midpoint of the C2 lower endplate and McGregor's line
+///
+/// Kwong, Y., Rao, N., & Latief, K. (2011). Craniometric measurements in the assessment of craniovertebral settling: are they still relevant in the age of cross-sectional imaging?. American journal of roentgenology, 196(4), W421-W425
+/// https://doi.org/10.2214/AJR.10.5339
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 #[label("Redlund-Johnell Method")]
@@ -1129,14 +1132,17 @@ impl ConfidenceComponent for RanawatMethod<'_> {
     }
 }
 
-/// Distance between the midpoint of the C2 lower endplate and the midpoint of anterior and posterior dens
+/// Distance between the midpoint of the C2 lower endplate and the line connecting the anterior C1 arch and the posterior C1 arch along the long axis of C2
+/// The long axis of C2 is defined as the line connecting the midpoint of the C2 lower endplate and the midpoint of the dens
+///
+/// https://doi.org/10.2214/AJR.10.5339
 #[derive(Named)]
 #[draw_type([CLASS_MEASURE, CLASS_DISTANCE])]
 pub struct ModifiedRanawatIndex<'a>(pub &'a LateralPoints);
 impl NeckSagittalComponent for ModifiedRanawatIndex<'_> {}
 impl ModifiedRanawatIndex<'_> {
-    /// Array2 of [dens_middle, c2_lower_middle]
-    fn prep(&self) -> Result<Option<Array2<f64>>, MeasureError> {
+    /// Array2 of [c1_intersection, c2_lower_middle]
+    fn prep(&self) -> Result<Array2<f64>, MeasureError> {
         self.0
             .anterior_dens
             .validate_label_length("AnteriorDens", 1)?;
@@ -1150,7 +1156,20 @@ impl ModifiedRanawatIndex<'_> {
         )
         .unwrap();
         let dens_middle = dens.mean_axis(Axis(0)).unwrap();
-        Ok(Some(stack![Axis(0), dens_middle, c2_lower_middle]))
+        let c2_dens_line = points2line(stack![Axis(0), dens_middle.view(), c2_lower_middle.view()]);
+        let c1_line = points2line(stack![
+            Axis(0),
+            self.0.anterior_c1_arch.index_axis(Axis(0), 0).view(),
+            self.0.lamina.index_axis(Axis(0), 0).view()
+        ]);
+        let intersection =
+            c1_line
+                .intersection(&c2_dens_line)
+                .ok_or(MeasureError::UnableToMeasure(
+                    "No intersection between C1 and C2 lines".to_string(),
+                ))?;
+        let intersection = Array::from(vec![intersection.x, intersection.y]);
+        Ok(stack![Axis(0), intersection, c2_lower_middle])
     }
 }
 impl DrawComponent for ModifiedRanawatIndex<'_> {
@@ -1162,37 +1181,34 @@ impl DrawComponent for ModifiedRanawatIndex<'_> {
     ) -> Result<element::Group, DrawError> {
         let color = line_colors.get_or_new(self.id());
         let mut group = self.default_group().set("stroke", color);
-        let dens_c2 = self.prep()?;
-        if let Some(dens_c2) = dens_c2 {
-            // line between anterior C1 arch and lamina
-            let line = painter.line(
-                stack![
-                    Axis(0),
-                    self.0.anterior_c1_arch.index_axis(Axis(0), 0),
-                    self.0.lamina.index_axis(Axis(0), 0)
-                ]
-                .view(),
-            );
-            group = group.add(line);
-            // draw C2 lower endplate line
-            let c2_lower_endplate = self.0.c2_lower_endplate();
-            let line = painter.line(c2_lower_endplate.to_owned());
-            group = group.add(line);
-            // draw line between dens middle and c2 lower middle
-            let line = painter.line(dens_c2.view());
-            group = group.add(line);
-            let text_pos = dens_c2.mean_axis(Axis(0)).unwrap();
-            let length =
-                (&dens_c2.index_axis(Axis(0), 0) - &dens_c2.index_axis(Axis(0), 1)).l2norm();
-            let text = painter.text(
-                &format!("{:.1}", length),
-                text_pos,
-                Some(self.id()),
-                Some(&self.0.image_metadata.unit),
-            );
-            group = group.set("data-value", length);
-            group = group.add(text);
-        }
+        let c1_c2 = self.prep()?;
+        // line between anterior C1 arch and lamina
+        let line = painter.line(
+            stack![
+                Axis(0),
+                self.0.anterior_c1_arch.index_axis(Axis(0), 0),
+                self.0.lamina.index_axis(Axis(0), 0)
+            ]
+            .view(),
+        );
+        group = group.add(line);
+        // draw C2 lower endplate line
+        let c2_lower_endplate = self.0.c2_lower_endplate();
+        let line = painter.line(c2_lower_endplate.to_owned());
+        group = group.add(line);
+        // draw line between dens middle and c2 lower middle
+        let line = painter.line(c1_c2.view());
+        group = group.add(line);
+        let text_pos = c1_c2.mean_axis(Axis(0)).unwrap();
+        let length = (&c1_c2.index_axis(Axis(0), 0) - &c1_c2.index_axis(Axis(0), 1)).l2norm();
+        let text = painter.text(
+            &format!("{:.1}", length),
+            text_pos,
+            Some(self.id()),
+            Some(&self.0.image_metadata.unit),
+        );
+        group = group.set("data-value", length);
+        group = group.add(text);
 
         Ok(group)
     }
@@ -1200,13 +1216,9 @@ impl DrawComponent for ModifiedRanawatIndex<'_> {
 impl MeasureComponent for ModifiedRanawatIndex<'_> {
     type ValueType = Vec<f64>;
     fn measure(&self) -> Result<Self::ValueType, MeasureError> {
-        let dens_c2 = self.prep()?;
-        if let Some(dens_c2) = dens_c2 {
-            let diff = &dens_c2.index_axis(Axis(0), 0) - &dens_c2.index_axis(Axis(0), 1);
-            Ok(vec![diff.l2norm()])
-        } else {
-            Ok(vec![0.0])
-        }
+        let c1_c2 = self.prep()?;
+        let diff = &c1_c2.index_axis(Axis(0), 0) - &c1_c2.index_axis(Axis(0), 1);
+        Ok(vec![diff.l2norm()])
     }
 }
 impl ConfidenceComponent for ModifiedRanawatIndex<'_> {
