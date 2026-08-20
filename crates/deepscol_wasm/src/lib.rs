@@ -24,7 +24,6 @@ pub struct DecodedImage {
     pub height: u32,
 }
 
-
 /// A `#[wasm_bindgen]`-friendly stand-in for `Option<CroppingParams>`.
 ///
 /// wasm-bindgen doesn't support `Option<&T>` for custom struct types, so functions taking
@@ -187,7 +186,12 @@ fn build_model_io(
     )
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let point_set_config = deepscol::point_config::PointSetConfig::spine();
+    let point_set_config = match settings.scan_direction {
+        ScanDirection::Coronal => deepscol::point_config::PointSetConfig::spine(),
+        ScanDirection::Sagittal => deepscol::point_config::PointSetConfig::spine(),
+        ScanDirection::NeckLateral => deepscol::point_config::PointSetConfig::neck_lateral(),
+    };
+
     let points = extract_points(
         &output3,
         &ThresholdConfig::default(),
@@ -216,7 +220,7 @@ fn build_model_io(
         )))
     };
 
-    if let Err(e) = scolrs::C7TLS::check_counts(model_io.lm_data()) {
+    if let Err(e) = settings.scan_direction.check_counts(model_io.lm_data()) {
         log::info!("Point counts are invalid: {}", e);
         let asms = deepscol::embedded_asm(settings.scan_direction).map_err(|e| {
             JsValue::from_str(&format!("Failed to load embedded ASM models: {}", e))
@@ -247,15 +251,15 @@ fn build_model_io(
 }
 
 #[wasm_bindgen(getter_with_clone)]
-pub struct HtmlJson{
-   pub html: String,
-   pub lm_json: String,
+pub struct HtmlJson {
+    pub html: String,
+    pub lm_json: String,
 }
 
 fn remove_anchors(lm_data: &mut LabelMeData, scan_direction: ScanDirection) {
     let anchor_labels = match scan_direction {
         ScanDirection::Coronal | ScanDirection::Sagittal => vec!["C7-TL", "C7-TR", "S-TL", "S-TR"],
-        ScanDirection::NeckLateral => vec!["Lamina1",  "C3_BL", "C3_BR"],
+        ScanDirection::NeckLateral => vec!["Lamina1", "C3_BL", "C3_BR"],
     };
     for shape in &mut lm_data.shapes {
         if anchor_labels.contains(&shape.label.as_str()) {

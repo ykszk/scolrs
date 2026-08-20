@@ -1154,11 +1154,12 @@ pub fn create_result_html_from_lm(args: ResultHtmlLmArgs) -> Result<String, anyh
         size_config,
         title,
     } = args;
-    let ch_range_rgb = match scan_direction {
-        ScanDirection::Coronal => (0..2, 2..4, 4..9),
-        ScanDirection::Sagittal => (0..2, 2..4, 4..9),
-        ScanDirection::NeckLateral => (0..2, 2..4, 4..(model_io.output3().shape()[0] - 2)),
+    let point_set_config = match scan_direction {
+        ScanDirection::Coronal | ScanDirection::Sagittal => point_config::PointSetConfig::spine(),
+        ScanDirection::NeckLateral => point_config::PointSetConfig::neck_lateral(),
     };
+
+    let ch_range_rgb = point_set_config.ch_range_rgb;
     let heatmap = model_io.output3_to_heatmap(ch_range_rgb);
     let (x_y, width_height) =
         model_io.overlay_params((heatmap.width(), heatmap.height()), &size_config);
