@@ -1382,7 +1382,7 @@ impl SpinoCranialAngle<'_> {
     fn prep(&self) -> Result<(Array2<f64>, Array2<f64>), MeasureError> {
         self.0.sella.validate_label_length("Sella", 1)?;
         self.0.corners.0.validate_label_length("Vertebra", 7)?;
-        let c7 = self.0.corners.0.index_axis(Axis(0), 6);
+        let c7 = self.0.corners.0.index_axis(Axis(0), 5);
         let c7_upper_endplate = c7.slice(s![..2, ..]);
         let c7_upper_middle = c7_upper_endplate.mean_axis(Axis(0)).unwrap();
         let sella = self.0.sella.index_axis(Axis(0), 0);
@@ -1653,10 +1653,10 @@ impl DrawComponent for TPR<'_> {
                 lamina.view()
             ]);
             group = group.add(poly);
-            let title = if i < 6 {
-                format!("C{}-TPR", i + 2)
+            let title = if i < 5 {
+                format!("C{}-TPR", i + 3)
             } else {
-                format!("T{}-TPR", i - 5)
+                "T1-TPR".to_string()
             };
             let text = painter.text(
                 &format!("{:.2}", ratio),
