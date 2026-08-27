@@ -318,6 +318,9 @@ pub struct CurveArgs {
     /// Curve set selection algorithm
     #[clap(long = "algo", default_value = "score")]
     pub algorithm: CurveSetAlgorithm,
+    /// Omit angles from the output
+    #[clap(long)]
+    pub omit_angles: bool,
     /// Weights for the score algorithm
     #[clap(
         short,

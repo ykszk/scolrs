@@ -6,13 +6,20 @@ use anyhow::{Context, Result};
 use labelme_rs::{serde_json, LabelMeData, LabelMeDataLine};
 use scolrs::{
     CoronalPoints, CoronalPointsAndCurve, CoronalPointsAndCurveLine, CoronalPointsLine, Curve,
-    CurveDesc, CurveScoreSet, CurveSet, CurveSetAlgorithm, VertebraDiscIndex,
+    CurveDesc, CurveDescOptionalAngles, CurveScoreSet, CurveSet, CurveSetAlgorithm,
+    VertebraDiscIndex,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveDescLine {
     pub content: CurveDesc,
+    pub filename: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct CurveDescOptionalAnglesLine {
+    pub content: CurveDescOptionalAngles,
     pub filename: String,
 }
 
@@ -131,13 +138,27 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
             match args.format {
                 cli::CurveSetOutput::Curve => {
                     let info: CurveDescLine = (&data, &algorithm).try_into()?;
-                    println!("{}", serde_json::to_string(&info)?);
+                    if args.omit_angles {
+                        let info_no_angles = CurveDescOptionalAnglesLine {
+                            content: info.content.strip_angles(),
+                            filename: info.filename,
+                        };
+                        println!("{}", serde_json::to_string(&info_no_angles)?);
+                    } else {
+                        println!("{}", serde_json::to_string(&info)?);
+                    }
                 }
                 cli::CurveSetOutput::All => {
+                    if args.omit_angles {
+                        log::warn!("Omit angles option is ignored for 'all' output format");
+                    }
                     let info: CurveInfoAllLine = (&data, &algorithm).try_into()?;
                     println!("{}", serde_json::to_string(&info)?);
                 }
                 cli::CurveSetOutput::Points => {
+                    if args.omit_angles {
+                        log::warn!("Omit angles option is ignored for 'points' output format");
+                    }
                     let info: CurveDescLine = (&data, &algorithm).try_into()?;
 
                     if let Some(cp) = coronal_points {
@@ -172,13 +193,24 @@ pub fn cmd(args: CurveArgs) -> Result<()> {
         match args.format {
             cli::CurveSetOutput::Curve => {
                 let info: CurveDesc = (&data, &algorithm).try_into()?;
-                println!("{}", serde_json::to_string(&info)?);
+                if args.omit_angles {
+                    let no_angles = info.strip_angles();
+                    println!("{}", serde_json::to_string(&no_angles)?);
+                } else {
+                    println!("{}", serde_json::to_string(&info)?);
+                }
             }
             cli::CurveSetOutput::All => {
+                if args.omit_angles {
+                    log::warn!("Omit angles option is ignored for 'all' output format");
+                }
                 let info: CurveInfoAll = (&data, &algorithm).try_into()?;
                 println!("{}", serde_json::to_string(&info)?);
             }
             cli::CurveSetOutput::Points => {
+                if args.omit_angles {
+                    log::warn!("Omit angles option is ignored for 'points' output format");
+                }
                 let info: CurveDesc = (&data, &algorithm).try_into()?;
 
                 if let Some(cp) = coronal_points {

@@ -1723,6 +1723,18 @@ impl CurveDesc {
             major_curve,
         }
     }
+
+    pub fn strip_angles(&self) -> CurveDescOptionalAngles {
+        CurveDescOptionalAngles {
+            curves: CurveSetOptionalAngles {
+                pt: self.curves.pt.as_ref().map(|(c, _)| (c.clone(), None)),
+                mt: self.curves.mt.as_ref().map(|(c, _)| (c.clone(), None)),
+                tll: self.curves.tll.as_ref().map(|(c, _)| (c.clone(), None)),
+            },
+            apices: self.apices.clone(),
+            major_curve: self.major_curve,
+        }
+    }
 }
 
 /// [`CurveDesc`] with optional angles used for [`CoronalPointsAndCurveIR`]
