@@ -29,6 +29,7 @@ pub struct CurveInfoAll {
     pub info: CurveDesc,
     pub all_curves: Vec<(Curve, f64, VertebraDiscIndex)>,
     pub all_curve_scores: Vec<(CurveSet, CurveScoreSet)>,
+    pub endplate_angles: Vec<(f64, f64)>,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurveInfoAllLine {
@@ -67,6 +68,7 @@ impl TryFrom<(&LabelMeData, &CurveSetAlgorithm)> for CurveInfoAll {
             info,
             all_curves,
             all_curve_scores,
+            endplate_angles: coronal_points.calculate_endplate_angles()?,
         })
     }
 }

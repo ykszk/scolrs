@@ -34,7 +34,7 @@ pub mod asm;
 pub mod measure;
 pub mod reg;
 
-use crate::draw::SpineWithConfidence;
+use crate::draw::{tilt_angle, SpineWithConfidence};
 
 shadow!(build);
 pub const VERSION: &str = shadow_rs::concatcp!(
@@ -1410,6 +1410,18 @@ impl CoronalPoints {
             // TODO: implement pedicle checking
             LumbarModifier::AorB
         }
+    }
+
+    pub fn calculate_endplate_angles(&self) -> Result<Vec<(f64, f64)>, MeasureError> {
+        let mut angles = Vec::new();
+        for vertebra in self.spine.v_c7tl.0.axis_iter(Axis(0)) {
+            let sup = &vertebra.slice(s![..2, ..]);
+            let sup_angle = tilt_angle("sup", sup.view())?;
+            let inf = &vertebra.slice(s![-2.., ..]);
+            let inf_angle = tilt_angle("inf", inf.view())?;
+            angles.push((sup_angle, inf_angle));
+        }
+        Ok(angles)
     }
 }
 
