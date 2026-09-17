@@ -18,11 +18,6 @@ fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
     match cli.command {
-        Command::Complete(args) => {
-            let mut cmd = Cli::command();
-            print_completions(args.shell, &mut cmd);
-            Ok(())
-        }
         Command::Svg(args) => svg::cmd(args),
         Command::SvgNdjson(args) => commands::svg::cmd_ndjson(args),
         Command::Measure(args) => measure::cmd(args),
@@ -35,7 +30,17 @@ fn main() -> Result<()> {
         Command::Confidence(args) => commands::confidence::cmd(args),
         Command::Asm(args) => commands::asm::cmd(args),
         Command::Vertebra(args) => commands::vertebra::cmd(args),
-        Command::Config(args) => commands::config::cmd(args),
-        Command::Man(args) => commands::man::cmd(args),
+        Command::Utils(args) => {
+            use cli::UtilsCommand::*;
+            match args {
+                Complete(args) => {
+                    let mut cmd = Cli::command();
+                    print_completions(args.shell, &mut cmd);
+                    Ok(())
+                }
+                Config(args) => commands::config::cmd(args),
+                Man(args) => commands::man::cmd(args),
+            }
+        }
     }
 }

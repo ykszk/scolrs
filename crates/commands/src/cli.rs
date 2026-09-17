@@ -39,6 +39,13 @@ pub enum Command {
     Asm(AsmArgs),
     /// Register two sets of vertebrae
     Vertebra(VertebraArgs),
+    /// Utilities
+    #[command(subcommand)]
+    Utils(UtilsCommand),
+}
+
+#[derive(Subcommand)]
+pub enum UtilsCommand {
     /// Print config template
     Config(ConfigArgs),
     /// Generate shell completions
@@ -47,13 +54,13 @@ pub enum Command {
     Man(ManArgs),
 }
 
-#[derive(Parser)]
+#[derive(Args)]
 pub struct CompleteArgs {
     /// Shell to generate completions for
     pub shell: Shell,
 }
 
-#[derive(Parser)]
+#[derive(Args)]
 pub struct ManArgs {
     /// Output directory. e.g. `$MANPATH/man1`
     pub output: PathBuf,
